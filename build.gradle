@@ -1,0 +1,156 @@
+plugins {
+  id "java"
+
+  /*
+  Instrumentation agent extension mechanism expects a single jar containing everything required
+  for your extension. This also includes any external libraries that your extension uses and
+  cannot access from application classpath (see comment below about `javax.servlet-api` dependency).
+
+  Thus we use Shadow Gradle plugin to package our classes and all required runtime dependencies
+  into a single jar.
+  See https://imperceptiblethoughts.com/shadow/ for more details about Shadow plugin.
+   */
+  id "com.github.johnrengelman.shadow" version "7.1.2"
+  id "com.diffplug.spotless" version "6.3.0"
+
+  id "io.opentelemetry.instrumentation.muzzle-generation" version "1.16.0-alpha-SNAPSHOT"
+  id "io.opentelemetry.instrumentation.muzzle-check" version "1.16.0-alpha-SNAPSHOT"
+}
+
+group 'io.opentelemetry.example'
+version '1.0'
+
+ext {
+  versions = [
+    opentelemetry              : "1.12.0",
+    opentelemetryAlpha         : "1.12.0-alpha",
+    opentelemetryJavaagent     : "1.15.0",
+    opentelemetryJavaagentAlpha: "1.15.0-alpha",
+  ]
+
+  deps = [
+    autoservice: dependencies.create(group: 'com.google.auto.service', name: 'auto-service', version: '1.0')
+  ]
+}
+
+repositories {
+  mavenCentral()
+  maven {
+    name = "sonatype"
+    url = uri("https://oss.sonatype.org/content/repositories/snapshots")
+  }
+}
+
+configurations {
+  /*
+  We create a separate gradle configuration to grab a published Otel instrumentation agent.
+  We don't need the agent during development of this extension module.
+  This agent is used only during integration test.
+  */
+  otel
+}
+
+
+dependencies {
+//  compileOnly("com.google.auto.value:auto-value-annotations:1.9")
+//  annotationProcessor("com.google.auto.value:auto-value:1.9")
+
+  /*
+  Interfaces and SPIs that we implement. We use `compileOnly` dependency because during
+  runtime all necessary classes are provided by javaagent itself.
+   */
+  compileOnly("io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi:${versions.opentelemetry}")
+  compileOnly("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${versions.opentelemetryJavaagentAlpha}")
+  compileOnly("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
+
+  implementation enforcedPlatform("com.vaadin:vaadin-bom:${vaadinVersion}")
+  compileOnly("com.vaadin:flow-server")
+//  implementation 'com.vaadin:license-checker'
+
+  //Provides @AutoService annotation that makes registration of our SPI implementations much easier
+  compileOnly deps.autoservice
+  annotationProcessor deps.autoservice
+
+  /*
+   Used by our demo instrumentation module to reference classes of the target instrumented library.
+   We again use `compileOnly` here because during runtime these classes are provided by the
+   actual application that we instrument.
+
+   NB! Only Advice (and "helper") classes of instrumentation modules can access classes from application classpath.
+   See https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/main/docs/contributing/writing-instrumentation-module.md#advice-classes
+   */
+  compileOnly group: 'javax.servlet', name: 'javax.servlet-api', version: '3.0.1'
+
+  /*
+  This dependency is required for DemoSpanProcessor both during compile and runtime.
+  Only dependencies added to `implementation` configuration will be picked up by Shadow plugin
+  and added to the resulting jar for our extension's distribution.
+   */
+  implementation 'org.apache.commons:commons-lang3:3.11'
+
+  //All dependencies below are only for tests
+  testImplementation("org.testcontainers:testcontainers:1.16.2")
+  testImplementation("com.fasterxml.jackson.core:jackson-databind:2.11.2")
+  testImplementation("com.google.protobuf:protobuf-java-util:3.12.4")
+  testImplementation("com.squareup.okhttp3:okhttp:3.12.12")
+  testImplementation("io.opentelemetry:opentelemetry-api:${versions.opentelemetry}")
+  testImplementation("io.opentelemetry.proto:opentelemetry-proto:0.16.0-alpha")
+
+  testImplementation("org.junit.jupiter:junit-jupiter-api:5.6.2")
+  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.6.2")
+  testRuntimeOnly("ch.qos.logback:logback-classic:1.2.3")
+
+  //Otel Java instrumentation that we use and extend during integration tests
+  otel("io.opentelemetry.javaagent:opentelemetry-javaagent:${versions.opentelemetryJavaagent}")
+
+  //TODO remove when start using io.opentelemetry.instrumentation.javaagent-instrumentation plugin
+  add("codegen", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagentAlpha}")
+  add("codegen", "ch.qos.logback:logback-classic:1.2.3")
+  add("muzzleBootstrap", "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-annotation-support:${versions.opentelemetryJavaagentAlpha}")
+  add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
+  add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagentAlpha}")
+}
+
+//Produces a copy of upstream javaagent with this extension jar included inside it
+//The location of extension directory inside agent jar is hard-coded in the agent source code
+task extendedAgent(type: Jar) {
+  dependsOn(configurations.otel)
+  archiveFileName = "opentelemetry-javaagent.jar"
+  from zipTree(configurations.otel.singleFile)
+  from(tasks.shadowJar.archiveFile) {
+    into "extensions"
+  }
+
+  //Preserve MANIFEST.MF file from the upstream javaagent
+  doFirst {
+    manifest.from(
+      zipTree(configurations.otel.singleFile).matching {
+        include 'META-INF/MANIFEST.MF'
+      }.singleFile
+    )
+  }
+}
+
+tasks {
+
+  compileJava {
+    options.release.set(8)
+  }
+
+  assemble.dependsOn(shadowJar)
+}
+
+muzzle {
+  pass {
+    group.set("javax.servlet")
+    module.set("javax.servlet-api")
+    versions.set("[3.0,)")
+    assertInverse.set(true)
+  }
+  pass {
+    group.set("javax.servlet")
+    module.set("servlet-api")
+    versions.set("[2.2, 3.0)")
+    assertInverse.set(true)
+  }
+}
