@@ -1,0 +1,64 @@
+= Collecting Metrics with Prometheus
+
+https://prometheus.io/[Prometheus] is a software for collecting metrics, and is supported by OpenTelemetry out-of-the-box.
+This document provides instructions on how to set up a local Prometheus instance that collects metrics from a locally running Java app.
+
+== Configure Prometheus Exporter in OpenTelemetry
+
+Start the OpenTelemetry Java agent with the respective system properties to enable the Prometheus exporter:
+[source,shell]
+----
+java -javaagent:opentelemetry-javaagent.jar \
+     -Dotel.metrics.exporter=prometheus \
+     -Dotel.exporter.prometheus.host=0.0.0.0 \
+     -Dotel.exporter.prometheus.port=9464 \
+     -jar target/myapp-1.0-SNAPSHOT.jar
+----
+
+Note that this creates a separate server running on the specified host and port from which the Prometheus server can scrape data from. Host and port are optional, `0.0.0.0` and `9464` are the default values.
+
+See https://github.com/open-telemetry/opentelemetry-java/blob/main/sdk-extensions/autoconfigure/README.md#prometheus-exporter[OpenTelemetry Prometheus exporter documentation].
+
+== Run Prometheus
+
+Create a Prometheus configuration with a scraper that reads metrics data from the OpenTelemetry exporter:
+
+.`prometheus.yml`
+[source,yaml]
+----
+global:
+  scrape_interval: 15s # Default is every 1 minute.
+
+scrape_configs:
+  - job_name: 'opentelemetry'
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+    static_configs:
+      - targets: ['localhost:9464'] # Host and port need to match the
+                                    # OpenTelemetry prometheus exporter configuration
+----
+
+Download and start Prometheus with the provided config file:
+[source,shell]
+----
+./prometheus --config.file=prometheus.yml
+----
+
+Then open the http://localhost:9090[Prometheus UI] in your browser.
+
+=== Using Docker
+
+Alternatively Prometheus can be run with Docker:
+[source,shell]
+----
+docker run \
+    -p 9090:9090 \
+    -v ./prometheus.yml:/etc/prometheus/prometheus.yml \
+    --net=host \
+    prom/prometheus
+----
+
+The command above uses host network mode to expose the metrics exporter running on the host system to the Prometheus app running in the container. *This is only required for local test setups!* For production setups the Java application, and it's metrics exporter, should run in a separate container, and both containers should be set up with a shared network.
+
+Additionally, the scraper config in `prometheus.yml` must be changed to use the host `host.docker.internal` instead of `localhost`.
+
