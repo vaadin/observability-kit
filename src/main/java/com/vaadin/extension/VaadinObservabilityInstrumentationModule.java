@@ -1,6 +1,7 @@
 package com.vaadin.extension;
 
 import com.google.auto.service.AutoService;
+import com.vaadin.extension.instrumentation.JavascriptBootstrapUiInstrumentation;
 import com.vaadin.extension.instrumentation.UiInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
@@ -36,6 +37,9 @@ public class VaadinObservabilityInstrumentationModule extends InstrumentationMod
     @Override
     public List<TypeInstrumentation> typeInstrumentations() {
         // TypeIntrumentation for this instrumentation module
-        return asList(new UiInstrumentation());
+        return asList(
+                new JavascriptBootstrapUiInstrumentation(),
+                new UiInstrumentation()
+        );
     }
 }
