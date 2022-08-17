@@ -61,6 +61,7 @@ dependencies {
    */
   compileOnly("io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi:${versions.opentelemetry}")
   compileOnly("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${versions.opentelemetryJavaagentAlpha}")
+  compileOnly("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-semconv:${versions.opentelemetryJavaagentAlpha}")
   compileOnly("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
 
   implementation enforcedPlatform("com.vaadin:vaadin-bom:${vaadinVersion}")
