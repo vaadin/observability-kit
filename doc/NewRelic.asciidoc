@@ -1,7 +1,7 @@
 = Collecting Metrics with New Relic
 
 https://newrelic.com[New Relic] is an observability platform, and is supported by OpenTelemetry through the OLTP/HTTP exporter protocol.
-This document provides instructions on how to set up a ?? that collects traces from a locally running Java app.
+This document provides instructions on how to collect traces from a locally running Java app into New Relic.
 
 == Create a New Relic Account
 
