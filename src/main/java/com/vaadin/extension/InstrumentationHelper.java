@@ -30,10 +30,10 @@ public class InstrumentationHelper {
 
         // Update root span name and http.route attribute to contain route template
         List<HasElement> activeRouterTargetsChain = ui.getInternals().getActiveRouterTargetsChain();
+        HasElement routerTarget = activeRouterTargetsChain.size() > 0 ? activeRouterTargetsChain.get(0) : null;
 
-        Optional<String> routeTemplate = (activeRouterTargetsChain.size() > 0 ? Optional.of(activeRouterTargetsChain.get(0)) : Optional.empty())
-                .map(routerTarget -> routerTarget instanceof Component ? (Component) routerTarget : null)
-                .flatMap(component -> RouteConfiguration.forRegistry(ui.getInternals().getRouter().getRegistry()).getTemplate(component.getClass()));
+        Optional<String> routeTemplate = Optional.ofNullable(routerTarget)
+                .flatMap(component -> RouteConfiguration.forSessionScope().getTemplate(((Component)component).getClass()));
 
         if (routeTemplate.isPresent()) {
             // Update root span name to contain the route.
