@@ -1,0 +1,33 @@
+= Collecting Metrics with New Relic
+
+https://newrelic.com[New Relic] is an observability platform, and is supported by OpenTelemetry through the OLTP/HTTP exporter protocol.
+This document provides instructions on how to set up a ?? that collects traces from a locally running Java app.
+
+== Create a New Relic Account
+
+For this we are using a https://newrelic.com/signup[free] account.
+Use the link to create an account.
+
+== Determine the OLTP Endpoint
+
+Once you have logged in, determine the endpoint from the https://docs.newrelic.com/docs/more-integrations/open-source-telemetry-integrations/opentelemetry/opentelemetry-setup/[New Relic documentation]. There are servers for the US and for Europe.
+
+== Copy the API License Key
+
+With a base account, you have access to license keys through the account dropdown -> API keys. Find the key of type `INGEST - LICENSE`, and copy the value to the clip-board using the 'Copy key' option in the '...' menu.
+
+== Start the OpenTelemetry Java Agent
+
+Start the OpenTelemetry Java agent with the respective system properties:
+[source,shell]
+----
+java -javaagent:opentelemetry-javaagent.jar \
+     -Dotel.metrics.exporter=otlp \
+     -Dotel.exporter.otlp.endpoint=[NEW RELIC SERVER]:4317 \
+     -Dotel.exporter.otlp.headers=Api-Key="[LICENSE KEY]" \
+     -Dotel.exporter.otlp.protocol=http/protobuf
+     -jar target/myapp-1.0-SNAPSHOT.jar
+----
+
+[NOTE]
+The `NEW RELIC SERVER` is the endpoint URL provided by New Relic, and `LICENSE KEY` is the copied key.
