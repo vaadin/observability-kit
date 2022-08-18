@@ -9,7 +9,7 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.*;
 
 public class JavascriptBootstrapUiInstrumentation implements TypeInstrumentation {
 
@@ -23,6 +23,13 @@ public class JavascriptBootstrapUiInstrumentation implements TypeInstrumentation
         transformer.applyAdviceToMethod(
                 named("connectClient"),
                 this.getClass().getName() + "$ConnectClientAdvice");
+
+        transformer.applyAdviceToMethod(
+                named("navigate")
+                        .and(takesArguments(2))
+                        .and(takesArgument(0, named("java.lang.String")))
+                        .and(takesArgument(1, named("com.vaadin.flow.router.QueryParameters"))),
+                this.getClass().getName() + "$NavigateAdvice");
     }
 
     @SuppressWarnings({"unused", "UnusedAssignment"})
@@ -38,7 +45,16 @@ public class JavascriptBootstrapUiInstrumentation implements TypeInstrumentation
         public static void onExit(@Advice.This JavaScriptBootstrapUI ui,
                                   @Advice.Local("otelSpan") Span span) {
             span.end();
-            // Update route after initial routing / rendering of UI due to a client-side navigation or page load
+            // Update route after navigation to display the new route
+            InstrumentationHelper.updateHttpRoute(ui);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    public static class NavigateAdvice {
+        @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
+        public static void onExit(@Advice.This JavaScriptBootstrapUI ui) {
+            // Update route after navigation to display the new route
             InstrumentationHelper.updateHttpRoute(ui);
         }
     }
