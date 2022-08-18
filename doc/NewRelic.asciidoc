@@ -10,7 +10,7 @@ Use the link to create an account.
 
 == Determine the OLTP Endpoint
 
-Once you have logged in, determine the endpoint from the https://docs.newrelic.com/docs/more-integrations/open-source-telemetry-integrations/opentelemetry/opentelemetry-setup/[New Relic documentation]. There are servers for the US and for Europe.
+Once you have logged in, choose an endpoint from the table in the linked section of the https://docs.newrelic.com/docs/more-integrations/open-source-telemetry-integrations/opentelemetry/opentelemetry-setup/#review-settings[New Relic documentation]. There are servers for the US and for Europe.
 
 == Copy the API License Key
 
