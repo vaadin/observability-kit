@@ -1,0 +1,49 @@
+= Collecting Traces with Dynatrace
+
+https://www.dynatrace.com/[Dynatrace] is an observability platform, and is supported by OpenTelemetry thorugh the OTLP/HTTP exporter protocol.
+This document provides instructions on how to set up a sample `Dynatrace SaaS` instance that collects traces from a locally running Java app.
+
+== Create a Dynatrace Account
+
+For this we are using the https://www.dynatrace.com/trial/[15day free trial] account.
+Just head over and create an account.
+
+== Enable Trace Context
+
+- In the dynatrace menu under `Manage`, select `Settings`
+- In the `Settings` menu drop down `Server-side monitoring` and select `Deep monitoring`
+- From the `Deep monitoring` drop down `Distributed tracing`
+- Turn on `Send W3C Trace Context HTTP headers`
+
+== Create an Access Token
+
+- In the dynatrace menu under `Manage`, select `Access tokens`
+- Select Generate new token.
+- Enter `Token name` (Does not need to be unique)
+- Search for scope `Ingest OpenTelemetry traces` and select it.
+- `Generate token`
+- Copy and store given token (as it can't be seen again)
+
+== Start the OpenTelemetry Java Agent
+
+Start the Java agent with the respective system properties:
+[source,shell]
+----
+java -javaagent:../extension/build/libs/opentelemetry-javaagent.jar \
+	-Dotel.metrics.exporter=none \
+	-Dotel.exporter.otlp.traces.endpoint=https://[DYNATRACE SERVER ID].live.dynatrace.com/api/v2/otlp/v1/traces \
+	-Dotel.exporter.otlp.traces.headers=Authorization="Api-Token {GENERATED ACCESS TOKEN}"  \
+	-Dotel.exporter.otlp.traces.protocol=http/protobuf \
+	-jar target/myapp-1.0-SNAPSHOT.jar
+----
+
+[NOTE]
+The `DYNATRACE_SERVER_ID` is the start part of the url when logged in, and `GENERATED_ACCESS_TOKEN` is the generated token
+
+See https://www.dynatrace.com/support/help/extend-dynatrace/opentelemetry/opentelemetry-traces/opentelemetry-ingest#expand--sample-collector-configuration[OpenTelemetry instrumentation guide] and
+https://www.dynatrace.com/support/help/extend-dynatrace/opentelemetry/opentelemetry-traces/opentelemetry-ingest/opent-java-auto#tabgroup--dynatrace-docs--without-oneagent[Automatically instrument Java applications with OpenTelemetry]
+
+== Checking Traces From Application
+In the dynatrace menu under `Applications & Microservices` select `Distributed traces`
+
+Traces sent from the application should be visible here (possibly at some delay)
