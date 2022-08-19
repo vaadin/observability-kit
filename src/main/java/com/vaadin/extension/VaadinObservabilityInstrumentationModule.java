@@ -1,6 +1,8 @@
 package com.vaadin.extension;
 
 import com.google.auto.service.AutoService;
+
+import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.JavascriptBootstrapUiInstrumentation;
 import com.vaadin.extension.instrumentation.UiInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -39,7 +41,8 @@ public class VaadinObservabilityInstrumentationModule extends InstrumentationMod
         // TypeIntrumentation for this instrumentation module
         return asList(
                 new JavascriptBootstrapUiInstrumentation(),
-                new UiInstrumentation()
+                new UiInstrumentation(),
+                new EventRpcHandlerInstrumentation()
         );
     }
 }

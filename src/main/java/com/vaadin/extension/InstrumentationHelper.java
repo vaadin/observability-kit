@@ -28,12 +28,7 @@ public class InstrumentationHelper {
             return;
         }
 
-        // Update root span name and http.route attribute to contain route template
-        List<HasElement> activeRouterTargetsChain = ui.getInternals().getActiveRouterTargetsChain();
-        HasElement routerTarget = activeRouterTargetsChain.size() > 0 ? activeRouterTargetsChain.get(0) : null;
-
-        Optional<String> routeTemplate = Optional.ofNullable(routerTarget)
-                .flatMap(component -> RouteConfiguration.forSessionScope().getTemplate(((Component)component).getClass()));
+        Optional<String> routeTemplate = getActiveRouteTemplate(ui);
 
         if (routeTemplate.isPresent()) {
             // Update root span name to contain the route.
@@ -51,5 +46,22 @@ public class InstrumentationHelper {
         // Update http.target to contain actual path with params
         String locationPath = "/" + ui.getInternals().getActiveViewLocation().getPath();
         localRootSpan.setAttribute(SemanticAttributes.HTTP_TARGET, locationPath);
+    }
+
+    /**
+     * Get the route template for the currently active view.
+     *
+     * @param ui Current UI to get active view path for.
+     * @return view template if available, else {@link Optional#empty()}
+     */
+    public static Optional<String> getActiveRouteTemplate(UI ui) {
+        // Update root span name and http.route attribute to contain route template
+        List<HasElement> activeRouterTargetsChain = ui.getInternals().getActiveRouterTargetsChain();
+        if(activeRouterTargetsChain.isEmpty()){
+            return Optional.empty();
+        }
+
+        return RouteConfiguration.forSessionScope().getTemplate(
+                ((Component) activeRouterTargetsChain.get(0)).getClass());
     }
 }
