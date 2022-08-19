@@ -44,9 +44,7 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
     // Here we are interested in the handleNode method where we already have
     // resolved some of the json.
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("handleNode").and(
-                                takesArgument(0, named("com.vaadin.flow.internal.StateNode")))
-                        .and(takesArgument(1, named("elemental.json.JsonObject"))),
+        transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$MethodAdvice");
 
     }
@@ -107,7 +105,7 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 // instead of `EventRpcHandler.handle` which leaves open that what was this about
 
                 // Set the root span name to be the event
-                LocalRootSpan.current().updateName(getActiveRouteTemplate(
+                LocalRootSpan.current().updateName("/" + getActiveRouteTemplate(
                         ((StateTree) node.getOwner()).getUI()).get() + " : event");
             }
         }
