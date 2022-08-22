@@ -22,10 +22,15 @@ version '1.0'
 
 ext {
   versions = [
+    bytebuddy: "1.12.13",
+    junit: "5.6.2",
     opentelemetry              : "1.17.0",
     opentelemetryAlpha         : "1.17.0-alpha",
     opentelemetryJavaagent     : "1.16.0",
     opentelemetryJavaagentAlpha: "1.16.0-alpha",
+    logbackClassic: "1.2.9",
+    mockito: "4.7.0",
+    servletApi: "3.0.1",
   ]
 
   deps = [
@@ -80,7 +85,7 @@ dependencies {
    NB! Only Advice (and "helper") classes of instrumentation modules can access classes from application classpath.
    See https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/main/docs/contributing/writing-instrumentation-module.md#advice-classes
    */
-  compileOnly group: 'javax.servlet', name: 'javax.servlet-api', version: '3.0.1'
+  compileOnly group: 'javax.servlet', name: 'javax.servlet-api', version: versions.servletApi
 
   /*
   This dependency is required for DemoSpanProcessor both during compile and runtime.
@@ -90,23 +95,24 @@ dependencies {
   implementation 'org.apache.commons:commons-lang3:3.11'
 
   //All dependencies below are only for tests
-  testImplementation("org.testcontainers:testcontainers:1.16.2")
-  testImplementation("com.fasterxml.jackson.core:jackson-databind:2.11.2")
-  testImplementation("com.google.protobuf:protobuf-java-util:3.12.4")
-  testImplementation("com.squareup.okhttp3:okhttp:3.12.12")
-  testImplementation("io.opentelemetry:opentelemetry-api:${versions.opentelemetry}")
-  testImplementation("io.opentelemetry.proto:opentelemetry-proto:0.16.0-alpha")
+  testImplementation("com.vaadin:flow-server")
+  testImplementation("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-semconv:${versions.opentelemetryJavaagentAlpha}")
+  testImplementation("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
+  testImplementation("org.mockito:mockito-inline:${versions.mockito}")
+  testImplementation("net.bytebuddy:byte-buddy:${versions.bytebuddy}")
+  testImplementation("net.bytebuddy:byte-buddy-agent:${versions.bytebuddy}")
+  testImplementation("javax.servlet:javax.servlet-api:${versions.servletApi}")
 
-  testImplementation("org.junit.jupiter:junit-jupiter-api:5.6.2")
-  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.6.2")
-  testRuntimeOnly("ch.qos.logback:logback-classic:1.2.3")
+  testImplementation("org.junit.jupiter:junit-jupiter-api:${versions.junit}")
+  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${versions.junit}")
+  testRuntimeOnly("ch.qos.logback:logback-classic:${versions.logbackClassic}")
 
   //Otel Java instrumentation that we use and extend during integration tests
   otel("io.opentelemetry.javaagent:opentelemetry-javaagent:${versions.opentelemetryJavaagent}")
 
   //TODO remove when start using io.opentelemetry.instrumentation.javaagent-instrumentation plugin
   add("codegen", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagentAlpha}")
-  add("codegen", "ch.qos.logback:logback-classic:1.2.3")
+  add("codegen", "ch.qos.logback:logback-classic:${versions.logbackClassic}")
   add("muzzleBootstrap", "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-annotation-support:${versions.opentelemetryJavaagentAlpha}")
   add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
   add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagentAlpha}")
@@ -139,6 +145,10 @@ tasks {
   }
 
   assemble.dependsOn(shadowJar)
+}
+
+test {
+  useJUnitPlatform()
 }
 
 muzzle {

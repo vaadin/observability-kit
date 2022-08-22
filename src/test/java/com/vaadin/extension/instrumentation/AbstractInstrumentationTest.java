@@ -1,0 +1,101 @@
+package com.vaadin.extension.instrumentation;
+
+import com.vaadin.extension.instrumentation.util.OpenTelemetryTestTools;
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.Tag;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.function.DeploymentConfiguration;
+import com.vaadin.flow.router.Location;
+import com.vaadin.flow.router.RouteConfiguration;
+import com.vaadin.flow.server.VaadinService;
+import com.vaadin.flow.server.VaadinSession;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.mockito.Mockito;
+
+import java.util.ArrayList;
+
+public abstract class AbstractInstrumentationTest {
+
+    private UI mockUI;
+
+    public UI getMockUI() {
+        return mockUI;
+    }
+
+    @BeforeAll
+    public static void setupOpenTelemetry() {
+        OpenTelemetryTestTools.ensureSetup();
+    }
+
+    @BeforeEach
+    public void resetSpans() {
+        OpenTelemetryTestTools.getSpanBuilderCapture().reset();
+        OpenTelemetryTestTools.getSpanExporter().reset();
+    }
+
+    @BeforeEach
+    public void setupMockUi() {
+        mockUI = new UI();
+
+        DeploymentConfiguration deploymentConfiguration = Mockito.mock(DeploymentConfiguration.class);
+        VaadinService service = Mockito.mock(VaadinService.class);
+        Mockito.when(service.getDeploymentConfiguration()).thenReturn(deploymentConfiguration);
+
+        VaadinSession session = Mockito.spy(new VaadinSession(service));
+        Mockito.doNothing().when(session).checkHasLock();
+        VaadinSession.setCurrent(session);
+        mockUI.getInternals().setSession(session);
+
+        RouteConfiguration.forSessionScope().setRoute("test-route", TestView.class);
+        mockUI.getInternals().showRouteTarget(new Location("test-route"), new TestView(), new ArrayList<>());
+    }
+
+    protected RootContextScope withRootContext() {
+        return new RootContextScope();
+    }
+
+    protected Span getCapturedSpan(int index) {
+        return OpenTelemetryTestTools.getSpanBuilderCapture().getSpan(index);
+    }
+
+    protected SpanData getExportedSpan(int index) {
+        return OpenTelemetryTestTools.getSpanExporter().getSpan(index);
+    }
+
+    @Tag("test-view")
+    protected static class TestView extends Component {
+    }
+
+    protected static class RootContextScope implements AutoCloseable {
+        private final Scope scope;
+        private final Instrumenter<Object, Object> rootInstrumenter;
+        private final Context rootContext;
+
+        public RootContextScope() {
+            rootInstrumenter = Instrumenter
+                    .builder(GlobalOpenTelemetry.get(),
+                            "test",
+                            RootContextScope::getRootSpanName)
+                    .newInstrumenter();
+            rootContext = rootInstrumenter.start(Context.root(), null);
+            scope = rootContext.makeCurrent();
+        }
+
+        private static String getRootSpanName(Object object) {
+            return "/";
+        }
+
+        @Override
+        public void close() {
+            scope.close();
+            rootInstrumenter.end(rootContext, null, null, null);
+        }
+    }
+}
