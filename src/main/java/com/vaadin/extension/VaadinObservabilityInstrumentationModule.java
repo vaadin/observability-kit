@@ -1,25 +1,24 @@
 package com.vaadin.extension;
 
-import com.google.auto.service.AutoService;
+import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
+import static java.util.Arrays.asList;
 
+import com.google.auto.service.AutoService;
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UiInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
-import net.bytebuddy.matcher.ElementMatcher;
-
 import java.util.List;
-
-import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
-import static java.util.Arrays.asList;
+import net.bytebuddy.matcher.ElementMatcher;
 
 @AutoService(InstrumentationModule.class)
 public class VaadinObservabilityInstrumentationModule extends InstrumentationModule {
     // The instrumentation names should reflect what is in `settings.gradle` `rootProject.name`
     public static final String INSTRUMENTATION_NAME = "vaadin-observability";
-    public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-1.0";
+    public static final String EXTENDED_NAME =
+            "opentelemetry-vaadin-observability-instrumentation-extension-1.0";
 
     public VaadinObservabilityInstrumentationModule() {
         super(INSTRUMENTATION_NAME, EXTENDED_NAME);
@@ -44,7 +43,6 @@ public class VaadinObservabilityInstrumentationModule extends InstrumentationMod
                 new AfterNavigationStateRendererInstrumentation(),
                 new UiInstrumentation(),
                 new EventRpcHandlerInstrumentation(),
-                new NavigationRpcHandlerInstrumentation()
-        );
+                new NavigationRpcHandlerInstrumentation());
     }
 }

@@ -20,3 +20,19 @@ This has the paths
 `/my-app` (the application)
 
 Also running Jaeger `jaeger-all-in-one.exe` with default settings.
+
+## Development
+
+### Linting and Formatting
+
+The project uses [spotless][https://github.com/diffplug/spotless/tree/main/plugin-gradle] for linting and formatting the code.
+
+To lint the code run:
+```
+./gradlew spotlessCheck
+```
+
+To format the code run:
+```
+./gradlew spotlessApply
+```

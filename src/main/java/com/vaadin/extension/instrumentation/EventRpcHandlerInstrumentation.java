@@ -1,6 +1,15 @@
 package com.vaadin.extension.instrumentation;
 
-import io.opentelemetry.api.GlobalOpenTelemetry;
+import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
+import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
+import static net.bytebuddy.matcher.ElementMatchers.named;
+
+import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.flow.dom.Element;
+import com.vaadin.flow.internal.StateNode;
+import com.vaadin.flow.internal.StateTree;
+import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
+import elemental.json.JsonObject;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
@@ -11,42 +20,27 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.flow.dom.Element;
-import com.vaadin.flow.internal.StateNode;
-import com.vaadin.flow.internal.StateTree;
-import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
-
-import elemental.json.JsonObject;
-import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
-import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
-import static net.bytebuddy.matcher.ElementMatchers.named;
-import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
-
 /**
- * This is a Targeted instrumentation for EventRpcHandler which
- * adds information on the element that got an action and on which view.
+ * This is a Targeted instrumentation for EventRpcHandler which adds information on the element that
+ * got an action and on which view.
  */
 public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
 
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
-        return hasClassesNamed(
-                "com.vaadin.flow.server.communication.rpc.EventRpcHandler");
+        return hasClassesNamed("com.vaadin.flow.server.communication.rpc.EventRpcHandler");
     }
 
     // This intrumentation only matches EventRpcHandler on the rpcEvent stack.
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named(
-                "com.vaadin.flow.server.communication.rpc.EventRpcHandler");
+        return named("com.vaadin.flow.server.communication.rpc.EventRpcHandler");
     }
 
     // Here we are interested in the handleNode method where we already have
     // resolved some of the json.
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("handleNode"),
-                this.getClass().getName() + "$MethodAdvice");
-
+        transformer.applyAdviceToMethod(
+                named("handleNode"), this.getClass().getName() + "$MethodAdvice");
     }
 
     @SuppressWarnings("unused")
@@ -54,22 +48,15 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
 
         @Advice.OnMethodEnter()
         public static void onEnter(
-                @Advice.This
-                EventRpcHandler eventRpcHandler,
-                @Advice.Origin("#m")
-                String methodName,
-                @Advice.Argument(0)
-                StateNode node,
-                @Advice.Argument(1)
-                JsonObject jsonObject,
-                @Advice.Local("otelSpan")
-                Span span) {
+                @Advice.This EventRpcHandler eventRpcHandler,
+                @Advice.Origin("#m") String methodName,
+                @Advice.Argument(0) StateNode node,
+                @Advice.Argument(1) JsonObject jsonObject,
+                @Advice.Local("otelSpan") Span span) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
-
-            span = tracer.spanBuilder(
-                    eventRpcHandler.getClass().getSimpleName() + "."
-                            + methodName).startSpan();
+            String spanName = eventRpcHandler.getClass().getSimpleName() + "." + methodName;
+            span = tracer.spanBuilder(spanName).startSpan();
 
             String eventType = jsonObject.getString("event");
 
@@ -90,13 +77,18 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 }
                 // If possible add active view class name as an attribute to the span
                 if (node.getOwner() instanceof StateTree) {
-                    span.setAttribute("vaadin.view",
-                            ((StateTree) node.getOwner()).getUI().getInternals()
-                                    .getActiveRouterTargetsChain().get(0)
-                                    .getClass().getSimpleName());
+                    span.setAttribute(
+                            "vaadin.view",
+                            ((StateTree) node.getOwner())
+                                    .getUI()
+                                    .getInternals()
+                                    .getActiveRouterTargetsChain()
+                                    .get(0)
+                                    .getClass()
+                                    .getSimpleName());
                 }
                 String identifier = "";
-                if(element.getText() != null && !element.getText().isEmpty()) {
+                if (element.getText() != null && !element.getText().isEmpty()) {
                     identifier = String.format("[%s]", element.getText());
                 }
                 // append event type to make span name more descriptive
@@ -105,17 +97,16 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 // instead of `EventRpcHandler.handle` which leaves open that what was this about
 
                 // Set the root span name to be the event
-                LocalRootSpan.current().updateName("/" + getActiveRouteTemplate(
-                        ((StateTree) node.getOwner()).getUI()).get() + " : event");
+                String routeName =
+                        getActiveRouteTemplate(((StateTree) node.getOwner()).getUI()).get();
+                String eventRootSpanName = String.format("/%s : event", routeName);
+                LocalRootSpan.current().updateName(eventRootSpanName);
             }
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(
-                @Advice.Thrown
-                Throwable throwable,
-                @Advice.Local("otelSpan")
-                Span span) {
+                @Advice.Thrown Throwable throwable, @Advice.Local("otelSpan") Span span) {
             if (span == null) {
                 return;
             }
@@ -129,5 +120,4 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
             span.end();
         }
     }
-
 }

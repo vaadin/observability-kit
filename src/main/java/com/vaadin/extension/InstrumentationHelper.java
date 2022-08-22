@@ -4,21 +4,20 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.RouteConfiguration;
-
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
-
 import java.util.List;
 import java.util.Optional;
 
 public class InstrumentationHelper {
 
     public static Tracer getTracer() {
-        return GlobalOpenTelemetry.getTracer("com.vaadin.observability.instrumentation", "1.0-alpha");
+        return GlobalOpenTelemetry.getTracer(
+                "com.vaadin.observability.instrumentation", "1.0-alpha");
     }
 
     public static void updateHttpRoute(UI ui) {
@@ -57,11 +56,11 @@ public class InstrumentationHelper {
     public static Optional<String> getActiveRouteTemplate(UI ui) {
         // Update root span name and http.route attribute to contain route template
         List<HasElement> activeRouterTargetsChain = ui.getInternals().getActiveRouterTargetsChain();
-        if(activeRouterTargetsChain.isEmpty()){
+        if (activeRouterTargetsChain.isEmpty()) {
             return Optional.empty();
         }
 
-        return RouteConfiguration.forSessionScope().getTemplate(
-                ((Component) activeRouterTargetsChain.get(0)).getClass());
+        return RouteConfiguration.forSessionScope()
+                .getTemplate(((Component) activeRouterTargetsChain.get(0)).getClass());
     }
 }
