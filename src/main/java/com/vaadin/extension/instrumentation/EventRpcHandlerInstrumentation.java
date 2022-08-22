@@ -93,8 +93,8 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                     identifier = String.format("[%s]", element.getText());
                 }
                 // append event type to make span name more descriptive
-                span.updateName(
-                        element.getTag() + identifier + " :: " + eventType);
+                span.updateName("Event: " + element.getTag() + identifier
+                        + " :: " + eventType);
                 // This will make for instance a click span `vaadin-button ::
                 // click` instead of `EventRpcHandler.handle` which leaves open
                 // that what was this about
