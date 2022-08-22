@@ -7,7 +7,6 @@ import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.communication.rpc.NavigationRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
