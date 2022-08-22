@@ -4,6 +4,7 @@ import com.google.auto.service.AutoService;
 
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UiInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
@@ -42,7 +43,8 @@ public class VaadinObservabilityInstrumentationModule extends InstrumentationMod
         return asList(
                 new AfterNavigationStateRendererInstrumentation(),
                 new UiInstrumentation(),
-                new EventRpcHandlerInstrumentation()
+                new EventRpcHandlerInstrumentation(),
+                new NavigationRpcHandlerInstrumentation()
         );
     }
 }
