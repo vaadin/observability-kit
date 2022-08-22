@@ -1,23 +1,24 @@
 package com.vaadin.extension;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.config.ConfigPropertySource;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
- * disable the automatic vaadin instrumentation
- * Custom distributions can supply their own default configuration by
- * implementing {@link ConfigPropertySource}.
+ * disable the automatic vaadin instrumentation Custom distributions can supply
+ * their own default configuration by implementing {@link ConfigPropertySource}.
  *
+ * <p>
  * The configuration priority, from highest to lowest is:
+ *
  * <ul>
- *     <li>system properties</li>
- *     <li>environment variables</li>
- *     <li>configuration file</li>
- *     <li>PropertySource SPI</li>
- *     <li>hard-coded defaults</li>
+ * <li>system properties
+ * <li>environment variables
+ * <li>configuration file
+ * <li>PropertySource SPI
+ * <li>hard-coded defaults
  * </ul>
  */
 @AutoService(ConfigPropertySource.class)

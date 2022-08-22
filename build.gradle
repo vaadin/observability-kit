@@ -11,7 +11,7 @@ plugins {
   See https://imperceptiblethoughts.com/shadow/ for more details about Shadow plugin.
    */
   id "com.github.johnrengelman.shadow" version "7.1.2"
-  id "com.diffplug.spotless" version "6.3.0"
+  id "com.diffplug.spotless" version "6.9.1"
 
   id "io.opentelemetry.instrumentation.muzzle-generation" version "1.16.0-alpha-SNAPSHOT"
   id "io.opentelemetry.instrumentation.muzzle-check" version "1.16.0-alpha-SNAPSHOT"
@@ -163,5 +163,13 @@ muzzle {
     module.set("servlet-api")
     versions.set("[2.2, 3.0)")
     assertInverse.set(true)
+  }
+}
+
+spotless {
+  java {
+    removeUnusedImports()
+    eclipse().configFile('eclipse/VaadinJavaConventions.xml')
+    importOrder('\\#', 'elemental', 'com.vaadin', 'com.google.gwt', '', 'java', 'javax')
   }
 }

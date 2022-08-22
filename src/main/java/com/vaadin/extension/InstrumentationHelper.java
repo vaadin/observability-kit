@@ -18,7 +18,8 @@ import java.util.Optional;
 public class InstrumentationHelper {
 
     public static Tracer getTracer() {
-        return GlobalOpenTelemetry.getTracer("com.vaadin.observability.instrumentation", "1.0-alpha");
+        return GlobalOpenTelemetry.getTracer(
+                "com.vaadin.observability.instrumentation", "1.0-alpha");
     }
 
     public static void updateHttpRoute(UI ui) {
@@ -44,20 +45,25 @@ public class InstrumentationHelper {
             localRootSpan.setAttribute(SemanticAttributes.HTTP_ROUTE, route);
         }
         // Update http.target to contain actual path with params
-        String locationPath = "/" + ui.getInternals().getActiveViewLocation().getPath();
-        localRootSpan.setAttribute(SemanticAttributes.HTTP_TARGET, locationPath);
+        String locationPath = "/"
+                + ui.getInternals().getActiveViewLocation().getPath();
+        localRootSpan.setAttribute(SemanticAttributes.HTTP_TARGET,
+                locationPath);
     }
 
     /**
      * Get the route template for the currently active view.
      *
-     * @param ui Current UI to get active view path for.
+     * @param ui
+     *            Current UI to get active view path for.
      * @return view template if available, else {@link Optional#empty()}
      */
     public static Optional<String> getActiveRouteTemplate(UI ui) {
-        // Update root span name and http.route attribute to contain route template
-        List<HasElement> activeRouterTargetsChain = ui.getInternals().getActiveRouterTargetsChain();
-        if(activeRouterTargetsChain.isEmpty()){
+        // Update root span name and http.route attribute to contain route
+        // template
+        List<HasElement> activeRouterTargetsChain = ui.getInternals()
+                .getActiveRouterTargetsChain();
+        if (activeRouterTargetsChain.isEmpty()) {
             return Optional.empty();
         }
 

@@ -18,7 +18,8 @@ public class SpanBuilderCapture {
     }
 
     public Span getSpan(int index) {
-        Assertions.assertTrue(index < spans.size(), "Not enough captured spans");
+        Assertions.assertTrue(index < spans.size(),
+                "Not enough captured spans");
         return spans.get(index);
     }
 

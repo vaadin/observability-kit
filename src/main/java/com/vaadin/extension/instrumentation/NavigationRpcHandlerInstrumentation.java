@@ -1,7 +1,11 @@
 package com.vaadin.extension.instrumentation;
 
+import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
+import static net.bytebuddy.matcher.ElementMatchers.named;
+
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.communication.rpc.NavigationRpcHandler;
+
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
@@ -11,16 +15,14 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
-import static net.bytebuddy.matcher.ElementMatchers.named;
-
 /**
- * Instruments NavigationRpcHandler in order to add a span when the handler is called
- * with a navigation message from the client. This can be a router link navigation, or
- * history navigation (back / forward button).
- * This handler is only called when using the (deprecated) V14 bootstrap mode.
+ * Instruments NavigationRpcHandler in order to add a span when the handler is
+ * called with a navigation message from the client. This can be a router link
+ * navigation, or history navigation (back / forward button). This handler is
+ * only called when using the (deprecated) V14 bootstrap mode.
  */
-public class NavigationRpcHandlerInstrumentation implements TypeInstrumentation {
+public class NavigationRpcHandlerInstrumentation
+        implements TypeInstrumentation {
 
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
@@ -28,7 +30,8 @@ public class NavigationRpcHandlerInstrumentation implements TypeInstrumentation 
                 "com.vaadin.flow.server.communication.rpc.NavigationRpcHandler");
     }
 
-    // This instrumentation only matches NavigationRpcHandler on the rpcEvent stack.
+    // This instrumentation only matches NavigationRpcHandler on the rpcEvent
+    // stack.
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.NavigationRpcHandler");
@@ -42,23 +45,20 @@ public class NavigationRpcHandlerInstrumentation implements TypeInstrumentation 
     @SuppressWarnings("unused")
     public static class MethodAdvice {
         @Advice.OnMethodEnter()
-        public static void onEnter(@Advice.This NavigationRpcHandler navigationRpcHandler,
-                                   @Advice.Origin("#m") String methodName,
-                                   @Advice.Local("otelSpan") Span span) {
+        public static void onEnter(
+                @Advice.This NavigationRpcHandler navigationRpcHandler,
+                @Advice.Origin("#m") String methodName,
+                @Advice.Local("otelSpan") Span span) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
-
-            span = tracer.spanBuilder(
-                    navigationRpcHandler.getClass().getSimpleName() + "."
-                            + methodName).startSpan();
+            String spanName = navigationRpcHandler.getClass().getSimpleName()
+                    + "." + methodName;
+            span = tracer.spanBuilder(spanName).startSpan();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(
-                @Advice.Thrown
-                Throwable throwable,
-                @Advice.Local("otelSpan")
-                Span span) {
+        public static void onExit(@Advice.Thrown Throwable throwable,
+                @Advice.Local("otelSpan") Span span) {
             if (span == null) {
                 return;
             }
