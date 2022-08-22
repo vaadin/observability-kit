@@ -6,6 +6,7 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import elemental.json.JsonObject;
 
+import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
@@ -64,10 +65,11 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
 
             String eventType = jsonObject.getString("event");
 
-            final Element element = Element.get(node);
-            span.setAttribute("vaadin.element.tag", element.getTag());
-
             if (eventType != null) {
+                ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
+                        node);
+                Element element = elementInfo.getElement();
+                span.setAttribute("vaadin.element.tag", element.getTag());
                 span.setAttribute("vaadin.event.type", eventType);
 
                 if (element.hasProperty("opened")
@@ -82,18 +84,12 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 }
                 // If possible add active view class name as an attribute to the
                 // span
-                if (node.getOwner() instanceof StateTree) {
+                if (elementInfo.getViewLabel() != null) {
                     span.setAttribute("vaadin.view",
-                            ((StateTree) node.getOwner()).getUI().getInternals()
-                                    .getActiveRouterTargetsChain().get(0)
-                                    .getClass().getSimpleName());
-                }
-                String identifier = "";
-                if (element.getText() != null && !element.getText().isEmpty()) {
-                    identifier = String.format("[%s]", element.getText());
+                            elementInfo.getViewLabel());
                 }
                 // append event type to make span name more descriptive
-                span.updateName("Event: " + element.getTag() + identifier
+                span.updateName("Event: " + elementInfo.getElementLabel()
                         + " :: " + eventType);
                 // This will make for instance a click span `vaadin-button ::
                 // click` instead of `EventRpcHandler.handle` which leaves open

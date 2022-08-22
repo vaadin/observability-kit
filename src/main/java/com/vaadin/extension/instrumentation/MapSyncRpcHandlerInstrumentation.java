@@ -56,8 +56,8 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Argument(0) StateNode node,
                 @Advice.Argument(1) JsonObject jsonObject,
                 @Advice.Local("otelSpan") Span span) {
-            final ElementInstrumentationInfo elementInfo = ElementInstrumentationInfo
-                    .create(node);
+            final ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
+                    node);
             final Element element = elementInfo.getElement();
 
             Tracer tracer = InstrumentationHelper.getTracer();
