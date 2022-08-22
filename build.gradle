@@ -168,8 +168,8 @@ muzzle {
 
 spotless {
   java {
-    importOrder()
     removeUnusedImports()
-    googleJavaFormat().aosp()
+    eclipse().configFile('eclipse/VaadinJavaConventions.xml')
+    importOrder('\\#', 'elemental', 'com.vaadin', 'com.google.gwt', '', 'java', 'javax')
   }
 }

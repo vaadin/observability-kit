@@ -5,6 +5,7 @@ import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.component.UI;
+
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
@@ -21,7 +22,8 @@ public class UiInstrumentation implements TypeInstrumentation {
     @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(
-                named("setCurrent").and(takesArgument(0, named("com.vaadin.flow.component.UI"))),
+                named("setCurrent").and(takesArgument(0,
+                        named("com.vaadin.flow.component.UI"))),
                 this.getClass().getName() + "$SetCurrentAdvice");
     }
 
