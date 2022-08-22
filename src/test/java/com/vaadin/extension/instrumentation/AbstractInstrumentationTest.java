@@ -9,6 +9,7 @@ import com.vaadin.flow.router.Location;
 import com.vaadin.flow.router.RouteConfiguration;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinSession;
+
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -44,17 +45,21 @@ public abstract class AbstractInstrumentationTest {
     public void setupMockUi() {
         mockUI = new UI();
 
-        DeploymentConfiguration deploymentConfiguration = Mockito.mock(DeploymentConfiguration.class);
+        DeploymentConfiguration deploymentConfiguration = Mockito
+                .mock(DeploymentConfiguration.class);
         VaadinService service = Mockito.mock(VaadinService.class);
-        Mockito.when(service.getDeploymentConfiguration()).thenReturn(deploymentConfiguration);
+        Mockito.when(service.getDeploymentConfiguration())
+                .thenReturn(deploymentConfiguration);
 
         VaadinSession session = Mockito.spy(new VaadinSession(service));
         Mockito.doNothing().when(session).checkHasLock();
         VaadinSession.setCurrent(session);
         mockUI.getInternals().setSession(session);
 
-        RouteConfiguration.forSessionScope().setRoute("test-route", TestView.class);
-        mockUI.getInternals().showRouteTarget(new Location("test-route"), new TestView(), new ArrayList<>());
+        RouteConfiguration.forSessionScope().setRoute("test-route",
+                TestView.class);
+        mockUI.getInternals().showRouteTarget(new Location("test-route"),
+                new TestView(), new ArrayList<>());
     }
 
     protected RootContextScope withRootContext() {
@@ -80,8 +85,7 @@ public abstract class AbstractInstrumentationTest {
 
         public RootContextScope() {
             rootInstrumenter = Instrumenter
-                    .builder(GlobalOpenTelemetry.get(),
-                            "test",
+                    .builder(GlobalOpenTelemetry.get(), "test",
                             RootContextScope::getRootSpanName)
                     .newInstrumenter();
             rootContext = rootInstrumenter.start(Context.root(), null);

@@ -1,10 +1,14 @@
 package com.vaadin.extension.instrumentation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import elemental.json.Json;
+import elemental.json.JsonObject;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
-import elemental.json.Json;
-import elemental.json.JsonObject;
+
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.trace.data.EventData;
@@ -13,8 +17,6 @@ import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
@@ -35,20 +37,20 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     public void handleNode_createsSpan() {
         component.getElement().setText("foo");
 
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                eventRpcHandlerMock,
-                "handleNode",
-                component.getElement().getNode(),
-                jsonObject,
-                null
-        );
-        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null, getCapturedSpan(0));
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
+                "handleNode", component.getElement().getNode(), jsonObject,
+                null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpan(0));
 
         SpanData span = getExportedSpan(0);
         assertEquals("test-component[foo] :: click", span.getName());
-        assertEquals("test-component", span.getAttributes().get(AttributeKey.stringKey("vaadin.element.tag")));
-        assertEquals("click", span.getAttributes().get(AttributeKey.stringKey("vaadin.event.type")));
-        assertEquals("TestView", span.getAttributes().get(AttributeKey.stringKey("vaadin.view")));
+        assertEquals("test-component", span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.element.tag")));
+        assertEquals("click", span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.event.type")));
+        assertEquals("TestView", span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.view")));
     }
 
     @Test
@@ -57,47 +59,40 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         jsonObject.put("event", "opened-changed");
         component.getElement().setProperty("opened", true);
 
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                eventRpcHandlerMock,
-                "handleNode",
-                component.getElement().getNode(),
-                jsonObject,
-                null
-        );
-        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null, getCapturedSpan(0));
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
+                "handleNode", component.getElement().getNode(), jsonObject,
+                null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpan(0));
 
         SpanData span = getExportedSpan(0);
-        assertEquals("opening", span.getAttributes().get(AttributeKey.stringKey("vaadin.state.change")));
+        assertEquals("opening", span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.state.change")));
 
         // Closed
         resetSpans();
 
         component.getElement().setProperty("opened", false);
 
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                eventRpcHandlerMock,
-                "handleNode",
-                component.getElement().getNode(),
-                jsonObject,
-                null
-        );
-        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null, getCapturedSpan(0));
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
+                "handleNode", component.getElement().getNode(), jsonObject,
+                null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpan(0));
 
         span = getExportedSpan(0);
-        assertEquals("closing", span.getAttributes().get(AttributeKey.stringKey("vaadin.state.change")));
+        assertEquals("closing", span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.state.change")));
     }
 
     @Test
     public void handleNode_updatesRootSpan() {
-        try(var ignored = withRootContext()) {
+        try (var ignored = withRootContext()) {
             EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                    eventRpcHandlerMock,
-                    "handleNode",
-                    component.getElement().getNode(),
-                    jsonObject,
-                    null
-            );
-            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null, getCapturedSpan(0));
+                    eventRpcHandlerMock, "handleNode",
+                    component.getElement().getNode(), jsonObject, null);
+            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                    getCapturedSpan(0));
         }
 
         SpanData exportedRootSpan = getExportedSpan(1);
@@ -106,15 +101,12 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
     @Test
     public void handleNodeWithException_setsErrorStatus() {
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                eventRpcHandlerMock,
-                "handleNode",
-                component.getElement().getNode(),
-                jsonObject,
-                null
-        );
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
+                "handleNode", component.getElement().getNode(), jsonObject,
+                null);
         Exception exception = new RuntimeException("test error");
-        EventRpcHandlerInstrumentation.MethodAdvice.onExit(exception, getCapturedSpan(0));
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(exception,
+                getCapturedSpan(0));
 
         SpanData span = getExportedSpan(0);
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
@@ -122,8 +114,10 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         assertEquals(1, span.getEvents().size());
         EventData eventData = span.getEvents().get(0);
-        assertEquals(RuntimeException.class.getCanonicalName(), eventData.getAttributes().get(SemanticAttributes.EXCEPTION_TYPE));
-        assertEquals("test error", eventData.getAttributes().get(SemanticAttributes.EXCEPTION_MESSAGE));
+        assertEquals(RuntimeException.class.getCanonicalName(), eventData
+                .getAttributes().get(SemanticAttributes.EXCEPTION_TYPE));
+        assertEquals("test error", eventData.getAttributes()
+                .get(SemanticAttributes.EXCEPTION_MESSAGE));
     }
 
     @Tag("test-component")

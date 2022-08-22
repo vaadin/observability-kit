@@ -39,37 +39,44 @@ public class OpenTelemetryTestTools {
         spanExporter = new TestExporter();
         spanBuilderCapture = new SpanBuilderCapture();
 
-        Resource resource = Resource.getDefault()
-                .merge(Resource.create(Attributes.of(ResourceAttributes.SERVICE_NAME, "test-service-name")));
+        Resource resource = Resource.getDefault().merge(
+                Resource.create(Attributes.of(ResourceAttributes.SERVICE_NAME,
+                        "test-service-name")));
 
         SdkTracerProvider sdkTracerProvider = SdkTracerProvider.builder()
                 .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
-                .setResource(resource)
-                .build();
+                .setResource(resource).build();
         SdkTracerProvider sdkTracerProviderSpy = Mockito.spy(sdkTracerProvider);
-        Mockito.when(sdkTracerProviderSpy.get(Mockito.anyString(), Mockito.anyString())).thenAnswer(invocation -> {
-            Tracer tracer = (Tracer) invocation.callRealMethod();
-            Tracer tracerSpy = Mockito.spy(tracer);
+        Mockito.when(sdkTracerProviderSpy.get(Mockito.anyString(),
+                Mockito.anyString())).thenAnswer(invocation -> {
+                    Tracer tracer = (Tracer) invocation.callRealMethod();
+                    Tracer tracerSpy = Mockito.spy(tracer);
 
-            Mockito.when(tracerSpy.spanBuilder(Mockito.anyString())).thenAnswer(spanBuilderInvocation -> {
-                SpanBuilder spanBuilder = (SpanBuilder) spanBuilderInvocation.callRealMethod();
-                SpanBuilder spanBuilderSpy = Mockito.spy(spanBuilder);
+                    Mockito.when(tracerSpy.spanBuilder(Mockito.anyString()))
+                            .thenAnswer(spanBuilderInvocation -> {
+                                SpanBuilder spanBuilder = (SpanBuilder) spanBuilderInvocation
+                                        .callRealMethod();
+                                SpanBuilder spanBuilderSpy = Mockito
+                                        .spy(spanBuilder);
 
-                Mockito.when(spanBuilderSpy.startSpan()).thenAnswer(startSpanInvocation -> {
-                   Span span = (Span) startSpanInvocation.callRealMethod();
-                   spanBuilderCapture.capture(span);
-                   return span;
+                                Mockito.when(spanBuilderSpy.startSpan())
+                                        .thenAnswer(startSpanInvocation -> {
+                                            Span span = (Span) startSpanInvocation
+                                                    .callRealMethod();
+                                            spanBuilderCapture.capture(span);
+                                            return span;
+                                        });
+
+                                return spanBuilderSpy;
+                            });
+
+                    return tracerSpy;
                 });
-
-                return spanBuilderSpy;
-            });
-
-            return tracerSpy;
-        });
 
         openTelemetry = OpenTelemetrySdk.builder()
                 .setTracerProvider(sdkTracerProviderSpy)
-                .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance()))
+                .setPropagators(ContextPropagators
+                        .create(W3CTraceContextPropagator.getInstance()))
                 .buildAndRegisterGlobal();
     }
 }

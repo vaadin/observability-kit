@@ -17,7 +17,8 @@ public class TestExporter implements SpanExporter {
     }
 
     public SpanData getSpan(int index) {
-        Assertions.assertTrue(index < spans.size(), "Not enough exported spans");
+        Assertions.assertTrue(index < spans.size(),
+                "Not enough exported spans");
         return spans.get(index);
     }
 
