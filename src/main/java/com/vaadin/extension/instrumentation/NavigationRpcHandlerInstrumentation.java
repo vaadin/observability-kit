@@ -62,13 +62,7 @@ public class NavigationRpcHandlerInstrumentation
             if (span == null) {
                 return;
             }
-            if (throwable != null) {
-                // This will actually mark the span as having an exception which
-                // shows on the dataUI
-                span.setStatus(StatusCode.ERROR, throwable.getMessage());
-                // Add log trace of exception.
-                span.recordException(throwable);
-            }
+            InstrumentationHelper.handleException(span, throwable);
             span.end();
         }
     }
