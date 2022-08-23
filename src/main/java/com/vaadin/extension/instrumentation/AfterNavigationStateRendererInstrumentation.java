@@ -47,7 +47,7 @@ public class AfterNavigationStateRendererInstrumentation
                 @Advice.Local("otelScope") Scope scope) {
             span = InstrumentationHelper.getTracer().spanBuilder("Navigate")
                     .startSpan();
-            InstrumentationHelper.captureSessionId(span);
+            InstrumentationHelper.captureSessionInfo(span);
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();

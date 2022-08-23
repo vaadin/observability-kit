@@ -99,11 +99,11 @@ public class InstrumentationHelper {
         }
     }
 
-    public static void captureSessionId(Span span) {
-        InstrumentationHelper.captureSessionId(span, Context.current());
+    public static void captureSessionInfo(Span span) {
+        InstrumentationHelper.captureSessionInfo(span, Context.current());
     }
 
-    public static void captureSessionId(Span span, Context context) {
+    public static void captureSessionInfo(Span span, Context context) {
         String sessionId = context.get(ContextKeys.SESSION_ID);
         if (sessionId != null && !sessionId.isEmpty()) {
             span.setAttribute("vaadin.session.id", sessionId);
