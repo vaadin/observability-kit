@@ -98,4 +98,15 @@ public class InstrumentationHelper {
             span.recordException(throwable);
         }
     }
+
+    public static void captureSessionId(Span span) {
+        InstrumentationHelper.captureSessionId(span, Context.current());
+    }
+
+    public static void captureSessionId(Span span, Context context) {
+        String sessionId = context.get(ContextKeys.SESSION_ID);
+        if (sessionId != null && !sessionId.isEmpty()) {
+            span.setAttribute("vaadin.session.id", sessionId);
+        }
+    }
 }

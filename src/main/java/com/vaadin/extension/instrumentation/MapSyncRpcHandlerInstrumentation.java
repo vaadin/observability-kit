@@ -67,6 +67,8 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
             span = tracer.spanBuilder("Sync: " + elementInfo.getElementLabel())
                     .startSpan();
 
+            InstrumentationHelper.captureSessionId(span);
+
             span.setAttribute("vaadin.element.tag", element.getTag());
             // If possible add active view class name as an attribute to the
             // span

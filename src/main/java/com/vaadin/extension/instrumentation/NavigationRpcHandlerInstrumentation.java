@@ -58,6 +58,8 @@ public class NavigationRpcHandlerInstrumentation
                     + "." + methodName;
             span = tracer.spanBuilder(spanName).startSpan();
 
+            InstrumentationHelper.captureSessionId(span);
+
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
         }

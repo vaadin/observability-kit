@@ -10,6 +10,7 @@ import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UiInstrumentation;
+import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -54,7 +55,8 @@ public class VaadinObservabilityInstrumentationModule
                       new NavigationRpcHandlerInstrumentation(),
                       new MapSyncRpcHandlerInstrumentation(),
                       new JavaScriptBootstrapHandlerInstrumentation(),
-                      new PublishedServerEventHandlerRpcHandlerInstrumentation());
+                      new PublishedServerEventHandlerRpcHandlerInstrumentation(),
+                      new VaadinServiceInstrumentation());
         // @formatter:on
     }
 }

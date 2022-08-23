@@ -66,8 +66,9 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                     + methodName;
             span = tracer.spanBuilder(spanName).startSpan();
 
-            String eventType = jsonObject.getString("event");
+            InstrumentationHelper.captureSessionId(span);
 
+            String eventType = jsonObject.getString("event");
             if (eventType != null) {
                 ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                         node);
