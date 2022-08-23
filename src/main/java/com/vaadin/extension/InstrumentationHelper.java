@@ -73,7 +73,9 @@ public class InstrumentationHelper {
 
     /**
      * Get the route template for the provided location
-     * @param location the location for which to get the route
+     * 
+     * @param location
+     *            the location for which to get the route
      * @return view template if available, else {@link Optional#empty()}
      */
     public static Optional<String> getRouteTemplateForPath(String location) {
