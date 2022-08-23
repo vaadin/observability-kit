@@ -46,7 +46,8 @@ public class VaadinObservabilityInstrumentationModule
                       new UiInstrumentation(),
                       new EventRpcHandlerInstrumentation(),
                       new NavigationRpcHandlerInstrumentation(),
-                      new MapSyncRpcHandlerInstrumentation());
+                      new MapSyncRpcHandlerInstrumentation(),
+                      new AttachExistingElementRpcHandlerInstrumentation());
         // @formatter:on
     }
 }
