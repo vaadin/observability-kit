@@ -70,4 +70,18 @@ public class InstrumentationHelper {
         return RouteConfiguration.forSessionScope().getTemplate(
                 ((Component) activeRouterTargetsChain.get(0)).getClass());
     }
+
+    /**
+     * Get the route template for the provided location
+     * @param location the location for which to get the route
+     * @return view template if available, else {@link Optional#empty()}
+     */
+    public static Optional<String> getRouteTemplateForPath(String location) {
+        RouteConfiguration routeConfiguration = RouteConfiguration
+                .forSessionScope();
+        Optional<Class<? extends Component>> route = routeConfiguration
+                .getRoute(location);
+
+        return route.flatMap(routeConfiguration::getTemplate);
+    }
 }
