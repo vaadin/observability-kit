@@ -2,8 +2,6 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import elemental.json.JsonObject;
-
 import com.vaadin.extension.instrumentation.util.OpenTelemetryTestTools;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.Component;
@@ -22,7 +20,6 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
 
     private PublishedServerEventHandlerRpcHandler publishedServerEventHandlerRpcHandler;
     TestComponent component;
-    JsonObject jsonObject;
 
     @BeforeEach
     public void setup() {

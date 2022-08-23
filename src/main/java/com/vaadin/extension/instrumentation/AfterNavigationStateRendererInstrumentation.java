@@ -43,6 +43,7 @@ public class AfterNavigationStateRendererInstrumentation
                 @Advice.Local("otelSpan") Span span) {
             span = InstrumentationHelper.getTracer().spanBuilder("Navigate")
                     .startSpan();
+            span.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

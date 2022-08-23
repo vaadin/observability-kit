@@ -72,6 +72,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
             span = tracer.spanBuilder(
                     rpcHandler.getClass().getSimpleName() + "." + methodName)
                     .startSpan();
+            span.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
@@ -98,13 +99,13 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
             Tracer tracer = InstrumentationHelper.getTracer();
 
             span = tracer
-                    .spanBuilder(
-                            "Invoke server method [" + method.getName() + "]")
+                    .spanBuilder("Invoke server method: " + method.getName())
                     .startSpan();
             span.setAttribute("vaadin.component",
                     component.getClass().getName());
 
             span.setAttribute("vaadin.callable.method", method.toString());
+            span.makeCurrent();
 
             // Set the root span name to be the event
             LocalRootSpan.current().updateName(
