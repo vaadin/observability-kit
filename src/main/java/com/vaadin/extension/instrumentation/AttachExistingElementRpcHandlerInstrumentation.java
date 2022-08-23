@@ -40,7 +40,7 @@ public class AttachExistingElementRpcHandlerInstrumentation
 
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("attachElement"),
-                this.getClass().getName() + "$MethodAdvice");
+                this.getClass().getName() + "$AttachElementAdvice");
     }
 
     @SuppressWarnings("unused")
