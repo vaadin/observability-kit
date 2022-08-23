@@ -90,7 +90,6 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Argument(0) Component component,
                 @Advice.Argument(1) Method method,
-                @Advice.Argument(3) int promiseId,
                 @Advice.Local("otelSpan") Span span) {
             if (method.getName().equals("connectClient")) {
                 return;
@@ -103,7 +102,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                             "Invoke server method [" + method.getName() + "]")
                     .startSpan();
             span.setAttribute("vaadin.component",
-                    component.getClass().getCanonicalName());
+                    component.getClass().getName());
 
             span.setAttribute("vaadin.callable.method", method.toString());
 
