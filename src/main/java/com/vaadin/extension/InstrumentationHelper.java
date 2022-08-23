@@ -79,7 +79,8 @@ public class InstrumentationHelper {
      *            the location for which to get the route
      * @return view template if available, else {@link Optional#empty()}
      */
-    public static Optional<String> getRouteTemplateForPath(String location) {
+    public static Optional<String> getRouteTemplateForLocation(
+            String location) {
         RouteConfiguration routeConfiguration = RouteConfiguration
                 .forSessionScope();
         Optional<Class<? extends Component>> route = routeConfiguration

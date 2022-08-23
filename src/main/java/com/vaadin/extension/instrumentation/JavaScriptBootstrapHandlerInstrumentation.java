@@ -61,7 +61,7 @@ public class JavaScriptBootstrapHandlerInstrumentation
                 String location = request.getParameter(
                         ApplicationConstants.REQUEST_LOCATION_PARAMETER);
                 String route = "/" + InstrumentationHelper
-                        .getRouteTemplateForPath(location).orElse("");
+                        .getRouteTemplateForLocation(location).orElse("");
 
                 // Need to use HttpRouteHolder.updateHttpRoute here, it seems
                 // otherwise this gets overwritten by another instrumentation
