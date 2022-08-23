@@ -54,6 +54,22 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
+    public void handleNode_componentWithId_idUsedInSpan() {
+        component.setId("id");
+        component.getElement().setText("foo");
+
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
+                "handleNode", component.getElement().getNode(), jsonObject,
+                null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpan(0));
+
+        SpanData span = getExportedSpan(0);
+        assertEquals("Event: test-component[id='id'] :: click", span.getName(),
+                "Id should be chosen over text");
+    }
+
+    @Test
     public void handleNodeWithOpenedChangedEvent_addsOpenedChangedState() {
         // Opened
         jsonObject.put("event", "opened-changed");
