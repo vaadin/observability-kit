@@ -3,10 +3,7 @@ package com.vaadin.extension;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static java.util.Arrays.asList;
 
-import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
-import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.UiInstrumentation;
+import com.vaadin.extension.instrumentation.*;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -48,7 +45,8 @@ public class VaadinObservabilityInstrumentationModule
         return asList(new AfterNavigationStateRendererInstrumentation(),
                       new UiInstrumentation(),
                       new EventRpcHandlerInstrumentation(),
-                      new NavigationRpcHandlerInstrumentation());
+                      new NavigationRpcHandlerInstrumentation(),
+                      new MapSyncRpcHandlerInstrumentation());
         // @formatter:on
     }
 }

@@ -44,7 +44,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
                 getCapturedSpan(0));
 
         SpanData span = getExportedSpan(0);
-        assertEquals("test-component[foo] :: click", span.getName());
+        assertEquals("Event: test-component[foo] :: click", span.getName());
         assertEquals("test-component", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.element.tag")));
         assertEquals("click", span.getAttributes()
