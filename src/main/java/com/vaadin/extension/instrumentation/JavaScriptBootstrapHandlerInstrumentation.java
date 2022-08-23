@@ -40,12 +40,12 @@ public class JavaScriptBootstrapHandlerInstrumentation
 
     @Override
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("createAndInitUI"),
-                this.getClass().getName() + "$CreateAndInitUiAdvice");
+        transformer.applyAdviceToMethod(named("synchronizedHandleRequest"),
+                this.getClass().getName() + "$SynchronizedHandleRequestAdvice");
     }
 
     @SuppressWarnings("unused")
-    public static class CreateAndInitUiAdvice {
+    public static class SynchronizedHandleRequestAdvice {
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter(@Advice.Argument(1) VaadinRequest request,

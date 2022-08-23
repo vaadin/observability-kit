@@ -22,14 +22,14 @@ class JavaScriptBootstrapHandlerInstrumentationTest
     }
 
     @Test
-    public void createAndInitUI_createsSpan() {
+    public void synchronizedHandleRequest_createsSpan() {
         Mockito.when(request
                 .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
                 .thenReturn("test-route");
 
-        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+        JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
                 .onEnter(request, null);
-        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+        JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
                 .onExit(null, getCapturedSpan(0));
 
         SpanData span = getExportedSpan(0);
@@ -37,15 +37,15 @@ class JavaScriptBootstrapHandlerInstrumentationTest
     }
 
     @Test
-    public void createAndInitUI_updatesRootSpan() {
+    public void synchronizedHandleRequest_updatesRootSpan() {
         Mockito.when(request
                 .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
                 .thenReturn("test-route");
 
         try (var ignored = withRootContext()) {
-            JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+            JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
                     .onEnter(request, null);
-            JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+            JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
                     .onExit(null, getCapturedSpan(0));
         }
 
@@ -56,15 +56,15 @@ class JavaScriptBootstrapHandlerInstrumentationTest
     }
 
     @Test
-    public void createAndInitUIWithException_setsErrorStatus() {
+    public void synchronizedHandleRequest_withException_setsErrorStatus() {
         Mockito.when(request
                 .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
                 .thenReturn("test-route");
 
-        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+        JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
                 .onEnter(request, null);
         Exception exception = new RuntimeException("test error");
-        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+        JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
                 .onExit(exception, getCapturedSpan(0));
 
         SpanData span = getExportedSpan(0);
