@@ -9,7 +9,8 @@ import java.io.InputStream;
 import java.net.URL;
 
 public class MockVaadinService extends VaadinService {
-    private final RouteRegistry routeRegistry = Mockito.mock(RouteRegistry.class);
+    private final RouteRegistry routeRegistry = Mockito
+            .mock(RouteRegistry.class);
     private final DeploymentConfiguration deploymentConfiguration = Mockito
             .mock(DeploymentConfiguration.class);
 

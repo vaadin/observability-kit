@@ -48,17 +48,10 @@ public class JavaScriptBootstrapHandlerInstrumentation
     public static class CreateAndInitUiAdvice {
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter(@Advice.Local("otelSpan") Span span) {
+        public static void onEnter(@Advice.Argument(1) VaadinRequest request,
+                @Advice.Local("otelSpan") Span span) {
             span = InstrumentationHelper.getTracer()
                     .spanBuilder("JavaScript Bootstrap").startSpan();
-        }
-
-        @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(@Advice.Argument(1) VaadinRequest request,
-                @Advice.Local("otelSpan") Span span) {
-            if (span == null) {
-                return;
-            }
 
             // Rewrite root span to contain route, as bootstrap request is
             // always against application root with a location parameter
@@ -78,6 +71,15 @@ public class JavaScriptBootstrapHandlerInstrumentation
                 String rootSpanName = route + " : JavaScript Bootstrap";
                 localRootSpan.updateName(rootSpanName);
             }
+        }
+
+        @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
+        public static void onExit(@Advice.Thrown Throwable throwable,
+                @Advice.Local("otelSpan") Span span) {
+            if (span == null) {
+                return;
+            }
+            InstrumentationHelper.handleException(span, throwable);
 
             span.end();
         }

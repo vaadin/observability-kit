@@ -27,10 +27,10 @@ class JavaScriptBootstrapHandlerInstrumentationTest
                 .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
                 .thenReturn("test-route");
 
-            JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
-                    .onEnter(null);
-            JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
-                    .onExit(request, getCapturedSpan(0));
+        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+                .onEnter(request, null);
+        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+                .onExit(null, getCapturedSpan(0));
 
         SpanData span = getExportedSpan(0);
         assertEquals("JavaScript Bootstrap", span.getName());
@@ -44,14 +44,30 @@ class JavaScriptBootstrapHandlerInstrumentationTest
 
         try (var ignored = withRootContext()) {
             JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
-                    .onEnter(null);
+                    .onEnter(request, null);
             JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
-                    .onExit(request, getCapturedSpan(0));
+                    .onExit(null, getCapturedSpan(0));
         }
 
         SpanData rootSpan = getExportedSpan(1);
         assertEquals("/test-route : JavaScript Bootstrap", rootSpan.getName());
         assertEquals("/test-route",
                 rootSpan.getAttributes().get(SemanticAttributes.HTTP_ROUTE));
+    }
+
+    @Test
+    public void createAndInitUIWithException_setsErrorStatus() {
+        Mockito.when(request
+                .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
+                .thenReturn("test-route");
+
+        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+                .onEnter(request, null);
+        Exception exception = new RuntimeException("test error");
+        JavaScriptBootstrapHandlerInstrumentation.CreateAndInitUiAdvice
+                .onExit(exception, getCapturedSpan(0));
+
+        SpanData span = getExportedSpan(0);
+        assertSpanHasException(span, exception);
     }
 }
