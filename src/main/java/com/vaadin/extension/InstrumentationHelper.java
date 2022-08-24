@@ -7,6 +7,7 @@ import com.vaadin.flow.router.RouteConfiguration;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
@@ -69,5 +70,15 @@ public class InstrumentationHelper {
 
         return RouteConfiguration.forSessionScope().getTemplate(
                 ((Component) activeRouterTargetsChain.get(0)).getClass());
+    }
+
+    public static void handleException(Span span, Throwable throwable) {
+        if (throwable != null) {
+            // This will actually mark the span as having an exception which
+            // shows on the dataUI
+            span.setStatus(StatusCode.ERROR, throwable.getMessage());
+            // Add log trace of exception.
+            span.recordException(throwable);
+        }
     }
 }
