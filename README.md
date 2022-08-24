@@ -36,3 +36,22 @@ To format the code run:
 ```
 ./gradlew spotlessApply
 ```
+
+### Running TomCat with the agent
+
+Tomcat on windows add the file `{tomcat}\bin\setenv.bat` with the content
+
+```shell
+set  CATALINA_OPTS=%CATALINA_OPTS% -javaagent:C:\PATH_TO\opentelemetry-javaagent.jar
+set  OTEL_METRICS_EXPORTER=none
+set  OTEL_TRACES_EXPORTER=jaeger
+set  OTEL.EXPORTER.JAEGER.ENDPOINT=http://localhost:14250
+```
+
+for linux/unix the file is `{tomcat}/bin/setenv.sh` with the content
+```shell
+export CATALINA_OPTS="$CATALINA_OPTS -javaagent:/PATH_TO/opentelemetry-javaagent.jar"
+export OTEL_METRICS_EXPORTER=none
+export OTEL_TRACES_EXPORTER=jaeger
+export OTEL.EXPORTER.JAEGER.ENDPOINT=http://localhost:14250
+```
