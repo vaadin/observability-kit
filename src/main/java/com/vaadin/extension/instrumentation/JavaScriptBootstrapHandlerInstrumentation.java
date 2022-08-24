@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation;
 
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
@@ -9,6 +10,7 @@ import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
@@ -49,7 +51,8 @@ public class JavaScriptBootstrapHandlerInstrumentation
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter(@Advice.Argument(1) VaadinRequest request,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
             span = InstrumentationHelper.getTracer()
                     .spanBuilder("JavaScript Bootstrap").startSpan();
 
@@ -71,11 +74,18 @@ public class JavaScriptBootstrapHandlerInstrumentation
                 String rootSpanName = route + " : JavaScript Bootstrap";
                 localRootSpan.updateName(rootSpanName);
             }
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }

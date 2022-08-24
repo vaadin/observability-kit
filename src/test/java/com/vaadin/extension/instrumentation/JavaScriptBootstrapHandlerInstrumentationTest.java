@@ -28,9 +28,9 @@ class JavaScriptBootstrapHandlerInstrumentationTest
                 .thenReturn("test-route");
 
         JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
-                .onEnter(request, null);
+                .onEnter(request, null, null);
         JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
-                .onExit(null, getCapturedSpan(0));
+                .onExit(null, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("JavaScript Bootstrap", span.getName());
@@ -44,9 +44,9 @@ class JavaScriptBootstrapHandlerInstrumentationTest
 
         try (var ignored = withRootContext()) {
             JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
-                    .onEnter(request, null);
+                    .onEnter(request, null, null);
             JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
-                    .onExit(null, getCapturedSpan(0));
+                    .onExit(null, getCapturedSpan(0), null);
         }
 
         SpanData rootSpan = getExportedSpan(1);
@@ -62,10 +62,10 @@ class JavaScriptBootstrapHandlerInstrumentationTest
                 .thenReturn("test-route");
 
         JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
-                .onEnter(request, null);
+                .onEnter(request, null, null);
         Exception exception = new RuntimeException("test error");
         JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
-                .onExit(exception, getCapturedSpan(0));
+                .onExit(exception, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertSpanHasException(span, exception);
