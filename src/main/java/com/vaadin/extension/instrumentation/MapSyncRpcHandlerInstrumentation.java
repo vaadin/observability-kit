@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation;
 
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
@@ -12,8 +13,9 @@ import com.vaadin.flow.internal.StateNode;
 import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
@@ -55,7 +57,8 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Origin("#m") String methodName,
                 @Advice.Argument(0) StateNode node,
                 @Advice.Argument(1) JsonObject jsonObject,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
             final ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                     node);
             final Element element = elementInfo.getElement();
@@ -63,27 +66,29 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
             Tracer tracer = InstrumentationHelper.getTracer();
             span = tracer.spanBuilder("Sync: " + elementInfo.getElementLabel())
                     .startSpan();
+
             span.setAttribute("vaadin.element.tag", element.getTag());
             // If possible add active view class name as an attribute to the
             // span
             if (elementInfo.getViewLabel() != null) {
                 span.setAttribute("vaadin.view", elementInfo.getViewLabel());
             }
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }
-            if (throwable != null) {
-                // This will actually mark the span as having an exception which
-                // shows on the dataUI
-                span.setStatus(StatusCode.ERROR, throwable.getMessage());
-                // Add log trace of exception.
-                span.recordException(throwable);
-            }
+            InstrumentationHelper.handleException(span, throwable);
             span.end();
         }
     }
