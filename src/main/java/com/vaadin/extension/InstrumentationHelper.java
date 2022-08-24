@@ -46,6 +46,19 @@ public class InstrumentationHelper {
         return span;
     }
 
+    /**
+     * Ends the provided span. If throwable is not null, then the error message
+     * and stacktrace will be added to the span, and the span status is set to
+     * {@link StatusCode#ERROR}. If a scope is provided, then the scope will be
+     * closed as well.
+     *
+     * @param span
+     *            the span to end
+     * @param throwable
+     *            the throwable to record, or null
+     * @param scope
+     *            the scope to close, or null
+     */
     public static void endSpan(Span span, Throwable throwable, Scope scope) {
         if (scope != null) {
             scope.close();
