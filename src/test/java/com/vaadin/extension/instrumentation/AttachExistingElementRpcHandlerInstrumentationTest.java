@@ -37,9 +37,9 @@ class AttachExistingElementRpcHandlerInstrumentationTest
     public void attachElement_createsSpan() {
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
                 .onEnter(attachExistingElementRpcHandler, "attachElement",
-                        feature, attachedElement.getNode(), null);
+                        feature, attachedElement.getNode(), null, null);
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
-                .onExit(null, getCapturedSpan(0));
+                .onExit(null, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("Attach existing element: attached-element",
@@ -56,10 +56,10 @@ class AttachExistingElementRpcHandlerInstrumentationTest
     public void attachElementWithException_setsErrorStatus() {
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
                 .onEnter(attachExistingElementRpcHandler, "attachElement",
-                        feature, attachedElement.getNode(), null);
+                        feature, attachedElement.getNode(), null, null);
         Exception exception = new RuntimeException("test error");
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
-                .onExit(exception, getCapturedSpan(0));
+                .onExit(exception, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         this.assertSpanHasException(span, exception);

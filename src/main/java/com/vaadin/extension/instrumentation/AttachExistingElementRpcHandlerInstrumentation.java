@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation;
 
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
@@ -10,8 +11,9 @@ import com.vaadin.flow.internal.nodefeature.AttachExistingElementFeature;
 import com.vaadin.flow.server.communication.rpc.AttachExistingElementRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
@@ -51,7 +53,8 @@ public class AttachExistingElementRpcHandlerInstrumentation
                 @Advice.Origin("#m") String methodName,
                 @Advice.Argument(0) AttachExistingElementFeature feature,
                 @Advice.Argument(3) StateNode node,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
             // Info for the element that is being attached
@@ -73,21 +76,23 @@ public class AttachExistingElementRpcHandlerInstrumentation
             if (elementInfo.getViewLabel() != null) {
                 span.setAttribute("vaadin.view", elementInfo.getViewLabel());
             }
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }
-            if (throwable != null) {
-                // This will actually mark the span as having an exception which
-                // shows on the dataUI
-                span.setStatus(StatusCode.ERROR, throwable.getMessage());
-                // Add log trace of exception.
-                span.recordException(throwable);
-            }
+
+            InstrumentationHelper.handleException(span, throwable);
             span.end();
         }
     }
