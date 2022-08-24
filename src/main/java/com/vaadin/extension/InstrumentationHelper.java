@@ -12,6 +12,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 
@@ -43,6 +44,18 @@ public class InstrumentationHelper {
         }
 
         return span;
+    }
+
+    public static void endSpan(Span span, Throwable throwable, Scope scope) {
+        if (scope != null) {
+            scope.close();
+        }
+        if (throwable != null) {
+            handleException(span, throwable);
+        }
+        if (span != null) {
+            span.end();
+        }
     }
 
     public static void updateHttpRoute(UI ui) {
