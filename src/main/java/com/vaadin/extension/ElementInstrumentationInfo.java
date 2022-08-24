@@ -5,6 +5,8 @@ import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
 import com.vaadin.flow.internal.StateTree;
 
+import java.util.Optional;
+
 /**
  * Provides common information about a Flow DOM node that can be used in
  * instrumentations
@@ -48,10 +50,7 @@ public class ElementInstrumentationInfo {
         this.node = node;
         element = Element.get(node);
 
-        String identifier = "";
-        if (element.getText() != null && !element.getText().isEmpty()) {
-            identifier = String.format("[%s]", element.getText());
-        }
+        String identifier = getIdentifier();
         elementLabel = element.getTag() + identifier;
 
         // If possible add info for active view class
@@ -62,5 +61,24 @@ public class ElementInstrumentationInfo {
                     .getInternals().getActiveRouterTargetsChain().get(0);
             viewLabel = view.getClass().getSimpleName();
         }
+    }
+
+    /**
+     * Get the most informative identifier for the handled element.
+     * 
+     * @return most informative identifier
+     */
+    private String getIdentifier() {
+        String identifier = "";
+
+        final Optional<Component> component = element.getComponent();
+        if (component.isPresent() && component.get().getId().isPresent()) {
+            identifier = String.format("[id='%s']",
+                    component.get().getId().get());
+        } else if (element.getText() != null && !element.getText().isEmpty()) {
+            identifier = String.format("[%s]", element.getText());
+        }
+
+        return identifier;
     }
 }
