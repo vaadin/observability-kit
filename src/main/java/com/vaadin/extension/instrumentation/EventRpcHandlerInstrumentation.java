@@ -15,7 +15,6 @@ import com.vaadin.flow.internal.StateTree;
 import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
@@ -61,13 +60,11 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
-            Tracer tracer = InstrumentationHelper.getTracer();
             String spanName = eventRpcHandler.getClass().getSimpleName() + "."
                     + methodName;
-            span = tracer.spanBuilder(spanName).startSpan();
+            span = InstrumentationHelper.startSpan(spanName);
 
             String eventType = jsonObject.getString("event");
-
             if (eventType != null) {
                 ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                         node);

@@ -51,6 +51,8 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
                 .get(AttributeKey.stringKey("vaadin.event.type")));
         assertEquals("TestView", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.view")));
+        assertEquals(getMockSessionId(), span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.session.id")));
     }
 
     @Test

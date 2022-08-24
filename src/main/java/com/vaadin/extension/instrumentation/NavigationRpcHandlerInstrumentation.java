@@ -8,7 +8,6 @@ import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.communication.rpc.NavigationRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
@@ -53,10 +52,9 @@ public class NavigationRpcHandlerInstrumentation
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
-            Tracer tracer = InstrumentationHelper.getTracer();
             String spanName = navigationRpcHandler.getClass().getSimpleName()
                     + "." + methodName;
-            span = tracer.spanBuilder(spanName).startSpan();
+            span = InstrumentationHelper.startSpan(spanName);
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
