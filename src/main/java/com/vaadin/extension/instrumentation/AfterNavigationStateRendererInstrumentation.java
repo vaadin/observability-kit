@@ -45,8 +45,7 @@ public class AfterNavigationStateRendererInstrumentation
         public static void onEnter(@Advice.Argument(0) NavigationEvent event,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            span = InstrumentationHelper.getTracer().spanBuilder("Navigate")
-                    .startSpan();
+            span = InstrumentationHelper.startSpan("Navigate");
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();

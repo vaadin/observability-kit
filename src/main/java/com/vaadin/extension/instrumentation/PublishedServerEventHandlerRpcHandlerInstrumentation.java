@@ -11,7 +11,6 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.server.communication.rpc.PublishedServerEventHandlerRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
@@ -71,11 +70,9 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
-            Tracer tracer = InstrumentationHelper.getTracer();
-
-            span = tracer.spanBuilder(
-                    rpcHandler.getClass().getSimpleName() + "." + methodName)
-                    .startSpan();
+            String spanName = rpcHandler.getClass().getSimpleName() + "."
+                    + methodName;
+            span = InstrumentationHelper.startSpan(spanName);
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
@@ -107,16 +104,11 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                 return;
             }
 
-            Tracer tracer = InstrumentationHelper.getTracer();
-
-            span = tracer
-                    .spanBuilder(String.format("Invoke server method: %s.%s",
-                            component.getClass().getSimpleName(),
-                            method.getName()))
-                    .startSpan();
+            String spanName = String.format("Invoke server method: %s.%s",
+                    component.getClass().getSimpleName(), method.getName());
+            span = InstrumentationHelper.startSpan(spanName);
             span.setAttribute("vaadin.component",
                     component.getClass().getName());
-
             span.setAttribute("vaadin.callable.method", method.toString());
 
             Context context = currentContext().with(span);

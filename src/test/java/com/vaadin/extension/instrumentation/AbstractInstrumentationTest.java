@@ -2,6 +2,7 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.vaadin.extension.ContextKeys;
 import com.vaadin.extension.instrumentation.util.MockVaadinService;
 import com.vaadin.extension.instrumentation.util.OpenTelemetryTestTools;
 import com.vaadin.flow.component.Component;
@@ -21,6 +22,7 @@ import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.opentelemetry.sdk.trace.data.EventData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.mockito.Mockito;
@@ -30,9 +32,14 @@ import java.util.ArrayList;
 public abstract class AbstractInstrumentationTest {
 
     private UI mockUI;
+    private Scope sessionScope;
 
     public UI getMockUI() {
         return mockUI;
+    }
+
+    public String getMockSessionId() {
+        return "mock-session-id";
     }
 
     @BeforeAll
@@ -61,6 +68,17 @@ public abstract class AbstractInstrumentationTest {
                 TestView.class);
         mockUI.getInternals().showRouteTarget(new Location("test-route"),
                 new TestView(), new ArrayList<>());
+    }
+
+    @BeforeEach
+    public void openSessionContext() {
+        sessionScope = Context.current()
+                .with(ContextKeys.SESSION_ID, getMockSessionId()).makeCurrent();
+    }
+
+    @AfterEach
+    public void closeSessionContext() {
+        sessionScope.close();
     }
 
     protected RootContextScope withRootContext() {

@@ -1,5 +1,7 @@
 package com.vaadin.extension;
 
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
@@ -21,6 +23,26 @@ public class InstrumentationHelper {
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(
                 "com.vaadin.observability.instrumentation", "1.0-alpha");
+    }
+
+    /**
+     * Creates and starts a new span with the provided name. Also adds common
+     * attributes provided by Vaadin contexts.
+     *
+     * @param spanName
+     *            the name of the span
+     * @return the new span
+     */
+    public static Span startSpan(String spanName) {
+        Span span = getTracer().spanBuilder(spanName).startSpan();
+        Context context = currentContext();
+
+        String sessionId = context.get(ContextKeys.SESSION_ID);
+        if (sessionId != null && !sessionId.isEmpty()) {
+            span.setAttribute("vaadin.session.id", sessionId);
+        }
+
+        return span;
     }
 
     public static void updateHttpRoute(UI ui) {

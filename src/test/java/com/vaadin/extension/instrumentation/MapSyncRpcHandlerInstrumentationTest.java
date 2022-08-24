@@ -48,6 +48,8 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
                 .get(AttributeKey.stringKey("vaadin.element.tag")));
         assertEquals("TestView", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.view")));
+        assertEquals(getMockSessionId(), span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.session.id")));
     }
 
     @Test

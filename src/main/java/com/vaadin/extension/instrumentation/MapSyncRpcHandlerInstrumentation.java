@@ -13,7 +13,6 @@ import com.vaadin.flow.internal.StateNode;
 import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
@@ -63,10 +62,8 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                     node);
             final Element element = elementInfo.getElement();
 
-            Tracer tracer = InstrumentationHelper.getTracer();
-            span = tracer.spanBuilder("Sync: " + elementInfo.getElementLabel())
-                    .startSpan();
-
+            String spanName = "Sync: " + elementInfo.getElementLabel();
+            span = InstrumentationHelper.startSpan(spanName);
             span.setAttribute("vaadin.element.tag", element.getTag());
             // If possible add active view class name as an attribute to the
             // span
