@@ -39,9 +39,9 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
                 "handleNode", component.getElement().getNode(), jsonObject,
-                null);
+                null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                getCapturedSpan(0));
+                getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("Event: test-component[foo] :: click", span.getName());
@@ -54,6 +54,22 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
+    public void handleNode_componentWithId_idUsedInSpan() {
+        component.setId("id");
+        component.getElement().setText("foo");
+
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
+                "handleNode", component.getElement().getNode(), jsonObject,
+                null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpan(0));
+
+        SpanData span = getExportedSpan(0);
+        assertEquals("Event: test-component[id='id'] :: click", span.getName(),
+                "Id should be chosen over text");
+    }
+
+    @Test
     public void handleNodeWithOpenedChangedEvent_addsOpenedChangedState() {
         // Opened
         jsonObject.put("event", "opened-changed");
@@ -61,9 +77,9 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
                 "handleNode", component.getElement().getNode(), jsonObject,
-                null);
+                null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                getCapturedSpan(0));
+                getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("opening", span.getAttributes()
@@ -76,9 +92,9 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
                 "handleNode", component.getElement().getNode(), jsonObject,
-                null);
+                null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                getCapturedSpan(0));
+                getCapturedSpan(0), null);
 
         span = getExportedSpan(0);
         assertEquals("closing", span.getAttributes()
@@ -90,9 +106,9 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         try (var ignored = withRootContext()) {
             EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
                     eventRpcHandlerMock, "handleNode",
-                    component.getElement().getNode(), jsonObject, null);
+                    component.getElement().getNode(), jsonObject, null, null);
             EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                    getCapturedSpan(0));
+                    getCapturedSpan(0), null);
         }
 
         SpanData exportedRootSpan = getExportedSpan(1);
@@ -103,10 +119,10 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     public void handleNodeWithException_setsErrorStatus() {
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
                 "handleNode", component.getElement().getNode(), jsonObject,
-                null);
+                null, null);
         Exception exception = new RuntimeException("test error");
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(exception,
-                getCapturedSpan(0));
+                getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());

@@ -1,6 +1,7 @@
 package com.vaadin.extension.instrumentation;
 
 import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
@@ -14,8 +15,9 @@ import com.vaadin.flow.internal.StateTree;
 import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
@@ -56,7 +58,8 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Origin("#m") String methodName,
                 @Advice.Argument(0) StateNode node,
                 @Advice.Argument(1) JsonObject jsonObject,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
             String spanName = eventRpcHandler.getClass().getSimpleName() + "."
@@ -102,21 +105,22 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                         routeName);
                 LocalRootSpan.current().updateName(eventRootSpanName);
             }
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }
-            if (throwable != null) {
-                // This will actually mark the span as having an exception which
-                // shows on the dataUI
-                span.setStatus(StatusCode.ERROR, throwable.getMessage());
-                // Add log trace of exception.
-                span.recordException(throwable);
-            }
+            InstrumentationHelper.handleException(span, throwable);
             span.end();
         }
     }
