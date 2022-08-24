@@ -50,10 +50,8 @@ public class InstrumentationHelper {
         if (scope != null) {
             scope.close();
         }
-        if (throwable != null) {
-            handleException(span, throwable);
-        }
         if (span != null) {
+            handleException(span, throwable);
             span.end();
         }
     }
