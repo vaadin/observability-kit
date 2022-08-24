@@ -72,6 +72,23 @@ public class InstrumentationHelper {
                 ((Component) activeRouterTargetsChain.get(0)).getClass());
     }
 
+    /**
+     * Get the route template for the provided location
+     *
+     * @param location
+     *            the location for which to get the route
+     * @return view template if available, else {@link Optional#empty()}
+     */
+    public static Optional<String> getRouteTemplateForLocation(
+            String location) {
+        RouteConfiguration routeConfiguration = RouteConfiguration
+                .forSessionScope();
+        Optional<Class<? extends Component>> route = routeConfiguration
+                .getRoute(location);
+
+        return route.flatMap(routeConfiguration::getTemplate);
+    }
+
     public static void handleException(Span span, Throwable throwable) {
         if (throwable != null) {
             // This will actually mark the span as having an exception which

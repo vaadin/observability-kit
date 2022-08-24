@@ -2,11 +2,11 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.vaadin.extension.instrumentation.util.MockVaadinService;
 import com.vaadin.extension.instrumentation.util.OpenTelemetryTestTools;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.function.DeploymentConfiguration;
 import com.vaadin.flow.router.Location;
 import com.vaadin.flow.router.RouteConfiguration;
 import com.vaadin.flow.server.VaadinService;
@@ -50,11 +50,7 @@ public abstract class AbstractInstrumentationTest {
     public void setupMockUi() {
         mockUI = new UI();
 
-        DeploymentConfiguration deploymentConfiguration = Mockito
-                .mock(DeploymentConfiguration.class);
-        VaadinService service = Mockito.mock(VaadinService.class);
-        Mockito.when(service.getDeploymentConfiguration())
-                .thenReturn(deploymentConfiguration);
+        VaadinService service = new MockVaadinService();
 
         VaadinSession session = Mockito.spy(new VaadinSession(service));
         Mockito.doNothing().when(session).checkHasLock();
