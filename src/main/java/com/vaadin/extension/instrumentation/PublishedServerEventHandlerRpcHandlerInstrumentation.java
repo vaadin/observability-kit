@@ -1,6 +1,7 @@
 package com.vaadin.extension.instrumentation;
 
 import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
@@ -11,6 +12,8 @@ import com.vaadin.flow.server.communication.rpc.PublishedServerEventHandlerRpcHa
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
@@ -65,19 +68,29 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
         public static void onEnter(
                 @Advice.This PublishedServerEventHandlerRpcHandler rpcHandler,
                 @Advice.Origin("#m") String methodName,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
 
             span = tracer.spanBuilder(
                     rpcHandler.getClass().getSimpleName() + "." + methodName)
                     .startSpan();
-            span.makeCurrent();
+
+            Context parentContext = currentContext();
+            context = parentContext.with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }
@@ -91,7 +104,9 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Argument(0) Component component,
                 @Advice.Argument(1) Method method,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
             if (method.getName().equals("connectClient")) {
                 return;
             }
@@ -105,7 +120,10 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                     component.getClass().getName());
 
             span.setAttribute("vaadin.callable.method", method.toString());
-            span.makeCurrent();
+
+            Context parentContext = currentContext();
+            context = parentContext.with(span);
+            scope = context.makeCurrent();
 
             // Set the root span name to be the event
             LocalRootSpan.current().updateName(
@@ -115,7 +133,12 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }

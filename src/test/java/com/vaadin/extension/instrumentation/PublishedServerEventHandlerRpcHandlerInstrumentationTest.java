@@ -33,9 +33,9 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
     public void handleNode_eventHandlerStartsSpan() {
         PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
                 .onEnter(publishedServerEventHandlerRpcHandler, "handleNode",
-                        null);
+                        null,null,null);
         PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
-                .onExit(null, getCapturedSpan(0));
+                .onExit(null, getCapturedSpan(0),null,null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("PublishedServerEventHandlerRpcHandler.handleNode",
@@ -48,7 +48,7 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
 
         PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
                 .onEnter(component,
-                        TestComponent.class.getMethod("connectClient"), null);
+                        TestComponent.class.getMethod("connectClient"), null,null,null);
 
         Assertions.assertTrue(
                 OpenTelemetryTestTools.getSpanBuilderCapture().getSpans()
@@ -62,13 +62,13 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
 
         PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
                 .onEnter(component,
-                        TestComponent.class.getMethod("clientEvent"), null);
+                        TestComponent.class.getMethod("clientEvent"), null,null,null);
 
         PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
-                .onExit(null, getCapturedSpan(0));
+                .onExit(null, getCapturedSpan(0),null,null);
 
         SpanData span = getExportedSpan(0);
-        assertEquals("Invoke server method [clientEvent]", span.getName());
+        assertEquals("Invoke server method: clientEvent", span.getName());
         assertEquals(
                 "com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentationTest$TestComponent",
                 span.getAttributes()

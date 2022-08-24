@@ -53,6 +53,7 @@ public class NavigationRpcHandlerInstrumentation
             String spanName = navigationRpcHandler.getClass().getSimpleName()
                     + "." + methodName;
             span = tracer.spanBuilder(spanName).startSpan();
+
             span.makeCurrent();
         }
 
