@@ -11,7 +11,6 @@ import com.vaadin.flow.internal.nodefeature.AttachExistingElementFeature;
 import com.vaadin.flow.server.communication.rpc.AttachExistingElementRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
@@ -56,7 +55,6 @@ public class AttachExistingElementRpcHandlerInstrumentation
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
-            Tracer tracer = InstrumentationHelper.getTracer();
             // Info for the element that is being attached
             ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                     node);
@@ -64,9 +62,8 @@ public class AttachExistingElementRpcHandlerInstrumentation
             ElementInstrumentationInfo targetInfo = new ElementInstrumentationInfo(
                     feature.getNode());
 
-            span = tracer.spanBuilder(
-                    "Attach existing element: " + elementInfo.getElementLabel())
-                    .startSpan();
+            span = InstrumentationHelper.startSpan("Attach existing element: "
+                    + elementInfo.getElementLabel());
             span.setAttribute("vaadin.element.tag",
                     elementInfo.getElement().getTag());
             span.setAttribute("vaadin.element.target",
