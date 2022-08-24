@@ -13,7 +13,6 @@ import com.vaadin.flow.internal.StateNode;
 import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;

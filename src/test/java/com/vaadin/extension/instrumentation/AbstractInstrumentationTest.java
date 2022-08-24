@@ -2,8 +2,8 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.vaadin.extension.instrumentation.util.MockVaadinService;
 import com.vaadin.extension.ContextKeys;
+import com.vaadin.extension.instrumentation.util.MockVaadinService;
 import com.vaadin.extension.instrumentation.util.OpenTelemetryTestTools;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
