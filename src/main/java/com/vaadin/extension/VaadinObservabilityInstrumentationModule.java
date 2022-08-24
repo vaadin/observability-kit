@@ -4,6 +4,7 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static java.util.Arrays.asList;
 
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
+import com.vaadin.extension.instrumentation.AttachExistingElementRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.JavaScriptBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
@@ -54,6 +55,7 @@ public class VaadinObservabilityInstrumentationModule
                       new EventRpcHandlerInstrumentation(),
                       new NavigationRpcHandlerInstrumentation(),
                       new MapSyncRpcHandlerInstrumentation(),
+                      new AttachExistingElementRpcHandlerInstrumentation(),
                       new JavaScriptBootstrapHandlerInstrumentation(),
                       new PublishedServerEventHandlerRpcHandlerInstrumentation(),
                       new VaadinServiceInstrumentation());

@@ -10,10 +10,7 @@ import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
 
 import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.trace.StatusCode;
-import io.opentelemetry.sdk.trace.data.EventData;
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -62,15 +59,7 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
                 getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
-        assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
-        assertEquals("test error", span.getStatus().getDescription());
-
-        assertEquals(1, span.getEvents().size());
-        EventData eventData = span.getEvents().get(0);
-        assertEquals(RuntimeException.class.getCanonicalName(), eventData
-                .getAttributes().get(SemanticAttributes.EXCEPTION_TYPE));
-        assertEquals("test error", eventData.getAttributes()
-                .get(SemanticAttributes.EXCEPTION_MESSAGE));
+        this.assertSpanHasException(span, exception);
     }
 
     @Tag("test-component")
