@@ -36,5 +36,4 @@ class HeartbeatHandlerInstrumentationTest extends AbstractInstrumentationTest {
         SpanData rootSpan = getExportedSpan(1);
         assertEquals("/test-route : Heartbeat", rootSpan.getName());
     }
-
 }

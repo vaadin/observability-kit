@@ -3,7 +3,15 @@ package com.vaadin.extension;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static java.util.Arrays.asList;
 
-import com.vaadin.extension.instrumentation.*;
+import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
+import com.vaadin.extension.instrumentation.AttachExistingElementRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.HeartbeatHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.JavaScriptBootstrapHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
