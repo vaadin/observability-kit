@@ -1,6 +1,7 @@
 package com.vaadin.extension.instrumentation;
 
 import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
@@ -15,6 +16,8 @@ import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
@@ -55,13 +58,14 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Origin("#m") String methodName,
                 @Advice.Argument(0) StateNode node,
                 @Advice.Argument(1) JsonObject jsonObject,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
             String spanName = eventRpcHandler.getClass().getSimpleName() + "."
                     + methodName;
             span = tracer.spanBuilder(spanName).startSpan();
-            span.makeCurrent();
 
             String eventType = jsonObject.getString("event");
 
@@ -102,11 +106,19 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                         routeName);
                 LocalRootSpan.current().updateName(eventRootSpanName);
             }
+
+            context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }

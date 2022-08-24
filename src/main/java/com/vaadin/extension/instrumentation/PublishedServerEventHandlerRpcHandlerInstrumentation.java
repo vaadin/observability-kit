@@ -78,8 +78,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                     rpcHandler.getClass().getSimpleName() + "." + methodName)
                     .startSpan();
 
-            Context parentContext = currentContext();
-            context = parentContext.with(span);
+            context = currentContext().with(span);
             scope = context.makeCurrent();
         }
 
@@ -121,8 +120,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
 
             span.setAttribute("vaadin.callable.method", method.toString());
 
-            Context parentContext = currentContext();
-            context = parentContext.with(span);
+            context = currentContext().with(span);
             scope = context.makeCurrent();
 
             // Set the root span name to be the event

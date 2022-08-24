@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation;
 
+import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
@@ -8,6 +9,8 @@ import com.vaadin.flow.server.communication.rpc.NavigationRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
@@ -47,19 +50,27 @@ public class NavigationRpcHandlerInstrumentation
         public static void onEnter(
                 @Advice.This NavigationRpcHandler navigationRpcHandler,
                 @Advice.Origin("#m") String methodName,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
             String spanName = navigationRpcHandler.getClass().getSimpleName()
                     + "." + methodName;
             span = tracer.spanBuilder(spanName).startSpan();
 
-            span.makeCurrent();
+            context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span) {
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelContext") Context context,
+                @Advice.Local("otelScope") Scope scope) {
+            if (scope != null) {
+                scope.close();
+            }
             if (span == null) {
                 return;
             }
