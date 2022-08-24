@@ -110,7 +110,9 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
             Tracer tracer = InstrumentationHelper.getTracer();
 
             span = tracer
-                    .spanBuilder("Invoke server method: " + method.getName())
+                    .spanBuilder(String.format("Invoke server method: %s.%s",
+                            component.getClass().getSimpleName(),
+                            method.getName()))
                     .startSpan();
             span.setAttribute("vaadin.component",
                     component.getClass().getName());

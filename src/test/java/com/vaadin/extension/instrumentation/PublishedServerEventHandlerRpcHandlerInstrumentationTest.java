@@ -70,7 +70,8 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
                 .onExit(null, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
-        assertEquals("Invoke server method: clientEvent", span.getName());
+        assertEquals("Invoke server method: TestComponent.clientEvent",
+                span.getName());
         assertEquals(
                 "com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentationTest$TestComponent",
                 span.getAttributes()
