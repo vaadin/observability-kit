@@ -53,7 +53,8 @@ public class AfterNavigationStateRendererInstrumentation
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(@Advice.Argument(0) NavigationEvent event,
+        public static void onExit(@Advice.Thrown Throwable throwable,
+                @Advice.Argument(0) NavigationEvent event,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
             if (scope != null) {
@@ -72,6 +73,7 @@ public class AfterNavigationStateRendererInstrumentation
                     event.isForwardTo());
             span.setAttribute("vaadin.navigation.trigger",
                     event.getTrigger().name());
+            InstrumentationHelper.handleException(span, throwable);
             span.end();
             // Update route after navigation to display the new route
             InstrumentationHelper.updateHttpRoute(event.getUI());
