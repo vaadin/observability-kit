@@ -38,9 +38,9 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(mapSyncRpcHandler,
                 "handleNode", component.getElement().getNode(), jsonObject,
-                null, null, null);
+                null, null);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                getCapturedSpan(0), null, null);
+                getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("Sync: test-component[foo]", span.getName());
@@ -54,10 +54,10 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     public void handleNodeWithException_setsErrorStatus() {
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(mapSyncRpcHandler,
                 "handleNode", component.getElement().getNode(), jsonObject,
-                null, null, null);
+                null, null);
         Exception exception = new RuntimeException("test error");
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(exception,
-                getCapturedSpan(0), null, null);
+                getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());

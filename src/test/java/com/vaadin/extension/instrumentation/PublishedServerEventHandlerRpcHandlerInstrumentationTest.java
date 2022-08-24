@@ -33,9 +33,9 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
     public void handleNode_eventHandlerStartsSpan() {
         PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
                 .onEnter(publishedServerEventHandlerRpcHandler, "handleNode",
-                        null, null, null);
+                        null, null);
         PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
-                .onExit(null, getCapturedSpan(0), null, null);
+                .onExit(null, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("PublishedServerEventHandlerRpcHandler.handleNode",
@@ -49,7 +49,7 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
         PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
                 .onEnter(component,
                         TestComponent.class.getMethod("connectClient"), null,
-                        null, null);
+                        null);
 
         Assertions.assertTrue(
                 OpenTelemetryTestTools.getSpanBuilderCapture().getSpans()
@@ -64,10 +64,10 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
         PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
                 .onEnter(component,
                         TestComponent.class.getMethod("clientEvent"), null,
-                        null, null);
+                        null);
 
         PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
-                .onExit(null, getCapturedSpan(0), null, null);
+                .onExit(null, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("Invoke server method: clientEvent", span.getName());

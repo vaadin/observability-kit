@@ -69,7 +69,6 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                 @Advice.This PublishedServerEventHandlerRpcHandler rpcHandler,
                 @Advice.Origin("#m") String methodName,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
@@ -78,14 +77,13 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                     rpcHandler.getClass().getSimpleName() + "." + methodName)
                     .startSpan();
 
-            context = currentContext().with(span);
+            Context context = currentContext().with(span);
             scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             if (scope != null) {
                 scope.close();
@@ -104,7 +102,6 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
         public static void onEnter(@Advice.Argument(0) Component component,
                 @Advice.Argument(1) Method method,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             if (method.getName().equals("connectClient")) {
                 return;
@@ -120,7 +117,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
 
             span.setAttribute("vaadin.callable.method", method.toString());
 
-            context = currentContext().with(span);
+            Context context = currentContext().with(span);
             scope = context.makeCurrent();
 
             // Set the root span name to be the event
@@ -132,7 +129,6 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             if (scope != null) {
                 scope.close();

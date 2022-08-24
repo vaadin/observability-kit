@@ -58,7 +58,6 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Argument(0) StateNode node,
                 @Advice.Argument(1) JsonObject jsonObject,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             final ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                     node);
@@ -75,14 +74,13 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                 span.setAttribute("vaadin.view", elementInfo.getViewLabel());
             }
 
-            context = currentContext().with(span);
+            Context context = currentContext().with(span);
             scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             if (scope != null) {
                 scope.close();

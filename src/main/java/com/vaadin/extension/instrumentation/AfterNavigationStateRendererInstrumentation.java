@@ -44,19 +44,17 @@ public class AfterNavigationStateRendererInstrumentation
         @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter(@Advice.Argument(0) NavigationEvent event,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             span = InstrumentationHelper.getTracer().spanBuilder("Navigate")
                     .startSpan();
 
-            context = currentContext().with(span);
+            Context context = currentContext().with(span);
             scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Argument(0) NavigationEvent event,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             if (scope != null) {
                 scope.close();

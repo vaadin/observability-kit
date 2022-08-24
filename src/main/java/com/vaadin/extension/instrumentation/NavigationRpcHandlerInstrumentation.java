@@ -51,7 +51,6 @@ public class NavigationRpcHandlerInstrumentation
                 @Advice.This NavigationRpcHandler navigationRpcHandler,
                 @Advice.Origin("#m") String methodName,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
 
             Tracer tracer = InstrumentationHelper.getTracer();
@@ -59,14 +58,13 @@ public class NavigationRpcHandlerInstrumentation
                     + "." + methodName;
             span = tracer.spanBuilder(spanName).startSpan();
 
-            context = currentContext().with(span);
+            Context context = currentContext().with(span);
             scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
             if (scope != null) {
                 scope.close();
