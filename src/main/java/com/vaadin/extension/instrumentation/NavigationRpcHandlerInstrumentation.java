@@ -53,12 +53,9 @@ public class NavigationRpcHandlerInstrumentation
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
-            Tracer tracer = InstrumentationHelper.getTracer();
             String spanName = navigationRpcHandler.getClass().getSimpleName()
                     + "." + methodName;
-            span = tracer.spanBuilder(spanName).startSpan();
-
-            InstrumentationHelper.captureSessionInfo(span);
+            span = InstrumentationHelper.startSpan(spanName);
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();

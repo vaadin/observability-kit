@@ -61,12 +61,9 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
-            Tracer tracer = InstrumentationHelper.getTracer();
             String spanName = eventRpcHandler.getClass().getSimpleName() + "."
                     + methodName;
-            span = tracer.spanBuilder(spanName).startSpan();
-
-            InstrumentationHelper.captureSessionInfo(span);
+            span = InstrumentationHelper.startSpan(spanName);
 
             String eventType = jsonObject.getString("event");
             if (eventType != null) {
