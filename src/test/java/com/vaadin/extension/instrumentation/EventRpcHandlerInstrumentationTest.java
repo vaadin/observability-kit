@@ -60,9 +60,9 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
                 "handleNode", component.getElement().getNode(), jsonObject,
-                null);
+                null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                getCapturedSpan(0));
+                getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("Event: test-component[id='id'] :: click", span.getName(),
