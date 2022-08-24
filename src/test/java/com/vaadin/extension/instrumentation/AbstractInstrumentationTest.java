@@ -32,10 +32,20 @@ import java.util.ArrayList;
 public abstract class AbstractInstrumentationTest {
 
     private UI mockUI;
+    private VaadinSession mockSession;
+    private VaadinService mockService;
     private Scope sessionScope;
 
     public UI getMockUI() {
         return mockUI;
+    }
+
+    public VaadinSession getMockSession() {
+        return mockSession;
+    }
+
+    public VaadinService getMockService() {
+        return mockService;
     }
 
     public String getMockSessionId() {
@@ -57,12 +67,13 @@ public abstract class AbstractInstrumentationTest {
     public void setupMockUi() {
         mockUI = new UI();
 
-        VaadinService service = new MockVaadinService();
+        mockService = new MockVaadinService(mockUI);
 
-        VaadinSession session = Mockito.spy(new VaadinSession(service));
-        Mockito.doNothing().when(session).checkHasLock();
-        VaadinSession.setCurrent(session);
-        mockUI.getInternals().setSession(session);
+        mockSession = Mockito.spy(new VaadinSession(mockService));
+        Mockito.doNothing().when(mockSession).checkHasLock();
+        VaadinSession.setCurrent(mockSession);
+        Mockito.when(mockSession.getService()).thenReturn(mockService);
+        mockUI.getInternals().setSession(mockSession);
 
         RouteConfiguration.forSessionScope().setRoute("test-route",
                 TestView.class);

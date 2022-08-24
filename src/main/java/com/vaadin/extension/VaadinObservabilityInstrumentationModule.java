@@ -3,15 +3,7 @@ package com.vaadin.extension;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static java.util.Arrays.asList;
 
-import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
-import com.vaadin.extension.instrumentation.AttachExistingElementRpcHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.JavaScriptBootstrapHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.UiInstrumentation;
-import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
+import com.vaadin.extension.instrumentation.*;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -51,14 +43,14 @@ public class VaadinObservabilityInstrumentationModule
         // TypeIntrumentation for this instrumentation module
         // @formatter:off
         return asList(new AfterNavigationStateRendererInstrumentation(),
-                      new UiInstrumentation(),
                       new EventRpcHandlerInstrumentation(),
                       new NavigationRpcHandlerInstrumentation(),
                       new MapSyncRpcHandlerInstrumentation(),
                       new AttachExistingElementRpcHandlerInstrumentation(),
                       new JavaScriptBootstrapHandlerInstrumentation(),
                       new PublishedServerEventHandlerRpcHandlerInstrumentation(),
-                      new VaadinServiceInstrumentation());
+                      new VaadinServiceInstrumentation(),
+                      new HeartbeatHandlerInstrumentation());
         // @formatter:on
     }
 }
