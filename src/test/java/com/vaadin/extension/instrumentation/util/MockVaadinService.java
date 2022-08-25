@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.util;
 
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.function.DeploymentConfiguration;
 import com.vaadin.flow.server.*;
 
@@ -9,10 +10,16 @@ import java.io.InputStream;
 import java.net.URL;
 
 public class MockVaadinService extends VaadinService {
+
+    private UI ui;
     private final RouteRegistry routeRegistry = Mockito
             .mock(RouteRegistry.class);
     private final DeploymentConfiguration deploymentConfiguration = Mockito
             .mock(DeploymentConfiguration.class);
+
+    public MockVaadinService(UI ui) {
+        this.ui = ui;
+    }
 
     @Override
     protected RouteRegistry getRouteRegistry() {
@@ -77,5 +84,10 @@ public class MockVaadinService extends VaadinService {
     @Override
     public DeploymentConfiguration getDeploymentConfiguration() {
         return deploymentConfiguration;
+    }
+
+    @Override
+    public UI findUI(VaadinRequest request) {
+        return ui;
     }
 }
