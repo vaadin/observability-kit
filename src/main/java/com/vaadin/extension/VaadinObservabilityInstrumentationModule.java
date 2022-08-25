@@ -10,6 +10,7 @@ import com.vaadin.extension.instrumentation.JavaScriptBootstrapHandlerInstrument
 import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.SessionRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UiInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
@@ -58,6 +59,7 @@ public class VaadinObservabilityInstrumentationModule
                       new AttachExistingElementRpcHandlerInstrumentation(),
                       new JavaScriptBootstrapHandlerInstrumentation(),
                       new PublishedServerEventHandlerRpcHandlerInstrumentation(),
+                      new SessionRequestHandlerInstrumentation(),
                       new VaadinServiceInstrumentation());
         // @formatter:on
     }
