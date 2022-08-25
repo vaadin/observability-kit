@@ -5,9 +5,6 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.flow.component.UI;
-import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -18,8 +15,6 @@ import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
-
-import java.util.Optional;
 
 /**
  * Instruments HeartbeatHandler to add a span for its execution
@@ -47,24 +42,12 @@ public class HeartbeatHandlerInstrumentation implements TypeInstrumentation {
     public static class SynchronizedHandleRequestAdvice {
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter(@Advice.Argument(0) VaadinSession session,
-                @Advice.Argument(1) VaadinRequest request,
-                @Advice.Local("otelSpan") Span span,
+        public static void onEnter(@Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
             span = InstrumentationHelper.getTracer().spanBuilder("Heartbeat")
                     .startSpan();
 
-            UI ui = session.getService().findUI(request);
-            if (ui != null) {
-                Optional<String> routeTemplate = InstrumentationHelper
-                        .getActiveRouteTemplate(ui);
-
-                if (routeTemplate.isPresent()) {
-                    String rootName = String.format("/%s : Heartbeat",
-                            routeTemplate.get());
-                    LocalRootSpan.current().updateName(rootName);
-                }
-            }
+            LocalRootSpan.current().updateName("/ : Heartbeat");
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
