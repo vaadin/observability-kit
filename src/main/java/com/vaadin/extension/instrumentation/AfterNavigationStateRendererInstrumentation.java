@@ -56,9 +56,6 @@ public class AfterNavigationStateRendererInstrumentation
                 @Advice.Argument(0) NavigationEvent event,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (scope != null) {
-                scope.close();
-            }
             // Seems UI only contains the correct route after the method
             // finishes, so this needs to run on exit
             Optional<String> routeTemplate = InstrumentationHelper
@@ -72,8 +69,8 @@ public class AfterNavigationStateRendererInstrumentation
                     event.isForwardTo());
             span.setAttribute("vaadin.navigation.trigger",
                     event.getTrigger().name());
-            InstrumentationHelper.handleException(span, throwable);
-            span.end();
+
+            InstrumentationHelper.endSpan(span, throwable, scope);
             // Update route after navigation to display the new route
             InstrumentationHelper.updateHttpRoute(event.getUI());
         }

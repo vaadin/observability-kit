@@ -12,6 +12,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 
@@ -43,6 +44,29 @@ public class InstrumentationHelper {
         }
 
         return span;
+    }
+
+    /**
+     * Ends the provided span. If throwable is not null, then the error message
+     * and stacktrace will be added to the span, and the span status is set to
+     * {@link StatusCode#ERROR}. If a scope is provided, then the scope will be
+     * closed as well.
+     *
+     * @param span
+     *            the span to end
+     * @param throwable
+     *            the throwable to record, or null
+     * @param scope
+     *            the scope to close, or null
+     */
+    public static void endSpan(Span span, Throwable throwable, Scope scope) {
+        if (scope != null) {
+            scope.close();
+        }
+        if (span != null) {
+            handleException(span, throwable);
+            span.end();
+        }
     }
 
     public static void updateHttpRoute(UI ui) {

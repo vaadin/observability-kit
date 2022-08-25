@@ -111,14 +111,7 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
         public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (scope != null) {
-                scope.close();
-            }
-            if (span == null) {
-                return;
-            }
-            InstrumentationHelper.handleException(span, throwable);
-            span.end();
+            InstrumentationHelper.endSpan(span, throwable, scope);
         }
     }
 }
