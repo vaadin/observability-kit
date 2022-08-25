@@ -104,6 +104,10 @@ public abstract class AbstractInstrumentationTest {
         return OpenTelemetryTestTools.getSpanExporter().getSpan(index);
     }
 
+    protected int getExportedSpanCount() {
+        return OpenTelemetryTestTools.getSpanExporter().getSpans().size();
+    }
+
     protected void assertSpanHasException(SpanData span, Throwable throwable) {
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
         assertEquals(throwable.getMessage(), span.getStatus().getDescription());
