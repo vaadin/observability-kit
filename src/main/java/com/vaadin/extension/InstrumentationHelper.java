@@ -1,5 +1,6 @@
 package com.vaadin.extension;
 
+import static com.vaadin.flow.server.Constants.VAADIN_MAPPING;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 
 import com.vaadin.flow.component.Component;
@@ -20,6 +21,8 @@ import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+
+import javax.servlet.http.HttpServletRequest;
 
 public class InstrumentationHelper {
 
@@ -164,5 +167,34 @@ public class InstrumentationHelper {
             // Add log trace of exception.
             span.recordException(throwable);
         }
+    }
+
+    /**
+     * Get the file name from the HTTP request.
+     * 
+     * @param request
+     *            http request to get file name from
+     * @return file name
+     */
+    public static String getRequestFilename(HttpServletRequest request) {
+        // http://localhost:8888/context/servlet/folder/file.js
+        // ->
+        // /servlet/folder/file.js
+        //
+        // http://localhost:8888/context/servlet/VAADIN/folder/file.js
+        // ->
+        // /VAADIN/folder/file.js
+        //
+        // http://localhost:8888/context/servlet/sw.js
+        // ->
+        // /sw.js
+        if (request.getPathInfo() == null) {
+            return request.getServletPath();
+        } else if (request.getPathInfo().startsWith("/" + VAADIN_MAPPING)
+                || request.getPathInfo().startsWith("/themes/")
+                || request.getPathInfo().startsWith("/sw.js")) {
+            return request.getPathInfo();
+        }
+        return request.getServletPath() + request.getPathInfo();
     }
 }
