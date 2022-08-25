@@ -64,6 +64,10 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
                     requestFilename);
             span = InstrumentationHelper.startSpan(spanName);
 
+            Span localRootSpan = LocalRootSpan.current();
+            localRootSpan.updateName(getRequestFilename(request));
+            localRootSpan.setAttribute("File", getRequestFilename(request));
+
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
         }
@@ -78,10 +82,6 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
             if (!handled) {
                 span.setAttribute("vaadin.resolution",
                         "unhandled file request");
-            } else {
-                Span localRootSpan = LocalRootSpan.current();
-                localRootSpan.updateName(getRequestFilename(request));
-                localRootSpan.setAttribute("File", getRequestFilename(request));
             }
             if (response.getStatus() == HttpStatusCode.BAD_REQUEST.getCode()) {
                 // Also mark a bad request as an exception
