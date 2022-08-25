@@ -65,8 +65,13 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
             span = InstrumentationHelper.startSpan(spanName);
 
             Span localRootSpan = LocalRootSpan.current();
-            localRootSpan.updateName(getRequestFilename(request));
-            localRootSpan.setAttribute("File", getRequestFilename(request));
+            if (requestFilename.startsWith("/VAADIN/build/vaadin-bundle")) {
+                // Loading the bundle we do not have a registry to lean on.
+                localRootSpan.updateName("/ : Load frontend bundle");
+            } else {
+                localRootSpan.updateName(requestFilename);
+            }
+            localRootSpan.setAttribute("File", requestFilename);
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
