@@ -50,7 +50,7 @@ public class VaadinObservabilityInstrumentationModule
 
     @Override
     public List<TypeInstrumentation> typeInstrumentations() {
-        // TypeIntrumentation for this instrumentation module
+        // TypeInstrumentation for this instrumentation module
         // @formatter:off
         return asList(new AfterNavigationStateRendererInstrumentation(),
                       new EventRpcHandlerInstrumentation(),
