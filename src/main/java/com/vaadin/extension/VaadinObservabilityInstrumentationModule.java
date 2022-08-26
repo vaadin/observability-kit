@@ -6,11 +6,14 @@ import static java.util.Arrays.asList;
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.AttachExistingElementRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.JavaScriptBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.SessionRequestHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UiInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
@@ -52,7 +55,6 @@ public class VaadinObservabilityInstrumentationModule
         // TypeIntrumentation for this instrumentation module
         // @formatter:off
         return asList(new AfterNavigationStateRendererInstrumentation(),
-                      new UiInstrumentation(),
                       new EventRpcHandlerInstrumentation(),
                       new NavigationRpcHandlerInstrumentation(),
                       new MapSyncRpcHandlerInstrumentation(),
@@ -60,7 +62,10 @@ public class VaadinObservabilityInstrumentationModule
                       new JavaScriptBootstrapHandlerInstrumentation(),
                       new PublishedServerEventHandlerRpcHandlerInstrumentation(),
                       new SessionRequestHandlerInstrumentation(),
-                      new VaadinServiceInstrumentation());
+                      new VaadinServiceInstrumentation(),
+                      new HeartbeatHandlerInstrumentation(),
+                      new UidlRequestHandlerInstrumentation(),
+                      new PwaHandlerInstrumentation());
         // @formatter:on
     }
 }
