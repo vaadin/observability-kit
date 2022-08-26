@@ -14,7 +14,6 @@ import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandle
 import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.SessionRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.UiInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
 import com.google.auto.service.AutoService;
