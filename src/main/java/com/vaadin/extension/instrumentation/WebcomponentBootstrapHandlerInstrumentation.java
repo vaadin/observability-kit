@@ -53,10 +53,9 @@ public class WebcomponentBootstrapHandlerInstrumentation
         public static void onEnter(@Advice.Argument(1) VaadinRequest request,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            span = InstrumentationHelper.getTracer()
-                    .spanBuilder("WebComponentBootstrapHandler").startSpan();
+            span = InstrumentationHelper.startSpan("WebComponentBootstrapHandler");
 
-            // Rewrite root span to contain route, as bootstrap request is
+            // Rewrite root span to contain route, as web component request is
             // always against application root with a location parameter
             Span localRootSpan = LocalRootSpan
                     .fromContextOrNull(Context.current());

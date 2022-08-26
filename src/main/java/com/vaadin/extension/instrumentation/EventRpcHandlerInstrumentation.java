@@ -100,10 +100,7 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 // Set the root span name to be the event
                 final Optional<String> activeRouteTemplate = getActiveRouteTemplate(
                         ((StateTree) node.getOwner()).getUI());
-                String routeName = "";
-                if (activeRouteTemplate.isPresent()) {
-                    routeName = activeRouteTemplate.get();
-                }
+                String routeName = activeRouteTemplate.orElse("");
                 String eventRootSpanName = String.format("/%s : event",
                         routeName);
                 LocalRootSpan.current().updateName(eventRootSpanName);
