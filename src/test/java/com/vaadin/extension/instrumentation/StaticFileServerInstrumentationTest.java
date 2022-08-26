@@ -15,6 +15,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.time.Instant;
+
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -22,6 +24,7 @@ class StaticFileServerInstrumentationTest extends AbstractInstrumentationTest {
 
     private StaticFileServer fileServerInstrumentation;
     TestComponent component;
+    Instant startTimestamp = Instant.ofEpochSecond(123);
 
     @BeforeEach
     public void setup() {
@@ -42,13 +45,12 @@ class StaticFileServerInstrumentationTest extends AbstractInstrumentationTest {
         Mockito.when(response.getStatus())
                 .thenReturn(HttpStatusCode.BAD_REQUEST.getCode());
 
-        StaticFileServerInstrumentation.HandleRequestAdvice
-                .onEnter(fileServerInstrumentation, request, null, null);
+        StaticFileServerInstrumentation.HandleRequestAdvice.onEnter(null);
         StaticFileServerInstrumentation.HandleRequestAdvice.onExit(null, true,
-                request, response, getCapturedSpan(0), null);
+                request, response, startTimestamp);
 
         SpanData span = getExportedSpan(0);
-        assertEquals("Static file request: " + fileName, span.getName());
+        assertEquals("StaticFileRequest", span.getName());
     }
 
     @Test
@@ -63,13 +65,12 @@ class StaticFileServerInstrumentationTest extends AbstractInstrumentationTest {
         Mockito.when(response.getStatus())
                 .thenReturn(HttpStatusCode.NOT_MODIFIED.getCode());
 
-        StaticFileServerInstrumentation.HandleRequestAdvice
-                .onEnter(fileServerInstrumentation, request, null, null);
+        StaticFileServerInstrumentation.HandleRequestAdvice.onEnter(null);
         StaticFileServerInstrumentation.HandleRequestAdvice.onExit(null, true,
-                request, response, getCapturedSpan(0), null);
+                request, response, startTimestamp);
 
         SpanData span = getExportedSpan(0);
-        assertEquals("Static file request: " + fileName, span.getName());
+        assertEquals("StaticFileRequest", span.getName());
         assertEquals("Up to date", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.resolution")));
     }
@@ -86,13 +87,12 @@ class StaticFileServerInstrumentationTest extends AbstractInstrumentationTest {
         Mockito.when(response.getStatus())
                 .thenReturn(HttpStatusCode.BAD_REQUEST.getCode());
 
-        StaticFileServerInstrumentation.HandleRequestAdvice
-                .onEnter(fileServerInstrumentation, request, null, null);
+        StaticFileServerInstrumentation.HandleRequestAdvice.onEnter(null);
         StaticFileServerInstrumentation.HandleRequestAdvice.onExit(null, true,
-                request, response, getCapturedSpan(0), null);
+                request, response, startTimestamp);
 
         SpanData span = getExportedSpan(0);
-        assertEquals("Static file request: " + fileName, span.getName());
+        assertEquals("StaticFileRequest", span.getName());
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
         assertEquals("Bad Request", span.getStatus().getDescription());
     }
@@ -109,15 +109,11 @@ class StaticFileServerInstrumentationTest extends AbstractInstrumentationTest {
         Mockito.when(response.getStatus())
                 .thenReturn(HttpStatusCode.OK.getCode());
 
-        StaticFileServerInstrumentation.HandleRequestAdvice
-                .onEnter(fileServerInstrumentation, request, null, null);
+        StaticFileServerInstrumentation.HandleRequestAdvice.onEnter(null);
         StaticFileServerInstrumentation.HandleRequestAdvice.onExit(null, false,
-                request, response, getCapturedSpan(0), null);
+                request, response, startTimestamp);
 
-        SpanData span = getExportedSpan(0);
-        assertEquals("Static file request: " + fileName, span.getName());
-        assertEquals("unhandled file request", span.getAttributes()
-                .get(AttributeKey.stringKey("vaadin.resolution")));
+        assertEquals(0, getExportedSpanCount());
     }
 
     @Tag("test-component")

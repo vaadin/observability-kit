@@ -1,25 +1,23 @@
 package com.vaadin.extension.instrumentation;
 
 import static com.vaadin.extension.InstrumentationHelper.getRequestFilename;
-import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.HttpStatusCode;
-import com.vaadin.flow.server.StaticFileServer;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
-import io.opentelemetry.context.Context;
-import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+
+import java.time.Instant;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -51,18 +49,27 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
     public static class HandleRequestAdvice {
 
         @Advice.OnMethodEnter()
-        public static void onEnter(@Advice.This StaticFileServer requestHandler,
+        public static void onEnter(
+                @Advice.Local("startTimestamp") Instant startTimestamp) {
+            startTimestamp = Instant.now();
+        }
+
+        @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
+        public static void onExit(@Advice.Thrown Throwable throwable,
+                @Advice.Return boolean handled,
                 @Advice.Argument(0) HttpServletRequest request,
-                @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelScope") Scope scope) {
-            final String requestFilename = getRequestFilename(request);
-            if (requestFilename.endsWith("/")) {
-                // The request is for a path or a directory and not a file
+                @Advice.Argument(1) HttpServletResponse response,
+                @Advice.Local("startTimestamp") Instant startTimestamp) {
+            if (!handled) {
+                // Do not add a span if static file is not served from here.
                 return;
             }
-            final String spanName = String.format("Static file request: %s",
-                    requestFilename);
-            span = InstrumentationHelper.startSpan(spanName);
+
+            final String requestFilename = getRequestFilename(request);
+
+            final String spanName = "StaticFileRequest";
+            Span span = InstrumentationHelper.startSpan(spanName,
+                    startTimestamp);
 
             Span localRootSpan = LocalRootSpan.current();
             if (requestFilename.startsWith("/VAADIN/build/vaadin-bundle")) {
@@ -72,21 +79,6 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
                 localRootSpan.updateName(requestFilename);
             }
 
-            Context context = currentContext().with(span);
-            scope = context.makeCurrent();
-        }
-
-        @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Return boolean handled,
-                @Advice.Argument(0) HttpServletRequest request,
-                @Advice.Argument(1) HttpServletResponse response,
-                @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelScope") Scope scope) {
-            if (!handled) {
-                span.setAttribute("vaadin.resolution",
-                        "unhandled file request");
-            }
             if (response.getStatus() == HttpStatusCode.BAD_REQUEST.getCode()) {
                 // Also mark a bad request as an exception
                 span.setStatus(StatusCode.ERROR, "Bad Request");
@@ -94,7 +86,7 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
             if (response.getStatus() == HttpStatusCode.NOT_MODIFIED.getCode()) {
                 span.setAttribute("vaadin.resolution", "Up to date");
             }
-            InstrumentationHelper.endSpan(span, throwable, scope);
+            InstrumentationHelper.endSpan(span, throwable, null);
         }
     }
 }
