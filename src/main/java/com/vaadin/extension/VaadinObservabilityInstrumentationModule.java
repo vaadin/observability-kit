@@ -12,6 +12,7 @@ import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
 import com.google.auto.service.AutoService;
@@ -60,6 +61,7 @@ public class VaadinObservabilityInstrumentationModule
                       new PublishedServerEventHandlerRpcHandlerInstrumentation(),
                       new VaadinServiceInstrumentation(),
                       new HeartbeatHandlerInstrumentation(),
+                      new UidlRequestHandlerInstrumentation(),
                       new PwaHandlerInstrumentation());
         // @formatter:on
     }
