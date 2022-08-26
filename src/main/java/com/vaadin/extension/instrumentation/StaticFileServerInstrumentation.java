@@ -71,7 +71,6 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
             } else {
                 localRootSpan.updateName(requestFilename);
             }
-            localRootSpan.setAttribute("File", requestFilename);
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
