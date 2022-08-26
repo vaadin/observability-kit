@@ -9,6 +9,7 @@ import com.vaadin.flow.router.RouteConfiguration;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
@@ -16,6 +17,7 @@ import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,7 +37,25 @@ public class InstrumentationHelper {
      * @return the new span
      */
     public static Span startSpan(String spanName) {
-        Span span = getTracer().spanBuilder(spanName).startSpan();
+        return startSpan(spanName, null);
+    }
+
+    /**
+     * Creates and starts a new span with the provided name, at the provided
+     * start timestamp. Also adds common attributes provided by Vaadin contexts.
+     *
+     * @param spanName
+     *            the name of the span
+     * @param startTimestamp
+     *            the start timestamp of the span
+     * @return the new span
+     */
+    public static Span startSpan(String spanName, Instant startTimestamp) {
+        SpanBuilder spanBuilder = getTracer().spanBuilder(spanName);
+        if (startTimestamp != null) {
+            spanBuilder.setStartTimestamp(startTimestamp);
+        }
+        Span span = spanBuilder.startSpan();
         Context context = currentContext();
 
         String sessionId = context.get(ContextKeys.SESSION_ID);
@@ -44,6 +64,7 @@ public class InstrumentationHelper {
         }
 
         return span;
+
     }
 
     /**
