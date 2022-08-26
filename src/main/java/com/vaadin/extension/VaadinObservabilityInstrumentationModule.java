@@ -12,6 +12,7 @@ import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.StreamRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
@@ -53,6 +54,7 @@ public class VaadinObservabilityInstrumentationModule
         // TypeInstrumentation for this instrumentation module
         // @formatter:off
         return asList(new AfterNavigationStateRendererInstrumentation(),
+                      new StreamRequestHandlerInstrumentation(),
                       new EventRpcHandlerInstrumentation(),
                       new NavigationRpcHandlerInstrumentation(),
                       new MapSyncRpcHandlerInstrumentation(),

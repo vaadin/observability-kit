@@ -4,6 +4,9 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
+import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.flow.server.communication.StreamRequestHandler;
+
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -13,12 +16,9 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.flow.server.communication.StreamRequestHandler;
-
 /**
- * Instruments StreamRequestHandler in order to add a span when the handler
- * is called.
+ * Instruments StreamRequestHandler in order to add a span when the handler is
+ * called.
  */
 public class StreamRequestHandlerInstrumentation
         implements TypeInstrumentation {
@@ -57,8 +57,7 @@ public class StreamRequestHandlerInstrumentation
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(
-                @Advice.Thrown Throwable throwable,
+        public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
             InstrumentationHelper.endSpan(span, throwable, scope);
