@@ -24,6 +24,8 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
+import java.util.Optional;
+
 /**
  * This is a Targeted instrumentation for EventRpcHandler which adds information
  * on the element that got an action and on which view.
@@ -96,8 +98,12 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 // that what was this about
 
                 // Set the root span name to be the event
-                String routeName = getActiveRouteTemplate(
-                        ((StateTree) node.getOwner()).getUI()).get();
+                final Optional<String> activeRouteTemplate = getActiveRouteTemplate(
+                        ((StateTree) node.getOwner()).getUI());
+                String routeName = "";
+                if (activeRouteTemplate.isPresent()) {
+                    routeName = activeRouteTemplate.get();
+                }
                 String eventRootSpanName = String.format("/%s : event",
                         routeName);
                 LocalRootSpan.current().updateName(eventRootSpanName);

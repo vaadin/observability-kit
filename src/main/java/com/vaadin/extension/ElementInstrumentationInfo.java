@@ -1,10 +1,13 @@
 package com.vaadin.extension;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasElement;
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
 import com.vaadin.flow.internal.StateTree;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -57,9 +60,15 @@ public class ElementInstrumentationInfo {
         view = null;
         viewLabel = null;
         if (node.getOwner() instanceof StateTree) {
-            view = (Component) ((StateTree) node.getOwner()).getUI()
-                    .getInternals().getActiveRouterTargetsChain().get(0);
-            viewLabel = view.getClass().getSimpleName();
+            final UI ui = ((StateTree) node.getOwner()).getUI();
+            if (ui != null) {
+                final List<HasElement> activeRouterTargetsChain = ui
+                        .getInternals().getActiveRouterTargetsChain();
+                if (!activeRouterTargetsChain.isEmpty()) {
+                    view = (Component) activeRouterTargetsChain.get(0);
+                    viewLabel = view.getClass().getSimpleName();
+                }
+            }
         }
     }
 
