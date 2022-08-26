@@ -53,7 +53,8 @@ public class WebcomponentBootstrapHandlerInstrumentation
         public static void onEnter(@Advice.Argument(1) VaadinRequest request,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            span = InstrumentationHelper.startSpan("WebComponentBootstrapHandler");
+            span = InstrumentationHelper
+                    .startSpan("WebComponentBootstrapHandler");
 
             // Rewrite root span to contain route, as web component request is
             // always against application root with a location parameter
@@ -77,7 +78,7 @@ public class WebcomponentBootstrapHandlerInstrumentation
                         // 'http://' url
                         .replaceFirst("^" + ".*://", "//");
 
-                localRootSpan.updateName("WebComponentBootstrap");
+                localRootSpan.updateName("/ : WebComponentBootstrap");
                 localRootSpan.setAttribute("vaadin.webcomponent.url", url);
             }
 

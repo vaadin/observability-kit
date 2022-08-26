@@ -31,7 +31,7 @@ class WebcomponentBootstrapHandlerInstrumentationTest
         assertEquals("WebComponentBootstrapHandler",
                 getExportedSpan(0).getName());
         SpanData rootSpan = getExportedSpan(1);
-        assertEquals("WebComponentBootstrap", rootSpan.getName());
+        assertEquals("/ : WebComponentBootstrap", rootSpan.getName());
         assertEquals(url, rootSpan.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.webcomponent.url")));
     }
