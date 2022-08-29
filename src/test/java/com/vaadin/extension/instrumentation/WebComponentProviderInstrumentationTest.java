@@ -21,9 +21,10 @@ class WebComponentProviderInstrumentationTest
                 .thenReturn("/vaadin/web-component/fire-event.js");
         Instant startTimestamp = Instant.ofEpochSecond(123);
 
-        WebComponentProviderInstrumentation.SynchronizedHandleRequestAdvice.onEnter(null);
-        WebComponentProviderInstrumentation.SynchronizedHandleRequestAdvice.onExit(null, request,
-                true, startTimestamp);
+        WebComponentProviderInstrumentation.SynchronizedHandleRequestAdvice
+                .onEnter(null);
+        WebComponentProviderInstrumentation.SynchronizedHandleRequestAdvice
+                .onExit(null, request, true, startTimestamp);
 
         SpanData span = getExportedSpan(0);
         assertEquals("WebComponentProvider : Load Resource", span.getName());
