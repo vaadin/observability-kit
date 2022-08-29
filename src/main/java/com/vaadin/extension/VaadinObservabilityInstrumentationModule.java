@@ -14,6 +14,7 @@ import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandle
 import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.SessionRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.UnsupportedBrowserHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 
 import com.google.auto.service.AutoService;
@@ -64,7 +65,8 @@ public class VaadinObservabilityInstrumentationModule
                       new VaadinServiceInstrumentation(),
                       new HeartbeatHandlerInstrumentation(),
                       new UidlRequestHandlerInstrumentation(),
-                      new PwaHandlerInstrumentation());
+                      new PwaHandlerInstrumentation(),
+                      new UnsupportedBrowserHandlerInstrumentation());
         // @formatter:on
     }
 }
