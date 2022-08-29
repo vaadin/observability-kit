@@ -18,6 +18,7 @@ import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UnsupportedBrowserHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
 import com.vaadin.extension.instrumentation.WebComponentProviderInstrumentation;
+import com.vaadin.extension.instrumentation.WebcomponentBootstrapHandlerInstrumentation;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -57,6 +58,7 @@ public class VaadinObservabilityInstrumentationModule
         // TypeIntrumentation for this instrumentation module
         // @formatter:off
         return asList(
+                new WebcomponentBootstrapHandlerInstrumentation(),
                 new WebComponentProviderInstrumentation(),
                 new AfterNavigationStateRendererInstrumentation(),
                 new EventRpcHandlerInstrumentation(),
