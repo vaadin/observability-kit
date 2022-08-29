@@ -17,6 +17,7 @@ import com.vaadin.extension.instrumentation.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UnsupportedBrowserHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
+import com.vaadin.extension.instrumentation.WebComponentProviderInstrumentation;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -55,20 +56,22 @@ public class VaadinObservabilityInstrumentationModule
     public List<TypeInstrumentation> typeInstrumentations() {
         // TypeIntrumentation for this instrumentation module
         // @formatter:off
-        return asList(new AfterNavigationStateRendererInstrumentation(),
-                      new EventRpcHandlerInstrumentation(),
-                      new NavigationRpcHandlerInstrumentation(),
-                      new MapSyncRpcHandlerInstrumentation(),
-                      new AttachExistingElementRpcHandlerInstrumentation(),
-                      new JavaScriptBootstrapHandlerInstrumentation(),
-                      new PublishedServerEventHandlerRpcHandlerInstrumentation(),
-                      new StaticFileServerInstrumentation(),
-                      new SessionRequestHandlerInstrumentation(),
-                      new VaadinServiceInstrumentation(),
-                      new HeartbeatHandlerInstrumentation(),
-                      new UidlRequestHandlerInstrumentation(),
-                      new PwaHandlerInstrumentation(),
-                      new UnsupportedBrowserHandlerInstrumentation());
+        return asList(
+                new WebComponentProviderInstrumentation(),
+                new AfterNavigationStateRendererInstrumentation(),
+                new EventRpcHandlerInstrumentation(),
+                new NavigationRpcHandlerInstrumentation(),
+                new MapSyncRpcHandlerInstrumentation(),
+                new AttachExistingElementRpcHandlerInstrumentation(),
+                new JavaScriptBootstrapHandlerInstrumentation(),
+                new PublishedServerEventHandlerRpcHandlerInstrumentation(),
+                new SessionRequestHandlerInstrumentation(),
+                new StaticFileServerInstrumentation(),
+                new VaadinServiceInstrumentation(),
+                new HeartbeatHandlerInstrumentation(),
+                new UidlRequestHandlerInstrumentation(),
+                new PwaHandlerInstrumentation(),
+                new UnsupportedBrowserHandlerInstrumentation());
         // @formatter:on
     }
 }
