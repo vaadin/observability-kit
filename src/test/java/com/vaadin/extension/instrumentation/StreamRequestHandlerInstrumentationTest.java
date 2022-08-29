@@ -26,7 +26,7 @@ public class StreamRequestHandlerInstrumentationTest
     public void handleRequest_createsSpan() {
         final VaadinRequest request = Mockito.mock(VaadinRequest.class);
 
-        final String fileName = "/VAADIN/dynamic/resource/file.png";
+        final String fileName = "/VAADIN/dynamic/resource/file";
         Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
         StreamRequestHandlerInstrumentation.HandleRequestAdvice
@@ -43,7 +43,7 @@ public class StreamRequestHandlerInstrumentationTest
     public void handleRequest_mainSpanIsUpdated() {
         final VaadinRequest request = Mockito.mock(VaadinRequest.class);
 
-        final String fileName = "/VAADIN/dynamic/resource/image?file=file.png";
+        final String fileName = "/VAADIN/dynamic/resource/file";
         Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
         try (var ignored = withRootContext()) {
@@ -63,7 +63,7 @@ public class StreamRequestHandlerInstrumentationTest
     public void handleRequestWithException_setsErrorStatus() {
         final VaadinRequest request = Mockito.mock(VaadinRequest.class);
 
-        final String fileName = "/VAADIN/dynamic/resource/file.png";
+        final String fileName = "/VAADIN/dynamic/resource/file";
         Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
         StreamRequestHandlerInstrumentation.HandleRequestAdvice
@@ -75,5 +75,21 @@ public class StreamRequestHandlerInstrumentationTest
 
         SpanData span = getExportedSpan(0);
         assertSpanHasException(span, exception);
+    }
+
+    @Test
+    public void handleRequest_notHandled() {
+        final VaadinRequest request = Mockito.mock(VaadinRequest.class);
+
+        final String fileName = "/VAADIN/dynamic/resource/file";
+        Mockito.when(request.getPathInfo()).thenReturn(fileName);
+
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice
+                .onEnter(null);
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice.onExit(
+                streamRequestHandler, "handleRequest", null,
+                false, request, startTimestamp);
+
+        assertEquals(0, getExportedSpanCount());
     }
 }
