@@ -17,9 +17,8 @@ import net.bytebuddy.matcher.ElementMatcher;
 import java.time.Instant;
 
 /**
- * Instruments JavaScriptBootstrapHandler to add a span for its execution, and
- * update the http route to contain the route template for the actual location
- * in the browser.
+ * Instruments WebComponentProvider to add a span when supplying the script/html
+ * of the web component matching requested tag.
  */
 public class WebComponentProviderInstrumentation
         implements TypeInstrumentation {
