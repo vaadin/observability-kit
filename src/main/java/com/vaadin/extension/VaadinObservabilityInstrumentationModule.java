@@ -13,6 +13,7 @@ import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.SessionRequestHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UnsupportedBrowserHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
@@ -61,6 +62,7 @@ public class VaadinObservabilityInstrumentationModule
                       new AttachExistingElementRpcHandlerInstrumentation(),
                       new JavaScriptBootstrapHandlerInstrumentation(),
                       new PublishedServerEventHandlerRpcHandlerInstrumentation(),
+                      new StaticFileServerInstrumentation(),
                       new SessionRequestHandlerInstrumentation(),
                       new VaadinServiceInstrumentation(),
                       new HeartbeatHandlerInstrumentation(),
