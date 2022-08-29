@@ -1,5 +1,7 @@
 package com.vaadin.extension.instrumentation;
 
+import java.time.Instant;
+
 import static com.vaadin.flow.server.Constants.VAADIN_MAPPING;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
@@ -51,29 +53,33 @@ public class StreamRequestHandlerInstrumentation
     public static class HandleRequestAdvice {
         @Advice.OnMethodEnter()
         public static void onEnter(
-                @Advice.This StreamRequestHandler streamRequestHandler,
-                @Advice.Origin("#m") String methodName,
-                @Advice.Argument(1) VaadinRequest request,
-                @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelScope") Scope scope) {
-            final String requestFilename = request.getPathInfo();
-
-            String spanName = streamRequestHandler.getClass().getSimpleName()
-                    + "." + methodName;
-            span = InstrumentationHelper.startSpan(spanName);
-
-            Span localRootSpan = LocalRootSpan.current();
-            localRootSpan.updateName(requestFilename);
-
-            Context context = currentContext().with(span);
-            scope = context.makeCurrent();
+                @Advice.Local("startTimestamp") Instant startTimestamp) {
+            startTimestamp = Instant.now();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelScope") Scope scope) {
-            InstrumentationHelper.endSpan(span, throwable, scope);
+        public static void onExit(
+                @Advice.This StreamRequestHandler streamRequestHandler,
+                @Advice.Origin("#m") String methodName,
+                @Advice.Thrown Throwable throwable,
+                @Advice.Return boolean handled,
+                @Advice.Argument(1) VaadinRequest request,
+                @Advice.Local("startTimestamp") Instant startTimestamp) {
+            if (!handled) {
+                // Do not add a span if static file is not served from here.
+                return;
+            }
+
+            final String spanName =
+                    streamRequestHandler.getClass().getSimpleName()
+                    + "." + methodName;
+            Span span = InstrumentationHelper.startSpan(spanName);
+
+            final String requestFilename = request.getPathInfo();
+            Span localRootSpan = LocalRootSpan.current();
+            localRootSpan.updateName(requestFilename);
+
+            InstrumentationHelper.endSpan(span, throwable, null);
         }
     }
 }
