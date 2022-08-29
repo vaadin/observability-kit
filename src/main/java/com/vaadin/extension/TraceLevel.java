@@ -6,19 +6,9 @@ package com.vaadin.extension;
  * level to determine whether to add something to a trace or not.
  */
 public enum TraceLevel {
-    MINIMUM(0), DEFAULT(1), MAXIMUM(2),;
-
-    private final int level;
-
-    private TraceLevel(int level) {
-        this.level = level;
-    }
-
-    public int getLevel() {
-        return level;
-    }
+    MINIMUM, DEFAULT, MAXIMUM,;
 
     public boolean includes(TraceLevel level) {
-        return this.level >= level.level;
+        return this.ordinal() >= level.ordinal();
     }
 }
