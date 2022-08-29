@@ -4,7 +4,9 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
+import com.vaadin.extension.Configuration;
 import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.extension.TraceLevel;
 import com.vaadin.flow.server.communication.UidlRequestHandler;
 
 import io.opentelemetry.api.trace.Span;
@@ -47,12 +49,14 @@ public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Origin("#m") String methodName,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            String spanName = uidlRequestHandler.getClass().getSimpleName()
-                    + "." + methodName;
-            span = InstrumentationHelper.startSpan(spanName);
+            if (Configuration.isEnabled(TraceLevel.MAXIMUM)) {
+                String spanName = uidlRequestHandler.getClass().getSimpleName()
+                        + "." + methodName;
+                span = InstrumentationHelper.startSpan(spanName);
 
-            Context context = currentContext().with(span);
-            scope = context.makeCurrent();
+                Context context = currentContext().with(span);
+                scope = context.makeCurrent();
+            }
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

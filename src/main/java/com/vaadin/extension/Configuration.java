@@ -1,36 +1,32 @@
 package com.vaadin.extension;
 
-import com.google.auto.service.AutoService;
-import io.opentelemetry.javaagent.extension.config.ConfigPropertySource;
-
-import java.util.HashMap;
-import java.util.Map;
+import io.opentelemetry.javaagent.bootstrap.internal.InstrumentationConfig;
 
 /**
- * disable the automatic vaadin instrumentation Custom distributions can supply
- * their own default configuration by implementing {@link ConfigPropertySource}.
- *
- * <p>
- * The configuration priority, from highest to lowest is:
- *
- * <ul>
- * <li>system properties
- * <li>environment variables
- * <li>configuration file
- * <li>PropertySource SPI
- * <li>hard-coded defaults
- * </ul>
+ * Provides the effective configuration for the Vaadin observability extension.
  */
-@AutoService(ConfigPropertySource.class)
-public class Configuration implements ConfigPropertySource {
+public class Configuration {
+    public static final TraceLevel TRACE_LEVEL = determineTraceLevel();
 
-    @Override
-    public Map<String, String> getProperties() {
-        Map<String, String> properties = new HashMap<>();
-        // Disable the built-in vaadin instrumentation
-        properties.put("otel.instrumentation.vaadin.enabled", "false");
-        // Set the service name to vaadin by default.
-        properties.put("otel.service.name", "vaadin");
-        return properties;
+    private static TraceLevel determineTraceLevel() {
+        String traceLevelString = InstrumentationConfig.get().getString(
+                Constants.CONFIG_TRACE_LEVEL, TraceLevel.DEFAULT.name());
+        try {
+            return TraceLevel.valueOf(traceLevelString.toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            return TraceLevel.DEFAULT;
+        }
+    }
+
+    /**
+     * Checks whether a trace level is enabled. Can be used by instrumentations
+     * to check whether some detail should be added to a trace or not.
+     * 
+     * @param traceLevel
+     *            the trace level to check
+     * @return true if the trace level is enabled, false if not
+     */
+    public static boolean isEnabled(TraceLevel traceLevel) {
+        return TRACE_LEVEL.includes(traceLevel);
     }
 }
