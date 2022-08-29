@@ -54,6 +54,52 @@ class StaticFileServerInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
+    public void bundleRequest_mainSpanIsUpdated() {
+        final HttpServletRequest request = Mockito
+                .mock(HttpServletRequest.class);
+        final HttpServletResponse response = Mockito
+                .mock(HttpServletResponse.class);
+
+        final String fileName = "/VAADIN/build/vaadin-bundle-f14b29f0d9b87d2ec1aa.cache.js";
+        Mockito.when(request.getPathInfo()).thenReturn(fileName);
+        Mockito.when(response.getStatus())
+                .thenReturn(HttpStatusCode.BAD_REQUEST.getCode());
+
+        try (var ignored = withRootContext()) {
+            StaticFileServerInstrumentation.HandleRequestAdvice.onEnter(null);
+            StaticFileServerInstrumentation.HandleRequestAdvice.onExit(null,
+                    true, request, response, startTimestamp);
+        }
+
+        SpanData rootSpan = getExportedSpan(1);
+        assertEquals("StaticFileRequest", getExportedSpan(0).getName());
+        assertEquals("/ : Load frontend bundle", rootSpan.getName());
+    }
+
+    @Test
+    public void staticFileRequest_mainSpanIsUpdatedToFileName() {
+        final HttpServletRequest request = Mockito
+                .mock(HttpServletRequest.class);
+        final HttpServletResponse response = Mockito
+                .mock(HttpServletResponse.class);
+
+        final String fileName = "/VAADIN/static/file.png";
+        Mockito.when(request.getPathInfo()).thenReturn(fileName);
+        Mockito.when(response.getStatus())
+                .thenReturn(HttpStatusCode.BAD_REQUEST.getCode());
+
+        try (var ignored = withRootContext()) {
+            StaticFileServerInstrumentation.HandleRequestAdvice.onEnter(null);
+            StaticFileServerInstrumentation.HandleRequestAdvice.onExit(null,
+                    true, request, response, startTimestamp);
+        }
+
+        SpanData rootSpan = getExportedSpan(1);
+        assertEquals("StaticFileRequest", getExportedSpan(0).getName());
+        assertEquals(fileName, rootSpan.getName());
+    }
+
+    @Test
     public void staticFileRequest_notModified() {
         final HttpServletRequest request = Mockito
                 .mock(HttpServletRequest.class);
