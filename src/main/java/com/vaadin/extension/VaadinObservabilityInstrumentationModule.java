@@ -17,8 +17,8 @@ import com.vaadin.extension.instrumentation.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UnsupportedBrowserHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
-import com.vaadin.extension.instrumentation.WebcomponentBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.WebComponentProviderInstrumentation;
+import com.vaadin.extension.instrumentation.WebcomponentBootstrapHandlerInstrumentation;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
