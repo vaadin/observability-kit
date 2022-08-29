@@ -12,6 +12,7 @@ import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.ReturnChannelHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.SessionRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
@@ -73,7 +74,8 @@ public class VaadinObservabilityInstrumentationModule
                 new HeartbeatHandlerInstrumentation(),
                 new UidlRequestHandlerInstrumentation(),
                 new PwaHandlerInstrumentation(),
-                new UnsupportedBrowserHandlerInstrumentation());
+                new UnsupportedBrowserHandlerInstrumentation(),
+                new ReturnChannelHandlerInstrumentation());
         // @formatter:on
     }
 }
