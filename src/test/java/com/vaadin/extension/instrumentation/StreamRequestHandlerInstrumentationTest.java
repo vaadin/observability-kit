@@ -1,7 +1,5 @@
 package com.vaadin.extension.instrumentation;
 
-import java.time.Instant;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.vaadin.flow.server.VaadinRequest;
@@ -11,6 +9,8 @@ import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+
+import java.time.Instant;
 
 public class StreamRequestHandlerInstrumentationTest
         extends AbstractInstrumentationTest {
@@ -29,11 +29,10 @@ public class StreamRequestHandlerInstrumentationTest
         final String fileName = "/VAADIN/dynamic/resource/file";
         Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
-        StreamRequestHandlerInstrumentation.HandleRequestAdvice
-                .onEnter(null);
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice.onEnter(null);
         StreamRequestHandlerInstrumentation.HandleRequestAdvice.onExit(
-                streamRequestHandler, "handleRequest", null,
-                true, request, startTimestamp);
+                streamRequestHandler, "handleRequest", null, true, request,
+                startTimestamp);
 
         SpanData span = getExportedSpan(0);
         assertEquals("StreamRequestHandler.handleRequest", span.getName());
@@ -50,8 +49,8 @@ public class StreamRequestHandlerInstrumentationTest
             StreamRequestHandlerInstrumentation.HandleRequestAdvice
                     .onEnter(null);
             StreamRequestHandlerInstrumentation.HandleRequestAdvice.onExit(
-                    streamRequestHandler, "handleRequest", null,
-                    true, request, startTimestamp);
+                    streamRequestHandler, "handleRequest", null, true, request,
+                    startTimestamp);
         }
 
         assertEquals("StreamRequestHandler.handleRequest",
@@ -66,12 +65,11 @@ public class StreamRequestHandlerInstrumentationTest
         final String fileName = "/VAADIN/dynamic/resource/file";
         Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
-        StreamRequestHandlerInstrumentation.HandleRequestAdvice
-                .onEnter(null);
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice.onEnter(null);
         Exception exception = new RuntimeException("test error");
-        StreamRequestHandlerInstrumentation.HandleRequestAdvice
-                .onExit(streamRequestHandler, "handleRequest", exception,
-                        true, request, startTimestamp);
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice.onExit(
+                streamRequestHandler, "handleRequest", exception, true, request,
+                startTimestamp);
 
         SpanData span = getExportedSpan(0);
         assertSpanHasException(span, exception);
@@ -84,11 +82,10 @@ public class StreamRequestHandlerInstrumentationTest
         final String fileName = "/VAADIN/dynamic/resource/file";
         Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
-        StreamRequestHandlerInstrumentation.HandleRequestAdvice
-                .onEnter(null);
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice.onEnter(null);
         StreamRequestHandlerInstrumentation.HandleRequestAdvice.onExit(
-                streamRequestHandler, "handleRequest", null,
-                false, request, startTimestamp);
+                streamRequestHandler, "handleRequest", null, false, request,
+                startTimestamp);
 
         assertEquals(0, getExportedSpanCount());
     }
