@@ -3,6 +3,8 @@ package com.vaadin.extension.instrumentation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.vaadin.extension.ContextKeys;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.util.MockVaadinService;
 import com.vaadin.extension.instrumentation.util.OpenTelemetryTestTools;
 import com.vaadin.flow.component.Component;
@@ -25,6 +27,7 @@ import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
@@ -35,6 +38,8 @@ public abstract class AbstractInstrumentationTest {
     private VaadinSession mockSession;
     private VaadinService mockService;
     private Scope sessionScope;
+    private MockedStatic<Configuration> ConfigurationMock;
+    private TraceLevel configuredTraceLevel;
 
     public UI getMockUI() {
         return mockUI;
@@ -87,9 +92,25 @@ public abstract class AbstractInstrumentationTest {
                 .with(ContextKeys.SESSION_ID, getMockSessionId()).makeCurrent();
     }
 
+    @BeforeEach
+    public void setupConfigurationMock() {
+        configuredTraceLevel = TraceLevel.DEFAULT;
+        ConfigurationMock = Mockito.mockStatic(Configuration.class);
+        ConfigurationMock.when(() -> Configuration.isEnabled(Mockito.any()))
+                .thenAnswer(invocation -> {
+                    TraceLevel level = invocation.getArgument(0);
+                    return configuredTraceLevel.includes(level);
+                });
+    }
+
     @AfterEach
     public void closeSessionContext() {
         sessionScope.close();
+    }
+
+    @AfterEach
+    public void closeConfigurationMock() {
+        ConfigurationMock.close();
     }
 
     protected RootContextScope withRootContext() {
@@ -98,6 +119,10 @@ public abstract class AbstractInstrumentationTest {
 
     protected Span getCapturedSpan(int index) {
         return OpenTelemetryTestTools.getSpanBuilderCapture().getSpan(index);
+    }
+
+    protected int getCapturedSpanCount() {
+        return OpenTelemetryTestTools.getSpanBuilderCapture().getSpans().size();
     }
 
     protected SpanData getExportedSpan(int index) {
@@ -118,6 +143,10 @@ public abstract class AbstractInstrumentationTest {
                 .getAttributes().get(SemanticAttributes.EXCEPTION_TYPE));
         assertEquals(throwable.getMessage(), eventData.getAttributes()
                 .get(SemanticAttributes.EXCEPTION_MESSAGE));
+    }
+
+    protected void configureTraceLevel(TraceLevel level) {
+        configuredTraceLevel = level;
     }
 
     @Tag("test-view")
