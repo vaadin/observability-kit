@@ -121,6 +121,11 @@ public abstract class AbstractInstrumentationTest {
         return OpenTelemetryTestTools.getSpanBuilderCapture().getSpan(index);
     }
 
+    protected Span getCapturedSpanOrNull(int index) {
+        return OpenTelemetryTestTools.getSpanBuilderCapture()
+                .getSpanOrNull(index);
+    }
+
     protected int getCapturedSpanCount() {
         return OpenTelemetryTestTools.getSpanBuilderCapture().getSpans().size();
     }
