@@ -7,7 +7,6 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.conf.TraceLevel;
-import com.vaadin.flow.server.communication.UidlRequestHandler;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -44,14 +43,10 @@ public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
     public static class SynchronizedHandleRequestAdvice {
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter(
-                @Advice.This UidlRequestHandler uidlRequestHandler,
-                @Advice.Origin("#m") String methodName,
-                @Advice.Local("otelSpan") Span span,
+        public static void onEnter(@Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (Configuration.isEnabled(TraceLevel.MAXIMUM)) {
-                String spanName = uidlRequestHandler.getClass().getSimpleName()
-                        + "." + methodName;
+            if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                final String spanName = "Handle Client Request";
                 span = InstrumentationHelper.startSpan(spanName);
 
                 Context context = currentContext().with(span);
