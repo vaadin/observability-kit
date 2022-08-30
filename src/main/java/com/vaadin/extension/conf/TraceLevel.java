@@ -1,4 +1,4 @@
-package com.vaadin.extension;
+package com.vaadin.extension.conf;
 
 /**
  * The detail level of traces. The global trace level can be configured in the

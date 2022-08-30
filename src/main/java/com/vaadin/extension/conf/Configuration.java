@@ -1,4 +1,6 @@
-package com.vaadin.extension;
+package com.vaadin.extension.conf;
+
+import com.vaadin.extension.Constants;
 
 import io.opentelemetry.javaagent.bootstrap.internal.InstrumentationConfig;
 
@@ -21,7 +23,7 @@ public class Configuration {
     /**
      * Checks whether a trace level is enabled. Can be used by instrumentations
      * to check whether some detail should be added to a trace or not.
-     * 
+     *
      * @param traceLevel
      *            the trace level to check
      * @return true if the trace level is enabled, false if not

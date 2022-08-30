@@ -4,9 +4,9 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
-import com.vaadin.extension.Configuration;
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.extension.TraceLevel;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.server.communication.UidlRequestHandler;
 
 import io.opentelemetry.api.trace.Span;

@@ -2,7 +2,7 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.vaadin.extension.TraceLevel;
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.server.communication.UidlRequestHandler;
 
 import io.opentelemetry.sdk.trace.data.SpanData;

@@ -1,4 +1,6 @@
-package com.vaadin.extension;
+package com.vaadin.extension.conf;
+
+import com.vaadin.extension.Constants;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.config.ConfigPropertySource;
