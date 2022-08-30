@@ -5,9 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import elemental.json.Json;
 import elemental.json.JsonObject;
 
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
-import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.StatusCode;
@@ -16,17 +16,14 @@ import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
-    private EventRpcHandler eventRpcHandlerMock;
     TestComponent component;
     JsonObject jsonObject;
 
     @BeforeEach
     public void setup() {
-        eventRpcHandlerMock = Mockito.mock(EventRpcHandler.class);
         component = new TestComponent();
         getMockUI().add(component);
         jsonObject = Json.createObject();
@@ -37,9 +34,8 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     public void handleNode_createsSpan() {
         component.getElement().setText("foo");
 
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -60,9 +56,8 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         component.setId("id");
         component.getElement().setText("foo");
 
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -77,9 +72,8 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         jsonObject.put("event", "opened-changed");
         component.getElement().setProperty("opened", true);
 
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -92,9 +86,8 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         component.getElement().setProperty("opened", false);
 
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -107,7 +100,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     public void handleNode_updatesRootSpan() {
         try (var ignored = withRootContext()) {
             EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                    eventRpcHandlerMock, "handleNode",
+
                     component.getElement().getNode(), jsonObject, null, null);
             EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                     getCapturedSpan(0), null);
@@ -119,9 +112,8 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
     @Test
     public void handleNodeWithException_setsErrorStatus() {
-        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(eventRpcHandlerMock,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         Exception exception = new RuntimeException("test error");
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(exception,
                 getCapturedSpan(0), null);
@@ -136,6 +128,50 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
                 .getAttributes().get(SemanticAttributes.EXCEPTION_TYPE));
         assertEquals("test error", eventData.getAttributes()
                 .get(SemanticAttributes.EXCEPTION_MESSAGE));
+    }
+
+    @Test
+    public void handleNode_respectsTraceLevel() {
+        configureTraceLevel(TraceLevel.MINIMUM);
+        try (var ignored = withRootContext()) {
+            EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                    component.getElement().getNode(), jsonObject, null, null);
+            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                    getCapturedSpanOrNull(0), null);
+        }
+        // Should not export span, apart from root span
+        assertEquals(1, getExportedSpanCount());
+        // Should update root span
+        SpanData rootSpan = getExportedSpan(0);
+        assertEquals("/test-route : event", rootSpan.getName());
+
+        configureTraceLevel(TraceLevel.DEFAULT);
+        resetSpans();
+        try (var ignored = withRootContext()) {
+            EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                    component.getElement().getNode(), jsonObject, null, null);
+            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                    getCapturedSpanOrNull(0), null);
+        }
+        // Should export span
+        assertEquals(2, getExportedSpanCount());
+        // Should update root span
+        rootSpan = getExportedSpan(1);
+        assertEquals("/test-route : event", rootSpan.getName());
+
+        configureTraceLevel(TraceLevel.MAXIMUM);
+        resetSpans();
+        try (var ignored = withRootContext()) {
+            EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                    component.getElement().getNode(), jsonObject, null, null);
+            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                    getCapturedSpanOrNull(0), null);
+        }
+        // Should export span
+        assertEquals(2, getExportedSpanCount());
+        // Should update root span
+        rootSpan = getExportedSpan(1);
+        assertEquals("/test-route : event", rootSpan.getName());
     }
 
     @Tag("test-component")
