@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import elemental.json.Json;
 import elemental.json.JsonObject;
 
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
@@ -33,9 +34,8 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     public void handleNode_createsSpan() {
         component.getElement().setText("foo");
 
-        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(mapSyncRpcHandler,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -51,9 +51,8 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
     @Test
     public void handleNodeWithException_setsErrorStatus() {
-        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(mapSyncRpcHandler,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         Exception exception = new RuntimeException("test error");
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(exception,
                 getCapturedSpan(0), null);
@@ -64,5 +63,32 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
     @Tag("test-component")
     private static class TestComponent extends Component {
+    }
+
+    @Test
+    public void handleNode_respectsTraceLevels() {
+        configureTraceLevel(TraceLevel.MINIMUM);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpanOrNull(0), null);
+
+        assertEquals(0, getExportedSpanCount());
+
+        configureTraceLevel(TraceLevel.DEFAULT);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpanOrNull(0), null);
+
+        assertEquals(1, getExportedSpanCount());
+
+        configureTraceLevel(TraceLevel.MAXIMUM);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpanOrNull(0), null);
+
+        assertEquals(1, getExportedSpanCount());
     }
 }
