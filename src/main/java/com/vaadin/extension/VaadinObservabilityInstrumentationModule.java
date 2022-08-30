@@ -5,6 +5,7 @@ import static java.util.Arrays.asList;
 
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.AttachExistingElementRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.AttachTemplateChildRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.EventRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.JavaScriptBootstrapHandlerInstrumentation;
@@ -59,6 +60,7 @@ public class VaadinObservabilityInstrumentationModule
         // TypeIntrumentation for this instrumentation module
         // @formatter:off
         return asList(
+                new AttachTemplateChildRpcHandlerInstrumentation(),
                 new WebcomponentBootstrapHandlerInstrumentation(),
                 new WebComponentProviderInstrumentation(),
                 new AfterNavigationStateRendererInstrumentation(),
