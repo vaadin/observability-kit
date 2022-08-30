@@ -32,6 +32,7 @@ class NavigationRpcHandlerInstrumentationTest
         assertEquals(0, getExportedSpanCount());
 
         configureTraceLevel(TraceLevel.DEFAULT);
+        resetSpans();
         NavigationRpcHandlerInstrumentation.MethodAdvice.onEnter(null, null);
         NavigationRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);
@@ -39,6 +40,7 @@ class NavigationRpcHandlerInstrumentationTest
         assertEquals(0, getExportedSpanCount());
 
         configureTraceLevel(TraceLevel.MAXIMUM);
+        resetSpans();
         NavigationRpcHandlerInstrumentation.MethodAdvice.onEnter(null, null);
         NavigationRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);

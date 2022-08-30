@@ -5,7 +5,8 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.flow.server.communication.ReturnChannelHandler;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -45,17 +46,15 @@ public class ReturnChannelHandlerInstrumentation
     public static class MethodAdvice {
 
         @Advice.OnMethodEnter()
-        public static void onEnter(
-                @Advice.This ReturnChannelHandler returnChannelHandler,
-                @Advice.Origin("#m") String methodName,
-                @Advice.Local("otelSpan") Span span,
+        public static void onEnter(@Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            String spanName = returnChannelHandler.getClass().getSimpleName()
-                    + "." + methodName;
-            span = InstrumentationHelper.startSpan(spanName);
+            if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                String spanName = "Handle return channel";
+                span = InstrumentationHelper.startSpan(spanName);
 
-            Context context = currentContext().with(span);
-            scope = context.makeCurrent();
+                Context context = currentContext().with(span);
+                scope = context.makeCurrent();
+            }
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
