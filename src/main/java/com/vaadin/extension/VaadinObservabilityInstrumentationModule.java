@@ -12,6 +12,9 @@ import com.vaadin.extension.instrumentation.JavaScriptBootstrapHandlerInstrument
 import com.vaadin.extension.instrumentation.MapSyncRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.PushAtmosphereHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.PushHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.PushRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.PwaHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.ReturnChannelHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.SessionRequestHandlerInstrumentation;
@@ -27,6 +30,8 @@ import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModul
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import net.bytebuddy.matcher.ElementMatcher;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 @AutoService(InstrumentationModule.class)
@@ -58,26 +63,54 @@ public class VaadinObservabilityInstrumentationModule
     @Override
     public List<TypeInstrumentation> typeInstrumentations() {
         // TypeIntrumentation for this instrumentation module
+        final List<TypeInstrumentation> typeInstrumentations = new ArrayList<>();
+        addFeatureInstrumentation(typeInstrumentations);
+        addRequestHandlers(typeInstrumentations);
+        addRpcHandlers(typeInstrumentations);
+        return Collections.unmodifiableList(typeInstrumentations);
+    }
+
+    private void addFeatureInstrumentation(
+            List<TypeInstrumentation> instrumentationList) {
         // @formatter:off
-        return asList(
-                new AttachTemplateChildRpcHandlerInstrumentation(),
-                new WebcomponentBootstrapHandlerInstrumentation(),
-                new WebComponentProviderInstrumentation(),
+        instrumentationList.addAll(asList(
                 new AfterNavigationStateRendererInstrumentation(),
+                new StaticFileServerInstrumentation(),
+                new VaadinServiceInstrumentation(),
+                new PushHandlerInstrumentation(),
+                new PushAtmosphereHandlerInstrumentation()
+        ));
+        // @formatter:on
+    }
+
+    private void addRpcHandlers(List<TypeInstrumentation> instrumentationList) {
+        // @formatter:off
+        instrumentationList.addAll(asList(
                 new EventRpcHandlerInstrumentation(),
                 new NavigationRpcHandlerInstrumentation(),
                 new MapSyncRpcHandlerInstrumentation(),
                 new AttachExistingElementRpcHandlerInstrumentation(),
+                new AttachTemplateChildRpcHandlerInstrumentation(),
+                new PublishedServerEventHandlerRpcHandlerInstrumentation()
+                ));
+        // @formatter:on
+    }
+
+    private void addRequestHandlers(
+            List<TypeInstrumentation> instrumentationList) {
+        // @formatter:off
+        instrumentationList.addAll(asList(
+                new PushRequestHandlerInstrumentation(),
+                new WebcomponentBootstrapHandlerInstrumentation(),
+                new WebComponentProviderInstrumentation(),
                 new JavaScriptBootstrapHandlerInstrumentation(),
-                new PublishedServerEventHandlerRpcHandlerInstrumentation(),
                 new SessionRequestHandlerInstrumentation(),
-                new StaticFileServerInstrumentation(),
-                new VaadinServiceInstrumentation(),
                 new HeartbeatHandlerInstrumentation(),
                 new UidlRequestHandlerInstrumentation(),
                 new PwaHandlerInstrumentation(),
                 new UnsupportedBrowserHandlerInstrumentation(),
-                new ReturnChannelHandlerInstrumentation());
+                new ReturnChannelHandlerInstrumentation()
+                ));
         // @formatter:on
     }
 }
