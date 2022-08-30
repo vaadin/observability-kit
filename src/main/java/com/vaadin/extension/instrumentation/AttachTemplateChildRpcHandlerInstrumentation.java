@@ -6,6 +6,8 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.internal.StateNode;
 
 import io.opentelemetry.api.trace.Span;
@@ -48,23 +50,25 @@ public class AttachTemplateChildRpcHandlerInstrumentation
         public static void onEnter(@Advice.Argument(0) StateNode node,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
+            if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                // Info for the element that is being attached
+                ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
+                        node);
 
-            // Info for the element that is being attached
-            ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
-                    node);
+                span = InstrumentationHelper.startSpan("Attach template child: "
+                        + elementInfo.getElementLabel());
+                span.setAttribute("vaadin.element.tag",
+                        elementInfo.getElement().getTag());
+                // If possible add active view class name as an attribute to the
+                // span
+                if (elementInfo.getViewLabel() != null) {
+                    span.setAttribute("vaadin.view",
+                            elementInfo.getViewLabel());
+                }
 
-            span = InstrumentationHelper.startSpan(
-                    "AttachTemplateChild: " + elementInfo.getElementLabel());
-            span.setAttribute("vaadin.element.tag",
-                    elementInfo.getElement().getTag());
-            // If possible add active view class name as an attribute to the
-            // span
-            if (elementInfo.getViewLabel() != null) {
-                span.setAttribute("vaadin.view", elementInfo.getViewLabel());
+                Context context = currentContext().with(span);
+                scope = context.makeCurrent();
             }
-
-            Context context = currentContext().with(span);
-            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
