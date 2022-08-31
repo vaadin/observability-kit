@@ -49,13 +49,15 @@ public class NavigationRpcHandlerInstrumentation
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (Configuration.isEnabled(TraceLevel.MAXIMUM)) {
-                String spanName = "Handle navigation";
-                span = InstrumentationHelper.startSpan(spanName);
-
-                Context context = currentContext().with(span);
-                scope = context.makeCurrent();
+            if (!Configuration.isEnabled(TraceLevel.MAXIMUM)) {
+                return;
             }
+
+            String spanName = "Handle navigation";
+            span = InstrumentationHelper.startSpan(spanName);
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

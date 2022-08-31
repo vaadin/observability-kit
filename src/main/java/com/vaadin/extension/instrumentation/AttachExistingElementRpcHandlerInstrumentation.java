@@ -53,32 +53,31 @@ public class AttachExistingElementRpcHandlerInstrumentation
                 @Advice.Argument(3) StateNode node,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-
-            if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
-                // Info for the element that is being attached
-                ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
-                        node);
-                // Info for the element that the node is being attached to
-                ElementInstrumentationInfo targetInfo = new ElementInstrumentationInfo(
-                        feature.getNode());
-
-                span = InstrumentationHelper
-                        .startSpan("Attach existing element: "
-                                + elementInfo.getElementLabel());
-                span.setAttribute("vaadin.element.tag",
-                        elementInfo.getElement().getTag());
-                span.setAttribute("vaadin.element.target",
-                        targetInfo.getElementLabel());
-                // If possible add active view class name as an attribute to the
-                // span
-                if (elementInfo.getViewLabel() != null) {
-                    span.setAttribute("vaadin.view",
-                            elementInfo.getViewLabel());
-                }
-
-                Context context = currentContext().with(span);
-                scope = context.makeCurrent();
+            if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                return;
             }
+
+            // Info for the element that is being attached
+            ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
+                    node);
+            // Info for the element that the node is being attached to
+            ElementInstrumentationInfo targetInfo = new ElementInstrumentationInfo(
+                    feature.getNode());
+
+            span = InstrumentationHelper.startSpan("Attach existing element: "
+                    + elementInfo.getElementLabel());
+            span.setAttribute("vaadin.element.tag",
+                    elementInfo.getElement().getTag());
+            span.setAttribute("vaadin.element.target",
+                    targetInfo.getElementLabel());
+            // If possible add active view class name as an attribute to the
+            // span
+            if (elementInfo.getViewLabel() != null) {
+                span.setAttribute("vaadin.view", elementInfo.getViewLabel());
+            }
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

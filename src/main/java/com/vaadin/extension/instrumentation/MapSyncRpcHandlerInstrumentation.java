@@ -56,24 +56,25 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Argument(1) JsonObject jsonObject,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
-                final ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
-                        node);
-                final Element element = elementInfo.getElement();
-
-                String spanName = "Sync: " + elementInfo.getElementLabel();
-                span = InstrumentationHelper.startSpan(spanName);
-                span.setAttribute("vaadin.element.tag", element.getTag());
-                // If possible add active view class name as an attribute to the
-                // span
-                if (elementInfo.getViewLabel() != null) {
-                    span.setAttribute("vaadin.view",
-                            elementInfo.getViewLabel());
-                }
-
-                Context context = currentContext().with(span);
-                scope = context.makeCurrent();
+            if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                return;
             }
+
+            final ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
+                    node);
+            final Element element = elementInfo.getElement();
+
+            String spanName = "Sync: " + elementInfo.getElementLabel();
+            span = InstrumentationHelper.startSpan(spanName);
+            span.setAttribute("vaadin.element.tag", element.getTag());
+            // If possible add active view class name as an attribute to the
+            // span
+            if (elementInfo.getViewLabel() != null) {
+                span.setAttribute("vaadin.view", elementInfo.getViewLabel());
+            }
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

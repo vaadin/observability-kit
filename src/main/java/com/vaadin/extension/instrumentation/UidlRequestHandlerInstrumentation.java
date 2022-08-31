@@ -45,13 +45,15 @@ public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
         @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter(@Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
-                final String spanName = "Handle Client Request";
-                span = InstrumentationHelper.startSpan(spanName);
-
-                Context context = currentContext().with(span);
-                scope = context.makeCurrent();
+            if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                return;
             }
+
+            final String spanName = "Handle Client Request";
+            span = InstrumentationHelper.startSpan(spanName);
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
