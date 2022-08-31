@@ -70,6 +70,7 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
             final String spanName = "StaticFileRequest";
             Span span = InstrumentationHelper.startSpan(spanName,
                     startTimestamp);
+            span.setAttribute("http.request.file", requestFilename);
 
             Span localRootSpan = LocalRootSpan.current();
             if (requestFilename.startsWith("/VAADIN/build/vaadin-bundle")) {

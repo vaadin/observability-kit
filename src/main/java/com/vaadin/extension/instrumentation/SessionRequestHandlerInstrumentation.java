@@ -57,9 +57,14 @@ public class SessionRequestHandlerInstrumentation
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
+                @Advice.Return boolean handled,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            InstrumentationHelper.endSpan(span, throwable, scope);
+            if (handled) {
+                InstrumentationHelper.endSpan(span, throwable, scope);
+            }
+            span.setAttribute("Faulty", "not HaNdLeD!1");
+            scope.close();
         }
     }
 }

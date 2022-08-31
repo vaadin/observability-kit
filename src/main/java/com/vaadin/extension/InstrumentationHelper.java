@@ -15,6 +15,7 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 
@@ -25,6 +26,13 @@ import java.util.Optional;
 import javax.servlet.http.HttpServletRequest;
 
 public class InstrumentationHelper {
+    private static final SpanNameGenerator generator = new SpanNameGenerator();
+    private static final AttributeGetter attrGet = new AttributeGetter();
+
+    public static final Instrumenter<InstrumentationRequest, Void> INSTRUMENTER = Instrumenter
+            .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
+                    "vaadin-observability", generator)
+            .addAttributesExtractor(attrGet).newInstrumenter();
 
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(
