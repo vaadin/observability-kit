@@ -26,7 +26,9 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         component = new TestComponent();
         getMockUI().add(component);
         jsonObject = Json.createObject();
-        jsonObject.put("event", "click");
+        jsonObject.put("type", "mSync");
+        jsonObject.put("node", 128);
+        jsonObject.put("feature", 1);
     }
 
     @Test
@@ -60,6 +62,18 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         SpanData span = getExportedSpan(0);
         this.assertSpanHasException(span, exception);
+    }
+
+    @Test
+    public void mapChange_existingValue_spanSkipped() {
+        jsonObject.put("property", "value");
+        jsonObject.put("value", "default");
+        component.getElement().setProperty("value", "default");
+
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(mapSyncRpcHandler,
+                "handleNode", component.getElement().getNode(), jsonObject,
+                null, null);
+        assertEquals(0, getCapturedSpanCount());
     }
 
     @Tag("test-component")

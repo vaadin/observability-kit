@@ -62,6 +62,16 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                     node);
             final Element element = elementInfo.getElement();
 
+            if (jsonObject.hasKey("property") && jsonObject.hasKey("value")) {
+                final String property = jsonObject.getString("property");
+                final String value = jsonObject.get("value").asString();
+                // skip if property or attribute is same
+                if (value.equals(element.getProperty(property, null))
+                        || value.equals(element.getAttribute(property))) {
+                    return;
+                }
+            }
+
             String spanName = "Sync: " + elementInfo.getElementLabel();
             span = InstrumentationHelper.startSpan(spanName);
             span.setAttribute("vaadin.element.tag", element.getTag());
