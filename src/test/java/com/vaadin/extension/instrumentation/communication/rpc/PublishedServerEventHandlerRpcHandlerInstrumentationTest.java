@@ -134,7 +134,7 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
         assertEquals(1, getExportedSpanCount());
         // Should update root span
         SpanData rootSpan = getExportedSpan(0);
-        assertEquals("/test-route : ClientCallable", rootSpan.getName());
+        assertEquals("/test-route", rootSpan.getName());
 
         configureTraceLevel(TraceLevel.DEFAULT);
         resetSpans();
@@ -152,7 +152,7 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
         assertEquals(2, getExportedSpanCount());
         // Should update root span
         rootSpan = getExportedSpan(1);
-        assertEquals("/test-route : ClientCallable", rootSpan.getName());
+        assertEquals("/test-route", rootSpan.getName());
 
         configureTraceLevel(TraceLevel.MAXIMUM);
         resetSpans();
@@ -170,7 +170,7 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
         assertEquals(2, getExportedSpanCount());
         // Should update root span
         rootSpan = getExportedSpan(1);
-        assertEquals("/test-route : ClientCallable", rootSpan.getName());
+        assertEquals("/test-route", rootSpan.getName());
     }
 
     @Tag("test-component")

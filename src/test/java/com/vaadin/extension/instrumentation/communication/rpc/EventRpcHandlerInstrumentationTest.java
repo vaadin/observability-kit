@@ -109,7 +109,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         }
 
         SpanData exportedRootSpan = getExportedSpan(1);
-        assertEquals("/test-route : event", exportedRootSpan.getName());
+        assertEquals("/test-route", exportedRootSpan.getName());
     }
 
     @Test
@@ -145,7 +145,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals(1, getExportedSpanCount());
         // Should update root span
         SpanData rootSpan = getExportedSpan(0);
-        assertEquals("/test-route : event", rootSpan.getName());
+        assertEquals("/test-route", rootSpan.getName());
 
         configureTraceLevel(TraceLevel.DEFAULT);
         resetSpans();
@@ -159,7 +159,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals(2, getExportedSpanCount());
         // Should update root span
         rootSpan = getExportedSpan(1);
-        assertEquals("/test-route : event", rootSpan.getName());
+        assertEquals("/test-route", rootSpan.getName());
 
         configureTraceLevel(TraceLevel.MAXIMUM);
         resetSpans();
@@ -173,7 +173,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals(2, getExportedSpanCount());
         // Should update root span
         rootSpan = getExportedSpan(1);
-        assertEquals("/test-route : event", rootSpan.getName());
+        assertEquals("/test-route", rootSpan.getName());
     }
 
     @Tag("test-component")

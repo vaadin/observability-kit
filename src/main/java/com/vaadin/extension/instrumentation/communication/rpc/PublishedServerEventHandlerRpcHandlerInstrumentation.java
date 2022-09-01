@@ -114,9 +114,8 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
             }
 
             // Set the root span name to be the event
-            LocalRootSpan.current().updateName(
-                    "/" + getActiveRouteTemplate(component.getUI().get()).get()
-                            + " : ClientCallable");
+            LocalRootSpan.current().updateName("/"
+                    + getActiveRouteTemplate(component.getUI().get()).get());
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
