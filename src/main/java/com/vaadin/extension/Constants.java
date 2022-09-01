@@ -9,4 +9,5 @@ public class Constants {
 
     // Vaadin attribute names
     public static final String SESSION_ID = "vaadin.session.id";
+    public static final String REQUEST_TYPE = "vaadin.request.type";
 }

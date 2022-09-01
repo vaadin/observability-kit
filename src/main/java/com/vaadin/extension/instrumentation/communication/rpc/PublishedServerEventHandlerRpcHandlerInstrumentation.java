@@ -98,6 +98,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
             if (method.getName().equals("connectClient")) {
+                LocalRootSpan.current().updateName("/ : connectClient");
                 return;
             }
 

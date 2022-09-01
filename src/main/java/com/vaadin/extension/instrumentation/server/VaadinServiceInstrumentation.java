@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.server;
 
+import static com.vaadin.extension.Constants.REQUEST_TYPE;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTER;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
@@ -8,9 +9,13 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.ContextKeys;
 import com.vaadin.extension.InstrumentationRequest;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
+import com.vaadin.flow.server.HandlerHelper;
 import com.vaadin.flow.server.HttpStatusCode;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
+import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
@@ -54,6 +59,11 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
                 @Advice.Argument(0) VaadinRequest vaadinRequest,
                 @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
+            if (HandlerHelper.isRequestType(vaadinRequest,
+                    HandlerHelper.RequestType.HEARTBEAT)
+                    && !Configuration.isEnabled(TraceLevel.MAXIMUM)) {
+                return;
+            }
 
             // Using instrumentation to get this as LocalRootSpan!
             InstrumentationRequest request = new InstrumentationRequest(
@@ -72,6 +82,8 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
             if (span != null) {
                 span.setAttribute("http.url", vaadinRequest.getPathInfo());
                 span.setAttribute(SESSION_ID, sessionId);
+                span.setAttribute(REQUEST_TYPE, vaadinRequest.getParameter(
+                        ApplicationConstants.REQUEST_TYPE_PARAMETER));
             }
         }
 
