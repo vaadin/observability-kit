@@ -12,7 +12,8 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * Instruments VaadinSession to keep track of the number of current sessions
+ * Instruments VaadinSession to keep track of the number of current sessions and
+ * UIs
  */
 public class VaadinSessionInstrumentation implements TypeInstrumentation {
 
@@ -32,6 +33,11 @@ public class VaadinSessionInstrumentation implements TypeInstrumentation {
                 this.getClass().getName() + "$CreateSessionAdvice");
         transformer.applyAdviceToMethod(named("valueUnbound"),
                 this.getClass().getName() + "$CloseSessionAdvice");
+
+        transformer.applyAdviceToMethod(named("addUI"),
+                this.getClass().getName() + "$AddUiAdvice");
+        transformer.applyAdviceToMethod(named("removeUI"),
+                this.getClass().getName() + "$RemoveUiAdvice");
     }
 
     @SuppressWarnings("unused")
@@ -47,6 +53,22 @@ public class VaadinSessionInstrumentation implements TypeInstrumentation {
         @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter() {
             Metrics.decrementSessionCount();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    public static class AddUiAdvice {
+        @Advice.OnMethodExit(suppress = Throwable.class)
+        public static void onExit() {
+            Metrics.incrementUiCount();
+        }
+    }
+
+    @SuppressWarnings("unused")
+    public static class RemoveUiAdvice {
+        @Advice.OnMethodExit(suppress = Throwable.class)
+        public static void onExit() {
+            Metrics.decrementUiCount();
         }
     }
 }

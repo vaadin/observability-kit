@@ -28,4 +28,25 @@ class VaadinSessionInstrumentationTest {
 
         assertEquals(0, Metrics.getSessionCount());
     }
+
+    @Test
+    public void increaseAndDecreaseUiCount() {
+        VaadinSessionInstrumentation.AddUiAdvice.onExit();
+        VaadinSessionInstrumentation.AddUiAdvice.onExit();
+        VaadinSessionInstrumentation.AddUiAdvice.onExit();
+
+        assertEquals(3, Metrics.getUiCount());
+
+        VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
+        VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
+
+        assertEquals(1, Metrics.getUiCount());
+
+        // Should not go below 0
+        VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
+        VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
+        VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
+
+        assertEquals(0, Metrics.getUiCount());
+    }
 }
