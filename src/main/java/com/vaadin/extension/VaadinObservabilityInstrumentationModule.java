@@ -19,6 +19,7 @@ import com.vaadin.extension.instrumentation.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.UnsupportedBrowserHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.VaadinServiceInstrumentation;
+import com.vaadin.extension.instrumentation.VaadinSessionInstrumentation;
 import com.vaadin.extension.instrumentation.WebComponentProviderInstrumentation;
 import com.vaadin.extension.instrumentation.WebcomponentBootstrapHandlerInstrumentation;
 
@@ -77,7 +78,8 @@ public class VaadinObservabilityInstrumentationModule
                 new UidlRequestHandlerInstrumentation(),
                 new PwaHandlerInstrumentation(),
                 new UnsupportedBrowserHandlerInstrumentation(),
-                new ReturnChannelHandlerInstrumentation());
+                new ReturnChannelHandlerInstrumentation(),
+                new VaadinSessionInstrumentation());
         // @formatter:on
     }
 }
