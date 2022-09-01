@@ -42,17 +42,9 @@ public class Metrics {
 
             sessionDurationMeasurement = meter
                     .histogramBuilder("vaadin.session.duration")
-                    .setDescription("Duration of sessions").setUnit("seconds").ofLongs()
-                    .build();
+                    .setDescription("Duration of sessions").setUnit("seconds")
+                    .ofLongs().build();
         }
-    }
-
-    public static int getSessionCount() {
-        return sessionCount.get();
-    }
-
-    public static int getUiCount() {
-        return uiCount.get();
     }
 
     public static void recordSessionStart(VaadinSession session) {
@@ -63,8 +55,6 @@ public class Metrics {
         Instant sessionStart = Instant.now();
 
         sessionStarts.put(sessionId, sessionStart);
-        System.out.println("recordSessionStart - session: " + sessionId);
-        System.out.println("recordSessionStart - session start: " + sessionStart);
     }
 
     public static void recordSessionEnd(VaadinSession session) {
@@ -74,15 +64,11 @@ public class Metrics {
         String sessionId = getSessionIdentifier(session);
         Instant sessionStart = sessionStarts.getOrDefault(sessionId, null);
 
-        System.out.println("recordSessionEnd - session: " + sessionId);
-        System.out.println("recordSessionEnd - session start: " + sessionStart);
-
         if (sessionStart != null) {
             sessionStarts.remove(sessionId);
             Duration sessionDuration = Duration.between(sessionStart,
                     Instant.now());
             sessionDurationMeasurement.record(sessionDuration.toSeconds());
-            System.out.println("session duration: " + sessionDuration.toSeconds());
         }
     }
 
@@ -97,7 +83,10 @@ public class Metrics {
     }
 
     private static String getSessionIdentifier(VaadinSession session) {
-        // VaadinSession.getWrappedSession().getId is a more natural candidate, however the wrapped session might not yet be set when recording the session start. The push id is generated for all sessions, and should contain a random UUID.
+        // VaadinSession.getWrappedSession().getId is a more natural candidate,
+        // however the wrapped session might not yet be set when recording the
+        // session start. The push id is generated for all sessions, and should
+        // contain a random UUID.
         return session.getPushId();
     }
 }

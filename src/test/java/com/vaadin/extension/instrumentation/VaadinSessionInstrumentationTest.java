@@ -2,14 +2,12 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-import com.vaadin.extension.Metrics;
 import com.vaadin.flow.server.VaadinSession;
-import com.vaadin.flow.server.WrappedSession;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-class VaadinSessionInstrumentationTest {
+class VaadinSessionInstrumentationTest extends AbstractInstrumentationTest {
 
     @Test
     public void increaseAndDecreaseSessionCount() {
@@ -21,19 +19,19 @@ class VaadinSessionInstrumentationTest {
         VaadinSessionInstrumentation.CreateSessionAdvice.onEnter(session2);
         VaadinSessionInstrumentation.CreateSessionAdvice.onEnter(session3);
 
-        assertEquals(3, Metrics.getSessionCount());
+        assertEquals(3, getLastLongGaugeMetricValue("vaadin.session.count"));
 
         VaadinSessionInstrumentation.CloseSessionAdvice.onEnter(session1);
         VaadinSessionInstrumentation.CloseSessionAdvice.onEnter(session2);
 
-        assertEquals(1, Metrics.getSessionCount());
+        assertEquals(1, getLastLongGaugeMetricValue("vaadin.session.count"));
 
         // Should not go below 0
         VaadinSessionInstrumentation.CloseSessionAdvice.onEnter(session3);
         VaadinSessionInstrumentation.CloseSessionAdvice.onEnter(session3);
         VaadinSessionInstrumentation.CloseSessionAdvice.onEnter(session3);
 
-        assertEquals(0, Metrics.getSessionCount());
+        assertEquals(0, getLastLongGaugeMetricValue("vaadin.session.count"));
     }
 
     @Test
@@ -42,27 +40,24 @@ class VaadinSessionInstrumentationTest {
         VaadinSessionInstrumentation.AddUiAdvice.onExit();
         VaadinSessionInstrumentation.AddUiAdvice.onExit();
 
-        assertEquals(3, Metrics.getUiCount());
+        assertEquals(3, getLastLongGaugeMetricValue("vaadin.ui.count"));
 
         VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
         VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
 
-        assertEquals(1, Metrics.getUiCount());
+        assertEquals(1, getLastLongGaugeMetricValue("vaadin.ui.count"));
 
         // Should not go below 0
         VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
         VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
         VaadinSessionInstrumentation.RemoveUiAdvice.onExit();
 
-        assertEquals(0, Metrics.getUiCount());
+        assertEquals(0, getLastLongGaugeMetricValue("vaadin.ui.count"));
     }
 
     private static VaadinSession mockSession(String sessionId) {
-        WrappedSession wrappedSession = Mockito.mock(WrappedSession.class);
-        Mockito.when(wrappedSession.getId()).thenReturn(sessionId);
-
         VaadinSession session = Mockito.mock(VaadinSession.class);
-        Mockito.when(session.getSession()).thenReturn(wrappedSession);
+        Mockito.when(session.getPushId()).thenReturn(sessionId);
 
         return session;
     }

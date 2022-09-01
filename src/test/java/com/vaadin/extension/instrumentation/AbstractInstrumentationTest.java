@@ -1,6 +1,7 @@
 package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.vaadin.extension.ContextKeys;
 import com.vaadin.extension.conf.Configuration;
@@ -21,6 +22,9 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
+import io.opentelemetry.sdk.metrics.data.GaugeData;
+import io.opentelemetry.sdk.metrics.data.LongPointData;
+import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.trace.data.EventData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
@@ -31,6 +35,7 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import java.util.ArrayList;
+import java.util.List;
 
 public abstract class AbstractInstrumentationTest {
 
@@ -136,6 +141,27 @@ public abstract class AbstractInstrumentationTest {
 
     protected int getExportedSpanCount() {
         return OpenTelemetryTestTools.getSpanExporter().getSpans().size();
+    }
+
+    protected void readMetrics() {
+        OpenTelemetryTestTools.getMetricReader().read();
+    }
+
+    protected MetricData getMetric(String name) {
+        readMetrics();
+        return OpenTelemetryTestTools.getMetricReader().getMetric(name);
+    }
+
+    protected long getLastLongGaugeMetricValue(String name) {
+        readMetrics();
+
+        MetricData metric = getMetric(name);
+        GaugeData<LongPointData> longGaugeData = metric.getLongGaugeData();
+        List<LongPointData> points = new ArrayList<>(longGaugeData.getPoints());
+
+        assertTrue(points.size() > 0, "Metric does not have any recorded data");
+
+        return points.get(points.size() - 1).getValue();
     }
 
     protected void assertSpanHasException(SpanData span, Throwable throwable) {
