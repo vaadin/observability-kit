@@ -154,8 +154,6 @@ public abstract class AbstractInstrumentationTest {
     }
 
     protected long getLastLongGaugeMetricValue(String name) {
-        readMetrics();
-
         MetricData metric = getMetric(name);
         GaugeData<LongPointData> longGaugeData = metric.getLongGaugeData();
         List<LongPointData> points = new ArrayList<>(longGaugeData.getPoints());
@@ -166,8 +164,6 @@ public abstract class AbstractInstrumentationTest {
     }
 
     protected HistogramPointData getLastHistogramMetricValue(String name) {
-        readMetrics();
-
         MetricData metric = getMetric(name);
         List<HistogramPointData> points = new ArrayList<>(
                 metric.getHistogramData().getPoints());
