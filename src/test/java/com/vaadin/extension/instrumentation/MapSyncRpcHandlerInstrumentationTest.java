@@ -8,22 +8,18 @@ import elemental.json.JsonObject;
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
-import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
-    private MapSyncRpcHandler mapSyncRpcHandler;
     TestComponent component;
     JsonObject jsonObject;
 
     @BeforeEach
     public void setup() {
-        mapSyncRpcHandler = Mockito.mock(MapSyncRpcHandler.class);
         component = new TestComponent();
         getMockUI().add(component);
         jsonObject = Json.createObject();
@@ -69,9 +65,8 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         jsonObject.put("value", "default");
         component.getElement().setProperty("value", "default");
 
-        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(mapSyncRpcHandler,
-                "handleNode", component.getElement().getNode(), jsonObject,
-                null, null);
+        MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
         assertEquals(0, getCapturedSpanCount());
     }
 
