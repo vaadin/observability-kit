@@ -1,5 +1,6 @@
 package com.vaadin.extension;
 
+import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.flow.server.Constants.VAADIN_MAPPING;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 
@@ -26,17 +27,20 @@ import java.util.Optional;
 import javax.servlet.http.HttpServletRequest;
 
 public class InstrumentationHelper {
+    public static final String INSTRUMENTATION_NAME = "com.vaadin.observability.instrumentation";
+    public static final String INSTRUMENTATION_VERSION = "1.0-alpha";
+
     private static final SpanNameGenerator generator = new SpanNameGenerator();
-    private static final AttributeGetter attrGet = new AttributeGetter();
 
     public static final Instrumenter<InstrumentationRequest, Void> INSTRUMENTER = Instrumenter
             .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
-                    "vaadin-observability", generator)
-            .addAttributesExtractor(attrGet).newInstrumenter();
+                    INSTRUMENTATION_NAME, generator)
+            .setInstrumentationVersion(INSTRUMENTATION_VERSION)
+            .newInstrumenter();
 
     public static Tracer getTracer() {
-        return GlobalOpenTelemetry.getTracer(
-                "com.vaadin.observability.instrumentation", "1.0-alpha");
+        return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
+                INSTRUMENTATION_VERSION);
     }
 
     /**
@@ -71,7 +75,7 @@ public class InstrumentationHelper {
 
         String sessionId = context.get(ContextKeys.SESSION_ID);
         if (sessionId != null && !sessionId.isEmpty()) {
-            span.setAttribute("vaadin.session.id", sessionId);
+            span.setAttribute(SESSION_ID, sessionId);
         }
 
         return span;
