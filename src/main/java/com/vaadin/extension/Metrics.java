@@ -21,6 +21,13 @@ public class Metrics {
 
     private static LongHistogram sessionDurationMeasurement;
 
+    private static InstantProvider instantProvider = new DefaultInstantProvider();
+
+    // Exposed for testing
+    public static void setInstantProvider(InstantProvider instantProvider) {
+        Metrics.instantProvider = instantProvider;
+    }
+
     public static void ensureMetricsRegistered() {
         // Ensure meters are only created once
         if (registered.compareAndSet(false, true)) {
@@ -52,7 +59,7 @@ public class Metrics {
         sessionCount.incrementAndGet();
 
         String sessionId = getSessionIdentifier(session);
-        Instant sessionStart = Instant.now();
+        Instant sessionStart = instantProvider.get();
 
         sessionStarts.put(sessionId, sessionStart);
     }
@@ -67,7 +74,7 @@ public class Metrics {
         if (sessionStart != null) {
             sessionStarts.remove(sessionId);
             Duration sessionDuration = Duration.between(sessionStart,
-                    Instant.now());
+                    instantProvider.get());
             sessionDurationMeasurement.record(sessionDuration.toSeconds());
         }
     }
@@ -88,5 +95,16 @@ public class Metrics {
         // session start. The push id is generated for all sessions, and should
         // contain a random UUID.
         return session.getPushId();
+    }
+
+    public interface InstantProvider {
+        Instant get();
+    }
+
+    private static class DefaultInstantProvider implements InstantProvider {
+        @Override
+        public Instant get() {
+            return Instant.now();
+        }
     }
 }

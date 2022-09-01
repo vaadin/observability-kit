@@ -23,6 +23,7 @@ import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.opentelemetry.sdk.metrics.data.GaugeData;
+import io.opentelemetry.sdk.metrics.data.HistogramPointData;
 import io.opentelemetry.sdk.metrics.data.LongPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.trace.data.EventData;
@@ -162,6 +163,18 @@ public abstract class AbstractInstrumentationTest {
         assertTrue(points.size() > 0, "Metric does not have any recorded data");
 
         return points.get(points.size() - 1).getValue();
+    }
+
+    protected HistogramPointData getLastHistogramMetricValue(String name) {
+        readMetrics();
+
+        MetricData metric = getMetric(name);
+        List<HistogramPointData> points = new ArrayList<>(
+                metric.getHistogramData().getPoints());
+
+        assertTrue(points.size() > 0, "Metric does not have any recorded data");
+
+        return points.get(points.size() - 1);
     }
 
     protected void assertSpanHasException(SpanData span, Throwable throwable) {
