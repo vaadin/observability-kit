@@ -1,8 +1,15 @@
 package com.vaadin.extension;
 
+import com.vaadin.flow.server.VaadinSession;
+
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -10,6 +17,9 @@ public class Metrics {
     private static final AtomicBoolean registered = new AtomicBoolean();
     private static final AtomicInteger sessionCount = new AtomicInteger();
     private static final AtomicInteger uiCount = new AtomicInteger();
+    private static final Map<String, Instant> sessionStarts = new ConcurrentHashMap<>();
+
+    private static LongHistogram sessionDurationMeasurement;
 
     public static void ensureMetricsRegistered() {
         // Ensure meters are only created once
@@ -19,7 +29,7 @@ public class Metrics {
                     .setInstrumentationVersion("1.0-alpha").build();
 
             meter.gaugeBuilder("vaadin.session.count").ofLongs()
-                    .setDescription("Vaadin Session Count").setUnit("count")
+                    .setDescription("Number of open sessions").setUnit("count")
                     .buildWithCallback(measurement -> {
                         measurement.record(sessionCount.get());
                     });
@@ -29,6 +39,11 @@ public class Metrics {
                     .buildWithCallback(measurement -> {
                         measurement.record(uiCount.get());
                     });
+
+            sessionDurationMeasurement = meter
+                    .histogramBuilder("vaadin.session.duration")
+                    .setDescription("Duration of sessions").setUnit("seconds").ofLongs()
+                    .build();
         }
     }
 
@@ -40,14 +55,35 @@ public class Metrics {
         return uiCount.get();
     }
 
-    public static void incrementSessionCount() {
+    public static void recordSessionStart(VaadinSession session) {
         Metrics.ensureMetricsRegistered();
         sessionCount.incrementAndGet();
+
+        String sessionId = getSessionIdentifier(session);
+        Instant sessionStart = Instant.now();
+
+        sessionStarts.put(sessionId, sessionStart);
+        System.out.println("recordSessionStart - session: " + sessionId);
+        System.out.println("recordSessionStart - session start: " + sessionStart);
     }
 
-    public static void decrementSessionCount() {
+    public static void recordSessionEnd(VaadinSession session) {
         Metrics.ensureMetricsRegistered();
         sessionCount.updateAndGet(value -> Math.max(0, value - 1));
+
+        String sessionId = getSessionIdentifier(session);
+        Instant sessionStart = sessionStarts.getOrDefault(sessionId, null);
+
+        System.out.println("recordSessionEnd - session: " + sessionId);
+        System.out.println("recordSessionEnd - session start: " + sessionStart);
+
+        if (sessionStart != null) {
+            sessionStarts.remove(sessionId);
+            Duration sessionDuration = Duration.between(sessionStart,
+                    Instant.now());
+            sessionDurationMeasurement.record(sessionDuration.toSeconds());
+            System.out.println("session duration: " + sessionDuration.toSeconds());
+        }
     }
 
     public static void incrementUiCount() {
@@ -58,5 +94,10 @@ public class Metrics {
     public static void decrementUiCount() {
         Metrics.ensureMetricsRegistered();
         uiCount.updateAndGet(value -> Math.max(0, value - 1));
+    }
+
+    private static String getSessionIdentifier(VaadinSession session) {
+        // VaadinSession.getWrappedSession().getId is a more natural candidate, however the wrapped session might not yet be set when recording the session start. The push id is generated for all sessions, and should contain a random UUID.
+        return session.getPushId();
     }
 }

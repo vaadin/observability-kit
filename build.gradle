@@ -141,7 +141,7 @@ task extendedAgent(type: Jar) {
 tasks {
 
   compileJava {
-    options.release.set(8)
+    options.release.set(11)
   }
 
   assemble.dependsOn(shadowJar)
@@ -173,3 +173,5 @@ spotless {
     importOrder('\\#', 'elemental', 'com.vaadin', 'com.google.gwt', '', 'java', 'javax')
   }
 }
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11
