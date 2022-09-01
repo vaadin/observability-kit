@@ -9,10 +9,11 @@ import elemental.json.JsonObject;
 
 import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
 import com.vaadin.flow.internal.StateTree;
-import com.vaadin.flow.server.communication.rpc.EventRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -55,22 +56,21 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
     public static class MethodAdvice {
 
         @Advice.OnMethodEnter()
-        public static void onEnter(@Advice.This EventRpcHandler eventRpcHandler,
-                @Advice.Origin("#m") String methodName,
-                @Advice.Argument(0) StateNode node,
+        public static void onEnter(@Advice.Argument(0) StateNode node,
                 @Advice.Argument(1) JsonObject jsonObject,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
-            String spanName = eventRpcHandler.getClass().getSimpleName() + "."
-                    + methodName;
-            span = InstrumentationHelper.startSpan(spanName);
-
-            String eventType = jsonObject.getString("event");
-            if (eventType != null) {
+            if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                String eventType = jsonObject.getString("event");
                 ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                         node);
                 Element element = elementInfo.getElement();
+                // append event type to make span name more descriptive
+                String spanName = "Event: " + elementInfo.getElementLabel()
+                        + " :: " + eventType;
+                span = InstrumentationHelper.startSpan(spanName);
+
                 span.setAttribute("vaadin.element.tag", element.getTag());
                 span.setAttribute("vaadin.event.type", eventType);
 
@@ -90,24 +90,17 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                     span.setAttribute("vaadin.view",
                             elementInfo.getViewLabel());
                 }
-                // append event type to make span name more descriptive
-                span.updateName("Event: " + elementInfo.getElementLabel()
-                        + " :: " + eventType);
-                // This will make for instance a click span `vaadin-button ::
-                // click` instead of `EventRpcHandler.handle` which leaves open
-                // that what was this about
 
-                // Set the root span name to be the event
-                final Optional<String> activeRouteTemplate = getActiveRouteTemplate(
-                        ((StateTree) node.getOwner()).getUI());
-                String routeName = activeRouteTemplate.orElse("");
-                String eventRootSpanName = String.format("/%s : event",
-                        routeName);
-                LocalRootSpan.current().updateName(eventRootSpanName);
+                Context context = currentContext().with(span);
+                scope = context.makeCurrent();
             }
 
-            Context context = currentContext().with(span);
-            scope = context.makeCurrent();
+            // Set the root span name to be the event
+            final Optional<String> activeRouteTemplate = getActiveRouteTemplate(
+                    ((StateTree) node.getOwner()).getUI());
+            String routeName = activeRouteTemplate.orElse("");
+            String eventRootSpanName = String.format("/%s : event", routeName);
+            LocalRootSpan.current().updateName(eventRootSpanName);
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

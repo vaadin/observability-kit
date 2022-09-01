@@ -5,7 +5,8 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.flow.server.communication.rpc.NavigationRpcHandler;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -46,14 +47,13 @@ public class NavigationRpcHandlerInstrumentation
     @SuppressWarnings("unused")
     public static class MethodAdvice {
         @Advice.OnMethodEnter()
-        public static void onEnter(
-                @Advice.This NavigationRpcHandler navigationRpcHandler,
-                @Advice.Origin("#m") String methodName,
-                @Advice.Local("otelSpan") Span span,
+        public static void onEnter(@Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
+            if (!Configuration.isEnabled(TraceLevel.MAXIMUM)) {
+                return;
+            }
 
-            String spanName = navigationRpcHandler.getClass().getSimpleName()
-                    + "." + methodName;
+            String spanName = "Handle navigation";
             span = InstrumentationHelper.startSpan(spanName);
 
             Context context = currentContext().with(span);

@@ -23,6 +23,13 @@ public class SpanBuilderCapture {
         return spans.get(index);
     }
 
+    public Span getSpanOrNull(int index) {
+        if (index < spans.size()) {
+            return spans.get(index);
+        }
+        return null;
+    }
+
     public void reset() {
         spans.clear();
     }

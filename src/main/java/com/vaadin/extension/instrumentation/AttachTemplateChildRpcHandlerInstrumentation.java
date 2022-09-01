@@ -6,6 +6,8 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.internal.StateNode;
 
 import io.opentelemetry.api.trace.Span;
@@ -48,13 +50,16 @@ public class AttachTemplateChildRpcHandlerInstrumentation
         public static void onEnter(@Advice.Argument(0) StateNode node,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
+            if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                return;
+            }
 
             // Info for the element that is being attached
             ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                     node);
 
             span = InstrumentationHelper.startSpan(
-                    "AttachTemplateChild: " + elementInfo.getElementLabel());
+                    "Attach template child: " + elementInfo.getElementLabel());
             span.setAttribute("vaadin.element.tag",
                     elementInfo.getElement().getTag());
             // If possible add active view class name as an attribute to the

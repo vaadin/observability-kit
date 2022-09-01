@@ -8,9 +8,10 @@ import elemental.json.JsonObject;
 
 import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.extension.conf.Configuration;
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
-import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -51,13 +52,14 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
     public static class MethodAdvice {
 
         @Advice.OnMethodEnter()
-        public static void onEnter(
-                @Advice.This MapSyncRpcHandler mapSyncRpcHandler,
-                @Advice.Origin("#m") String methodName,
-                @Advice.Argument(0) StateNode node,
+        public static void onEnter(@Advice.Argument(0) StateNode node,
                 @Advice.Argument(1) JsonObject jsonObject,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
+            if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
+                return;
+            }
+
             final ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                     node);
             final Element element = elementInfo.getElement();
