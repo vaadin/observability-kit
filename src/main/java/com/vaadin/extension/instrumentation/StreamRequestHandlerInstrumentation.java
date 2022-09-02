@@ -6,7 +6,6 @@ import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.server.communication.StreamRequestHandler;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
@@ -53,33 +52,33 @@ public class StreamRequestHandlerInstrumentation
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(
-                @Advice.This StreamRequestHandler streamRequestHandler,
-                @Advice.Origin("#m") String methodName,
-                @Advice.Thrown Throwable throwable,
+        public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Return boolean handled,
                 @Advice.Argument(1) VaadinRequest request,
                 @Advice.Local("startTimestamp") Instant startTimestamp) {
-
             if (!handled) {
                 // Do not add a span if static file is not served from here.
                 return;
             }
 
-            final String spanName = streamRequestHandler.getClass()
-                    .getSimpleName() + "." + methodName;
-            Span span = InstrumentationHelper.startSpan(spanName);
+            final String spanName = "Handle dynamic file";
+            Span span = InstrumentationHelper.startSpan(spanName,
+                    startTimestamp);
 
             // Replace the UIID and security key
-            String pathInfo = request.getPathInfo();
-            String prefix = "/" + StreamRequestHandler.DYN_RES_PREFIX;
-            assert pathInfo.startsWith(prefix);
-            String[] parts = pathInfo.substring(prefix.length()).split("/", 3);
-            String requestFilename = prefix + "[UIID]/[SECKEY]/" + parts[2];
-
             Span localRootSpan = LocalRootSpan.current();
-            localRootSpan.updateName(requestFilename);
-            localRootSpan.setAttribute("http.target", requestFilename);
+            String pathInfo = request.getPathInfo();
+            String prefix = "/VAADIN/dynamic/resource/";
+            if (pathInfo.startsWith(prefix)) {
+                String[] parts = pathInfo.substring(prefix.length()).split("/",
+                        3);
+                String requestFilename = prefix + "[UIID]/[SECKEY]/" + parts[2];
+
+                localRootSpan.updateName(requestFilename);
+                localRootSpan.setAttribute("http.target", requestFilename);
+            } else {
+                localRootSpan.updateName(pathInfo);
+            }
 
             InstrumentationHelper.endSpan(span, throwable, null);
         }
