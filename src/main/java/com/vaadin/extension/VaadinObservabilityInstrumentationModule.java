@@ -4,6 +4,7 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static java.util.Arrays.asList;
 
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
+import com.vaadin.extension.instrumentation.VaadinSessionInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PwaHandlerInstrumentation;
@@ -80,7 +81,8 @@ public class VaadinObservabilityInstrumentationModule
                 new UidlRequestHandlerInstrumentation(),
                 new PwaHandlerInstrumentation(),
                 new UnsupportedBrowserHandlerInstrumentation(),
-                new ReturnChannelHandlerInstrumentation());
+                new ReturnChannelHandlerInstrumentation(),
+                new VaadinSessionInstrumentation());
         // @formatter:on
     }
 }

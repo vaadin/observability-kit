@@ -10,22 +10,18 @@ import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
-import com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
-    private MapSyncRpcHandler mapSyncRpcHandler;
     TestComponent component;
     JsonObject jsonObject;
 
     @BeforeEach
     public void setup() {
-        mapSyncRpcHandler = Mockito.mock(MapSyncRpcHandler.class);
         component = new TestComponent();
         getMockUI().add(component);
         jsonObject = Json.createObject();
