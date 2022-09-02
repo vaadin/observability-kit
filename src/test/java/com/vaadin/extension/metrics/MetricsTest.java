@@ -1,28 +1,18 @@
-package com.vaadin.extension.instrumentation;
+package com.vaadin.extension.metrics;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.vaadin.extension.Metrics;
+import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
+import com.vaadin.extension.instrumentation.VaadinSessionInstrumentation;
 import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.sdk.metrics.data.HistogramPointData;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.time.Instant;
 
-class VaadinSessionInstrumentationTest extends AbstractInstrumentationTest {
-
-    private Metrics.InstantProvider instantProvider;
-
-    @BeforeEach
-    public void setup() {
-        instantProvider = Mockito.mock(Metrics.InstantProvider.class);
-        Mockito.when(instantProvider.get()).thenReturn(Instant.now());
-
-        Metrics.setInstantProvider(instantProvider);
-    }
+class MetricsTest extends AbstractInstrumentationTest {
 
     @Test
     public void increaseAndDecreaseSessionCount() {
@@ -72,14 +62,13 @@ class VaadinSessionInstrumentationTest extends AbstractInstrumentationTest {
 
     @Test
     public void sessionDuration() {
-        Instant startInstant = Instant.ofEpochSecond(500);
         Instant endInstant = Instant.ofEpochSecond(2000);
         VaadinSession session = mockSession("session");
 
-        Mockito.when(instantProvider.get()).thenReturn(startInstant);
+        Metrics.setInstantProvider(() -> Instant.ofEpochSecond(500));
         VaadinSessionInstrumentation.CreateSessionAdvice.onEnter(session);
 
-        Mockito.when(instantProvider.get()).thenReturn(endInstant);
+        Metrics.setInstantProvider(() -> Instant.ofEpochSecond(2000));
         VaadinSessionInstrumentation.CloseSessionAdvice.onEnter(session);
 
         HistogramPointData metricValue = getLastHistogramMetricValue(

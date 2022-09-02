@@ -3,7 +3,7 @@ package com.vaadin.extension.instrumentation;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
-import com.vaadin.extension.Metrics;
+import com.vaadin.extension.metrics.Metrics;
 import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;

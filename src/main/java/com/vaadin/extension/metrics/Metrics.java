@@ -1,4 +1,4 @@
-package com.vaadin.extension;
+package com.vaadin.extension.metrics;
 
 import com.vaadin.flow.server.VaadinSession;
 
@@ -21,10 +21,9 @@ public class Metrics {
 
     private static LongHistogram sessionDurationMeasurement;
 
-    private static InstantProvider instantProvider = new DefaultInstantProvider();
+    private static InstantProvider instantProvider = Instant::now;
 
-    // Exposed for testing
-    public static void setInstantProvider(InstantProvider instantProvider) {
+    static void setInstantProvider(InstantProvider instantProvider) {
         Metrics.instantProvider = instantProvider;
     }
 
@@ -69,10 +68,9 @@ public class Metrics {
         sessionCount.updateAndGet(value -> Math.max(0, value - 1));
 
         String sessionId = getSessionIdentifier(session);
-        Instant sessionStart = sessionStarts.getOrDefault(sessionId, null);
+        Instant sessionStart = sessionStarts.remove(sessionId);
 
         if (sessionStart != null) {
-            sessionStarts.remove(sessionId);
             Duration sessionDuration = Duration.between(sessionStart,
                     instantProvider.get());
             sessionDurationMeasurement.record(sessionDuration.toSeconds());
@@ -97,14 +95,8 @@ public class Metrics {
         return session.getPushId();
     }
 
-    public interface InstantProvider {
+    @FunctionalInterface
+    interface InstantProvider {
         Instant get();
-    }
-
-    private static class DefaultInstantProvider implements InstantProvider {
-        @Override
-        public Instant get() {
-            return Instant.now();
-        }
     }
 }
