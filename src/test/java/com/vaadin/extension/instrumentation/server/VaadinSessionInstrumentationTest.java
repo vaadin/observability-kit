@@ -3,7 +3,6 @@ package com.vaadin.extension.instrumentation.server;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.vaadin.extension.Metrics;
-import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
 
 import org.junit.jupiter.api.Test;
 

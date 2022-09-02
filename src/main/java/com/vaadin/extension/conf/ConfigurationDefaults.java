@@ -41,6 +41,7 @@ public class ConfigurationDefaults implements ConfigPropertySource {
         properties.put("otel.instrumentation.jetty-httpclient.enabled",
                 "false");
         properties.put("otel.instrumentation.servlet.enabled", "false");
+        properties.put("otel.instrumentation.tomcat.enabled", "false");
         // Configure default trace level
         properties.put(Constants.CONFIG_TRACE_LEVEL, TraceLevel.DEFAULT.name());
         return properties;
