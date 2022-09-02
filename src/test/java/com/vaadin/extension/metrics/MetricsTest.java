@@ -7,12 +7,19 @@ import com.vaadin.extension.instrumentation.VaadinSessionInstrumentation;
 import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.sdk.metrics.data.HistogramPointData;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.time.Instant;
 
 class MetricsTest extends AbstractInstrumentationTest {
+
+    @AfterEach
+    public void teardown() {
+        // Restore default instant provider in Metrics
+        Metrics.setInstantProvider(Instant::now);
+    }
 
     @Test
     public void increaseAndDecreaseSessionCount() {
