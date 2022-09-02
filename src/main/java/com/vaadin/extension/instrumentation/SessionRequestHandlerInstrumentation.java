@@ -5,8 +5,7 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.extension.conf.Configuration;
-import com.vaadin.extension.conf.TraceLevel;
+import com.vaadin.flow.server.communication.SessionRequestHandler;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -18,42 +17,38 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * Instruments NavigationRpcHandler in order to add a span when the handler is
- * called with a navigation message from the client. This can be a router link
- * navigation, or history navigation (back / forward button). This handler is
- * only called when using the (deprecated) V14 bootstrap mode.
+ * Instruments SessionRequestHandler
  */
-public class NavigationRpcHandlerInstrumentation
+public class SessionRequestHandlerInstrumentation
         implements TypeInstrumentation {
-
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
         return hasClassesNamed(
-                "com.vaadin.flow.server.communication.rpc.NavigationRpcHandler");
+                "com.vaadin.flow.server.communication.SessionRequestHandler");
     }
 
-    // This instrumentation only matches NavigationRpcHandler on the rpcEvent
-    // stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
-                "com.vaadin.flow.server.communication.rpc.NavigationRpcHandler");
+                "com.vaadin.flow.server.communication.SessionRequestHandler");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("handle"),
-                this.getClass().getName() + "$MethodAdvice");
+        transformer.applyAdviceToMethod(named("handleRequest"),
+                this.getClass().getName() + "$HandleRequestAdvice");
     }
 
     @SuppressWarnings("unused")
-    public static class MethodAdvice {
+    public static class HandleRequestAdvice {
         @Advice.OnMethodEnter()
-        public static void onEnter(@Advice.Local("otelSpan") Span span,
+        public static void onEnter(
+                @Advice.This SessionRequestHandler sessionRequestHandler,
+                @Advice.Origin("#m") String methodName,
+                @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (!Configuration.isEnabled(TraceLevel.MAXIMUM)) {
-                return;
-            }
-
-            String spanName = "Handle navigation";
+            String spanName = sessionRequestHandler.getClass().getSimpleName()
+                    + "." + methodName;
             span = InstrumentationHelper.startSpan(spanName);
 
             Context context = currentContext().with(span);

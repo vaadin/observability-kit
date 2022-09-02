@@ -1,36 +1,38 @@
 package com.vaadin.extension.instrumentation;
 
-import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.extension.conf.Configuration;
-import com.vaadin.extension.conf.TraceLevel;
+import com.vaadin.flow.server.VaadinRequest;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.context.Context;
-import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
+import java.time.Instant;
+
 /**
- * Instruments UidlRequestHandler to add a span for its execution
+ * Instruments WebComponentProvider to add a span when supplying the script/html
+ * of the web component matching requested tag.
  */
-public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
+public class WebComponentProviderInstrumentation
+        implements TypeInstrumentation {
 
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
         return hasClassesNamed(
-                "com.vaadin.flow.server.communication.UidlRequestHandler");
+                "com.vaadin.flow.server.communication.WebComponentProvider");
     }
 
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named("com.vaadin.flow.server.communication.UidlRequestHandler");
+        return named(
+                "com.vaadin.flow.server.communication.WebComponentProvider");
     }
 
     @Override
@@ -43,24 +45,23 @@ public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
     public static class SynchronizedHandleRequestAdvice {
 
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter(@Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelScope") Scope scope) {
-            if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
-                return;
-            }
-
-            final String spanName = "Handle Client Request";
-            span = InstrumentationHelper.startSpan(spanName);
-
-            Context context = currentContext().with(span);
-            scope = context.makeCurrent();
+        public static void onEnter(
+                @Advice.Local("startTimestamp") Instant startTimestamp) {
+            startTimestamp = Instant.now();
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelSpan") Span span,
-                @Advice.Local("otelScope") Scope scope) {
-            InstrumentationHelper.endSpan(span, throwable, scope);
+                @Advice.Argument(1) VaadinRequest request,
+                @Advice.Return boolean handled,
+                @Advice.Local("startTimestamp") Instant startTimestamp) {
+            if (handled) {
+                Span span = InstrumentationHelper.startSpan(
+                        "WebComponentProvider : Load Resource", startTimestamp);
+                InstrumentationHelper.endSpan(span, throwable, null);
+                LocalRootSpan.current().updateName(
+                        request.getPathInfo() + " : WebComponentProvider");
+            }
         }
     }
 }

@@ -26,8 +26,8 @@ ext {
     junit: "5.6.2",
     opentelemetry              : "1.17.0",
     opentelemetryAlpha         : "1.17.0-alpha",
-    opentelemetryJavaagent     : "1.16.0",
-    opentelemetryJavaagentAlpha: "1.16.0-alpha",
+    opentelemetryJavaagent     : "1.17.0",
+    opentelemetryJavaagentAlpha: "1.17.0-alpha",
     logbackClassic: "1.2.9",
     mockito: "4.7.0",
     servletApi: "3.0.1",
@@ -141,7 +141,7 @@ task extendedAgent(type: Jar) {
 tasks {
 
   compileJava {
-    options.release.set(8)
+    options.release.set(11)
   }
 
   assemble.dependsOn(shadowJar)
@@ -173,3 +173,5 @@ spotless {
     importOrder('\\#', 'elemental', 'com.vaadin', 'com.google.gwt', '', 'java', 'javax')
   }
 }
+sourceCompatibility = JavaVersion.VERSION_11
+targetCompatibility = JavaVersion.VERSION_11

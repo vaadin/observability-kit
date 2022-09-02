@@ -1,4 +1,6 @@
-package com.vaadin.extension;
+package com.vaadin.extension.conf;
+
+import com.vaadin.extension.Constants;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.config.ConfigPropertySource;
@@ -7,8 +9,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * disable the automatic vaadin instrumentation Custom distributions can supply
- * their own default configuration by implementing {@link ConfigPropertySource}.
+ * Provides default values for global and extension-specific OpenTelemetry
+ * configuration. The defaults can be overwritten by a configuration mechanism
+ * with a higher priority.
  *
  * <p>
  * The configuration priority, from highest to lowest is:
@@ -22,7 +25,7 @@ import java.util.Map;
  * </ul>
  */
 @AutoService(ConfigPropertySource.class)
-public class Configuration implements ConfigPropertySource {
+public class ConfigurationDefaults implements ConfigPropertySource {
 
     @Override
     public Map<String, String> getProperties() {
@@ -31,6 +34,8 @@ public class Configuration implements ConfigPropertySource {
         properties.put("otel.instrumentation.vaadin.enabled", "false");
         // Set the service name to vaadin by default.
         properties.put("otel.service.name", "vaadin");
+        // Configure default trace level
+        properties.put(Constants.CONFIG_TRACE_LEVEL, TraceLevel.DEFAULT.name());
         return properties;
     }
 }

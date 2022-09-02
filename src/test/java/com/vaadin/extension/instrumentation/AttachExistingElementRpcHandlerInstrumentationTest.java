@@ -2,27 +2,23 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.nodefeature.AttachExistingElementFeature;
-import com.vaadin.flow.server.communication.rpc.AttachExistingElementRpcHandler;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 class AttachExistingElementRpcHandlerInstrumentationTest
         extends AbstractInstrumentationTest {
-    private AttachExistingElementRpcHandler attachExistingElementRpcHandler;
     private Element attachedElement;
     private Element targetElement;
     private AttachExistingElementFeature feature;
 
     @BeforeEach
     public void setup() {
-        attachExistingElementRpcHandler = Mockito
-                .mock(AttachExistingElementRpcHandler.class);
         attachedElement = new Element("attached-element");
         targetElement = new Element("target-element");
         targetElement.setText("foo");
@@ -36,8 +32,7 @@ class AttachExistingElementRpcHandlerInstrumentationTest
     @Test
     public void attachElement_createsSpan() {
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
-                .onEnter(attachExistingElementRpcHandler, "attachElement",
-                        feature, attachedElement.getNode(), null, null);
+                .onEnter(feature, attachedElement.getNode(), null, null);
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
                 .onExit(null, getCapturedSpan(0), null);
 
@@ -55,13 +50,41 @@ class AttachExistingElementRpcHandlerInstrumentationTest
     @Test
     public void attachElementWithException_setsErrorStatus() {
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
-                .onEnter(attachExistingElementRpcHandler, "attachElement",
-                        feature, attachedElement.getNode(), null, null);
+                .onEnter(feature, attachedElement.getNode(), null, null);
         Exception exception = new RuntimeException("test error");
         AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
                 .onExit(exception, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         this.assertSpanHasException(span, exception);
+    }
+
+    @Test
+    public void attachElement_respectsTraceLevel() {
+        configureTraceLevel(TraceLevel.MINIMUM);
+        AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
+                .onEnter(feature, attachedElement.getNode(), null, null);
+        AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
+
+        assertEquals(0, getExportedSpanCount());
+
+        configureTraceLevel(TraceLevel.DEFAULT);
+        resetSpans();
+        AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
+                .onEnter(feature, attachedElement.getNode(), null, null);
+        AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
+
+        assertEquals(1, getExportedSpanCount());
+
+        configureTraceLevel(TraceLevel.MAXIMUM);
+        resetSpans();
+        AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
+                .onEnter(feature, attachedElement.getNode(), null, null);
+        AttachExistingElementRpcHandlerInstrumentation.AttachElementAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
+
+        assertEquals(1, getExportedSpanCount());
     }
 }

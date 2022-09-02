@@ -1,7 +1,7 @@
 = Collecting Metrics with New Relic
 
 https://newrelic.com[New Relic] is an observability platform, and is supported by OpenTelemetry through the OLTP/HTTP exporter protocol.
-This document provides instructions on how to collect traces from a locally running Java app into New Relic.
+This document provides instructions on how to collect traces, metrics, and logs from a locally running Java app into New Relic.
 
 == Create a New Relic Account
 
@@ -22,7 +22,9 @@ Start the OpenTelemetry Java agent with the respective system properties:
 [source,shell]
 ----
 java -javaagent:opentelemetry-javaagent.jar \
+     -Dotel.traces.exporter=otlp \
      -Dotel.metrics.exporter=otlp \
+     -Dotel.logs.exporter=otlp \
      -Dotel.exporter.otlp.endpoint=[NEW RELIC SERVER]:4317 \
      -Dotel.exporter.otlp.headers=Api-Key="[LICENSE KEY]" \
      -Dotel.exporter.otlp.protocol=http/protobuf
@@ -32,7 +34,7 @@ java -javaagent:opentelemetry-javaagent.jar \
 [NOTE]
 The `NEW RELIC SERVER` is the endpoint URL provided by New Relic, and `LICENSE KEY` is the copied key.
 
-== Checking Traces From Application
-From the `Browse data` dropdown select `Traces`
+== Viewing Data from the Application
+From the `Browse data` dropdown select either `Traces`, `Metrics`, or `Logs`.
 
-Traces sent from the application should be visible here (possibly at some delay)
+Note that there is some delay with New Relic processing ingested data, which can take up to a minute.

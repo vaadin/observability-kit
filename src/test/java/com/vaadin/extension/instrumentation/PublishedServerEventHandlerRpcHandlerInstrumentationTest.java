@@ -2,6 +2,7 @@ package com.vaadin.extension.instrumentation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.util.OpenTelemetryTestTools;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.Component;
@@ -31,6 +32,7 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
 
     @Test
     public void handleNode_eventHandlerStartsSpan() {
+        configureTraceLevel(TraceLevel.MAXIMUM);
         PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
                 .onEnter(publishedServerEventHandlerRpcHandler, "handleNode",
                         null, null);
@@ -40,6 +42,38 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
         SpanData span = getExportedSpan(0);
         assertEquals("PublishedServerEventHandlerRpcHandler.handleNode",
                 span.getName());
+    }
+
+    @Test
+    public void handleNode_respectsTraceLevel() {
+        configureTraceLevel(TraceLevel.MINIMUM);
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onEnter(publishedServerEventHandlerRpcHandler, "handleNode",
+                        null, null);
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
+
+        assertEquals(0, getExportedSpanCount());
+
+        configureTraceLevel(TraceLevel.DEFAULT);
+        resetSpans();
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onEnter(publishedServerEventHandlerRpcHandler, "handleNode",
+                        null, null);
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
+
+        assertEquals(0, getExportedSpanCount());
+
+        configureTraceLevel(TraceLevel.MAXIMUM);
+        resetSpans();
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onEnter(publishedServerEventHandlerRpcHandler, "handleNode",
+                        null, null);
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
+
+        assertEquals(1, getExportedSpanCount());
     }
 
     @Test
@@ -80,6 +114,62 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
                 "public void com.vaadin.extension.instrumentation.PublishedServerEventHandlerRpcHandlerInstrumentationTest$TestComponent.clientEvent()",
                 span.getAttributes()
                         .get(AttributeKey.stringKey("vaadin.callable.method")));
+    }
+
+    @Test
+    public void invokeAdvice_respectsTraceLevel() throws NoSuchMethodException {
+        configureTraceLevel(TraceLevel.MINIMUM);
+        try (var ignored = withRootContext()) {
+            PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
+                    .onEnter(component,
+                            TestComponent.class.getMethod("clientEvent"), null,
+                            null);
+
+            PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                    .onExit(null, getCapturedSpanOrNull(0), null);
+        }
+
+        // Should not export span, apart from root span
+        assertEquals(1, getExportedSpanCount());
+        // Should update root span
+        SpanData rootSpan = getExportedSpan(0);
+        assertEquals("/test-route : ClientCallable", rootSpan.getName());
+
+        configureTraceLevel(TraceLevel.DEFAULT);
+        resetSpans();
+        try (var ignored = withRootContext()) {
+            PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
+                    .onEnter(component,
+                            TestComponent.class.getMethod("clientEvent"), null,
+                            null);
+
+            PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                    .onExit(null, getCapturedSpanOrNull(0), null);
+        }
+
+        // Should export span
+        assertEquals(2, getExportedSpanCount());
+        // Should update root span
+        rootSpan = getExportedSpan(1);
+        assertEquals("/test-route : ClientCallable", rootSpan.getName());
+
+        configureTraceLevel(TraceLevel.MAXIMUM);
+        resetSpans();
+        try (var ignored = withRootContext()) {
+            PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
+                    .onEnter(component,
+                            TestComponent.class.getMethod("clientEvent"), null,
+                            null);
+
+            PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                    .onExit(null, getCapturedSpanOrNull(0), null);
+        }
+
+        // Should export span, apart from root span
+        assertEquals(2, getExportedSpanCount());
+        // Should update root span
+        rootSpan = getExportedSpan(1);
+        assertEquals("/test-route : ClientCallable", rootSpan.getName());
     }
 
     @Tag("test-component")
