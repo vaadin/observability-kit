@@ -76,17 +76,18 @@ public class StreamRequestHandlerInstrumentationTest
         assertSpanHasException(span, exception);
     }
 
-     @Test public void handleRequest_notHandled() {
+    @Test
+    public void handleRequest_notHandled() {
         final VaadinRequest request = Mockito.mock(VaadinRequest.class);
 
-     final String fileName = "/VAADIN/dynamic/resource/0/aa284e2/file";
-     Mockito.when(request.getPathInfo()).thenReturn(fileName);
+        final String fileName = "/VAADIN/dynamic/resource/0/aa284e2/file";
+        Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
-     StreamRequestHandlerInstrumentation.HandleRequestAdvice.onEnter(null);
-     StreamRequestHandlerInstrumentation.HandleRequestAdvice.onExit(
-             streamRequestHandler, "handleRequest", null, false, request,
-             startTimestamp);
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice.onEnter(null);
+        StreamRequestHandlerInstrumentation.HandleRequestAdvice.onExit(
+                streamRequestHandler, "handleRequest", null, false, request,
+                startTimestamp);
 
-     assertEquals(0, getExportedSpanCount());
+        assertEquals(0, getExportedSpanCount());
     }
 }
