@@ -36,7 +36,7 @@ public class InstrumentationHelper {
             .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
                     INSTRUMENTATION_NAME, generator)
             .setInstrumentationVersion(INSTRUMENTATION_VERSION)
-            .newInstrumenter();
+            .buildInstrumenter();
 
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
