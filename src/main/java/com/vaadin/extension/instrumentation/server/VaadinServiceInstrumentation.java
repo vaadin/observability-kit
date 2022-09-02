@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.server;
 
+import static com.vaadin.extension.Constants.HTTP_TARGET;
 import static com.vaadin.extension.Constants.REQUEST_TYPE;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTER;
@@ -68,9 +69,6 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
             // Using instrumentation to get this as LocalRootSpan!
             InstrumentationRequest request = new InstrumentationRequest(
                     "Request handle");
-            if (!INSTRUMENTER.shouldStart(currentContext(), request)) {
-                return;
-            }
 
             context = INSTRUMENTER.start(currentContext(), request);
             String sessionId = vaadinRequest.getWrappedSession().getId();
@@ -80,7 +78,7 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
 
             Span span = Span.fromContextOrNull(context);
             if (span != null) {
-                span.setAttribute("http.url", vaadinRequest.getPathInfo());
+                span.setAttribute(HTTP_TARGET, vaadinRequest.getPathInfo());
                 span.setAttribute(SESSION_ID, sessionId);
                 span.setAttribute(REQUEST_TYPE, vaadinRequest.getParameter(
                         ApplicationConstants.REQUEST_TYPE_PARAMETER));

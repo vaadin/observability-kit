@@ -60,13 +60,7 @@ public class SessionRequestHandlerInstrumentation
                 @Advice.Return boolean handled,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (handled) {
-                InstrumentationHelper.endSpan(span, throwable, scope);
-            }
-            if (scope == null) {
-                return;
-            }
-            scope.close();
+            InstrumentationHelper.endSpan(span, throwable, scope);
         }
     }
 }
