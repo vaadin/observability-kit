@@ -60,6 +60,7 @@ public class StreamRequestHandlerInstrumentation
                 @Advice.Return boolean handled,
                 @Advice.Argument(1) VaadinRequest request,
                 @Advice.Local("startTimestamp") Instant startTimestamp) {
+
             if (!handled) {
                 // Do not add a span if static file is not served from here.
                 return;
@@ -69,9 +70,16 @@ public class StreamRequestHandlerInstrumentation
                     .getSimpleName() + "." + methodName;
             Span span = InstrumentationHelper.startSpan(spanName);
 
-            final String requestFilename = request.getPathInfo();
+            // Replace the UIID and security key
+            String pathInfo = request.getPathInfo();
+            String prefix = "/" + StreamRequestHandler.DYN_RES_PREFIX;
+            assert pathInfo.startsWith(prefix);
+            String[] parts = pathInfo.substring(prefix.length()).split("/", 3);
+            String requestFilename = prefix + "[UIID]/[SECKEY]/" + parts[2];
+
             Span localRootSpan = LocalRootSpan.current();
             localRootSpan.updateName(requestFilename);
+            localRootSpan.setAttribute("http.target", requestFilename);
 
             InstrumentationHelper.endSpan(span, throwable, null);
         }
