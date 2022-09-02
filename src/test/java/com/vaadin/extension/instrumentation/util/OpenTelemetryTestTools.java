@@ -7,6 +7,7 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
@@ -16,11 +17,16 @@ import org.mockito.Mockito;
 public class OpenTelemetryTestTools {
 
     private static TestExporter spanExporter;
+    private static TestMetricReader metricReader;
     private static SpanBuilderCapture spanBuilderCapture;
     private static OpenTelemetrySdk openTelemetry;
 
     public static TestExporter getSpanExporter() {
         return spanExporter;
+    }
+
+    public static TestMetricReader getMetricReader() {
+        return metricReader;
     }
 
     public static SpanBuilderCapture getSpanBuilderCapture() {
@@ -73,8 +79,13 @@ public class OpenTelemetryTestTools {
                     return tracerSpy;
                 });
 
+        metricReader = new TestMetricReader();
+        SdkMeterProvider meterProvider = SdkMeterProvider.builder()
+                .registerMetricReader(metricReader).build();
+
         openTelemetry = OpenTelemetrySdk.builder()
                 .setTracerProvider(sdkTracerProviderSpy)
+                .setMeterProvider(meterProvider)
                 .setPropagators(ContextPropagators
                         .create(W3CTraceContextPropagator.getInstance()))
                 .buildAndRegisterGlobal();

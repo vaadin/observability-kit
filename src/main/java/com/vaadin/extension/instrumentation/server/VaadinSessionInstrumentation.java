@@ -3,7 +3,8 @@ package com.vaadin.extension.instrumentation.server;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
-import com.vaadin.extension.Metrics;
+import com.vaadin.extension.metrics.Metrics;
+import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
@@ -43,16 +44,16 @@ public class VaadinSessionInstrumentation implements TypeInstrumentation {
     @SuppressWarnings("unused")
     public static class CreateSessionAdvice {
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter() {
-            Metrics.incrementSessionCount();
+        public static void onEnter(@Advice.This VaadinSession session) {
+            Metrics.recordSessionStart(session);
         }
     }
 
     @SuppressWarnings("unused")
     public static class CloseSessionAdvice {
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter() {
-            Metrics.decrementSessionCount();
+        public static void onEnter(@Advice.This VaadinSession session) {
+            Metrics.recordSessionEnd(session);
         }
     }
 
