@@ -6,4 +6,9 @@ package com.vaadin.extension;
  */
 public class Constants {
     public static final String CONFIG_TRACE_LEVEL = "otel.instrumentation.vaadin.trace-level";
+
+    // Vaadin attribute names
+    public static final String HTTP_TARGET = "http.target";
+    public static final String SESSION_ID = "vaadin.session.id";
+    public static final String REQUEST_TYPE = "vaadin.request.type";
 }

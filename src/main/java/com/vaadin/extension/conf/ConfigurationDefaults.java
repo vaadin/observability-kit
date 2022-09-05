@@ -34,6 +34,14 @@ public class ConfigurationDefaults implements ConfigPropertySource {
         properties.put("otel.instrumentation.vaadin.enabled", "false");
         // Set the service name to vaadin by default.
         properties.put("otel.service.name", "vaadin");
+
+        properties.put("otel.instrumentation.java-http-client.enabled",
+                "false");
+        properties.put("otel.instrumentation.jetty.enabled", "false");
+        properties.put("otel.instrumentation.jetty-httpclient.enabled",
+                "false");
+        properties.put("otel.instrumentation.servlet.enabled", "false");
+        properties.put("otel.instrumentation.tomcat.enabled", "false");
         // Configure default trace level
         properties.put(Constants.CONFIG_TRACE_LEVEL, TraceLevel.DEFAULT.name());
         return properties;
