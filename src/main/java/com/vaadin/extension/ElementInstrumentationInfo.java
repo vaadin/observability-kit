@@ -2,6 +2,7 @@ package com.vaadin.extension;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
+import com.vaadin.flow.component.HasLabel;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
@@ -74,7 +75,7 @@ public class ElementInstrumentationInfo {
 
     /**
      * Get the most informative identifier for the handled element.
-     * 
+     *
      * @return most informative identifier
      */
     private String getIdentifier() {
@@ -84,6 +85,10 @@ public class ElementInstrumentationInfo {
         if (component.isPresent() && component.get().getId().isPresent()) {
             identifier = String.format("[id='%s']",
                     component.get().getId().get());
+        } else if (component.isPresent() && component.get() instanceof HasLabel
+                && ((HasLabel) component.get()).getLabel() != null) {
+            identifier = String.format("[label='%s']",
+                    ((HasLabel) component.get()).getLabel());
         } else if (element.getText() != null && !element.getText().isEmpty()) {
             identifier = String.format("[%s]", element.getText());
         }
