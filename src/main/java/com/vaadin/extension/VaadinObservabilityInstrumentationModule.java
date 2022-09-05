@@ -4,11 +4,11 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static java.util.Arrays.asList;
 
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
-import com.vaadin.extension.instrumentation.StreamRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PwaHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.SessionRequestHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.communication.StreamRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.UidlRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.UnsupportedBrowserHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.WebComponentProviderInstrumentation;
