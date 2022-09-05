@@ -69,10 +69,11 @@ public class StreamRequestHandlerInstrumentation
             Span localRootSpan = LocalRootSpan.current();
             String pathInfo = request.getPathInfo();
             String prefix = "/VAADIN/dynamic/resource/";
-            if (pathInfo.startsWith(prefix)) {
-                String[] parts = pathInfo.substring(prefix.length()).split("/",
-                        3);
-                String requestFilename = prefix + "[UIID]/[SECKEY]/" + parts[2];
+            if (pathInfo.contains(prefix)) {
+                int index = pathInfo.indexOf(prefix) + prefix.length();
+                String[] parts = pathInfo.substring(index).split("/", 3);
+                String requestFilename = pathInfo.substring(0, index)
+                        + "[UIID]/[SECKEY]/" + parts[2];
 
                 localRootSpan.updateName(requestFilename);
                 localRootSpan.setAttribute("http.target", requestFilename);
