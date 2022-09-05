@@ -1,6 +1,5 @@
 package com.vaadin.extension.instrumentation.server;
 
-import static com.vaadin.extension.Constants.HTTP_TARGET;
 import static com.vaadin.extension.Constants.REQUEST_TYPE;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
@@ -10,30 +9,36 @@ import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.HandlerHelper;
 import com.vaadin.flow.server.HttpStatusCode;
-import com.vaadin.flow.server.VaadinRequest;
+import com.vaadin.flow.server.VaadinServletRequest;
 import com.vaadin.flow.server.VaadinServletResponse;
 import com.vaadin.flow.server.WrappedSession;
 import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 class VaadinServiceInstrumentationTest extends AbstractInstrumentationTest {
 
-    VaadinRequest vaadinRequest;
+    VaadinServletRequest vaadinRequest;
     VaadinServletResponse vaadinResponse;
 
     @BeforeEach
     void init() {
-        vaadinRequest = Mockito.mock(VaadinRequest.class);
+        vaadinRequest = Mockito.mock(VaadinServletRequest.class);
         WrappedSession session = Mockito.mock(WrappedSession.class);
         Mockito.when(vaadinRequest.getWrappedSession()).thenReturn(session);
         Mockito.when(session.getId()).thenReturn("1234");
-        Mockito.when(vaadinRequest.getPathInfo()).thenReturn("/");
+        Mockito.when(vaadinRequest.getScheme()).thenReturn("https");
+        Mockito.when(vaadinRequest.getMethod()).thenReturn("POST");
+        Mockito.when(vaadinRequest.getRemoteHost()).thenReturn("example.com");
+        Mockito.when(vaadinRequest.getPathInfo()).thenReturn("/path");
+        Mockito.when(vaadinRequest.getQueryString()).thenReturn("foo=bar");
         Mockito.when(vaadinRequest
                 .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER))
                 .thenReturn("uidl");
@@ -51,11 +56,21 @@ class VaadinServiceInstrumentationTest extends AbstractInstrumentationTest {
 
         SpanData span = getExportedSpan(0);
         assertEquals("Request handle", span.getName());
+        assertEquals(SpanKind.SERVER, span.getKind());
+
+        assertEquals("https",
+                span.getAttributes().get(SemanticAttributes.HTTP_SCHEME));
+        assertEquals("POST",
+                span.getAttributes().get(SemanticAttributes.HTTP_METHOD));
+        assertEquals("example.com",
+                span.getAttributes().get(SemanticAttributes.HTTP_HOST));
+        assertEquals("/path?foo=bar",
+                span.getAttributes().get(SemanticAttributes.HTTP_TARGET));
+        assertEquals("/path",
+                span.getAttributes().get(SemanticAttributes.HTTP_ROUTE));
 
         assertEquals("1234",
                 span.getAttributes().get(AttributeKey.stringKey(SESSION_ID)));
-        assertEquals("/",
-                span.getAttributes().get(AttributeKey.stringKey(HTTP_TARGET)));
         assertEquals("uidl",
                 span.getAttributes().get(AttributeKey.stringKey(REQUEST_TYPE)));
     }

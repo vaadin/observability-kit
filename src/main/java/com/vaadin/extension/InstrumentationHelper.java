@@ -37,7 +37,8 @@ public class InstrumentationHelper {
             .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
                     INSTRUMENTATION_NAME, generator)
             .setInstrumentationVersion(INSTRUMENTATION_VERSION)
-            .addAttributesExtractor(attrGet).buildInstrumenter();
+            .addAttributesExtractor(attrGet)
+            .buildInstrumenter(InstrumentationRequest::getSpanKind);
 
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
@@ -174,17 +175,22 @@ public class InstrumentationHelper {
 
     public static void handleException(Span span, Throwable throwable) {
         if (throwable != null) {
-            // This will actually mark the span as having an exception which
-            // shows on the dataUI
+            // Mark the span as error
             span.setStatus(StatusCode.ERROR, throwable.getMessage());
-            // Add log trace of exception.
+            // Add exception as event to the span
             span.recordException(throwable);
+            // Also mark root span as having an error, as several monitoring
+            // solutions (New Relic, DataDog) only monitor for errors in root /
+            // server spans
+            String errorName = throwable.getClass().getCanonicalName() + ": "
+                    + throwable.getMessage();
+            LocalRootSpan.current().setStatus(StatusCode.ERROR, errorName);
         }
     }
 
     /**
      * Get the file name from the HTTP request.
-     * 
+     *
      * @param request
      *            http request to get file name from
      * @return file name
