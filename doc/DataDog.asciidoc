@@ -1,0 +1,199 @@
+= Collecting Traces, Metrics, and Logs with DataDog
+
+== Create DataDog account
+
+Go to the https://www.datadoghq.com/[DataDog website], click `Free Trial`. Select the appropriate region, and then fill out the remaining details and follow the signup steps.
+
+In order to complete the signup you *must* install one of their agents and have it send some data. You can choose from one of the agents at the last step of the signup, the easiest was just to spin up a Docker container, which can be stopped immediately after the signup completes. The instructions for doing that are provided during signup, not pasting it here as the command includes an API key and the selected region. Better to grab it from their instructions.
+
+The agent is *not required* for collecting data from the actual app, if you have installed something, it can be removed after, and running the agent in parallel with the OpenTelemetry agent might duplicate data.
+
+== Create an API key
+
+After finishing signup, create an API key. In the DataDog application, from the menu bar on the left, click on your account -> `Organization Settings` -> `API Keys`. Create a new key, give it a name, and save the generated key in your password manager.
+
+== Run the OpenTelemetry collector
+
+Reference: https://docs.datadoghq.com/tracing/trace_collection/open_standards/otel_collector_datadog_exporter/[Guide from DataDog]
+
+DataDog does not support the OpenTelemetry APIs in their endpoints, they only have their own proprietary endpoints. As such OpenTelemetry data can not be sent directly from the agent to DataDog using the OTLP protocol. Instead, the OpenTelemetry data must first be forwarded to the OpenTelemetry collector including the contributions modules, which supports exporting to DataDog.
+
+To run the OpenTelemetry collector, download the binary from the https://github.com/open-telemetry/opentelemetry-collector-releases/releases/latest[latest Release on Github]. Make sure to download the `otelcol_contrib_` variant, which includes the DataDog modules, and download the variant for your OS.
+
+The collector needs to be properly configured. Create a `collector.yaml` file, with the following contents:
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      http:
+      grpc:
+
+processors:
+  batch:
+
+exporters:
+  datadog:
+    api:
+      site: datadoghq.eu
+      key: ${DD_API_KEY}
+
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [datadog]
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [datadog]
+```
+
+The configuration above will accept traces and metrics data in the OTLP format, and export them to DataDog.
+
+The `exporters.datadog.api.site` setting in the configuration contains the domain where to send the data. You must set this to match the region that you have signed up for. You can get the domain from your browser's address when you are signed in into DataDog.
+
+The configuration contains a `DD_API_KEY` variable, which must be set as environment variable to the API key created in the previous step before running the collector. Alternatively hard-code the API key in the configuration.
+
+Then run the collector with the following command, replace the name of the binary with the one that you downloaded:
+```shell
+otelcontribcol_linux_amd64 --config collector.yaml
+```
+
+=== Docker
+
+Alternatively the collector can be run with Docker:
+```shell
+docker run --name otelcol -p 4317:4317 -p 4318:4318 -e DD_API_KEY=<DATADOG_API_KEY> -v collector.yaml:/etc/otelcol-contrib/config.yaml otel/opentelemetry-collector-contrib:latest
+```
+
+== Start the OpenTelemetry Java Agent
+
+Start the OpenTelemetry Java agent:
+[source,shell]
+----
+java -javaagent:opentelemetry-javaagent.jar \
+     -jar target/myapp-1.0-SNAPSHOT.jar
+----
+
+The agent does not require any further configuration when using the OpenTelemetry collector, and if the collector is running on the same host. If the collector is not running on the host system, the URL of the collector can be set using the `otel.exporter.otlp.endpoint` system variable.
+
+== Viewing Data in DataDog
+
+To view traces: From the menu on the left, select `APM` -> `Traces`.
+
+To view errors from traces: From the menu on the left, select `APM` -> `Error Tracking`.
+
+To view metrics: From the menu on the left, select `Metrics` -> `Explorer`.
+
+== Exporting Logs to DataDog
+
+DataDog does not support receiving logs from the OpenTelemetry agent or collector. Instead, logs must be either written to a file and then be ingested by the DataDog agent, or sent to the DataDog backend using a log appender.
+
+Additionally, logs must include a DataDog trace and span id, so that logs can be correlated with traces.
+
+=== Using Logback and the DataDog TCP Log API
+
+This method uses a Logback appender to send logs to the DataDog TCP logs API.
+
+First, add the following dependency to your Maven configuration in order to include a TCP appender for logback:
+```xml
+<dependency>
+    <groupId>net.logstash.logback</groupId>
+    <artifactId>logstash-logback-encoder</artifactId>
+    <version>7.2</version>
+</dependency>
+```
+
+(Version should be up-to-date in user docs)
+
+In order to correlate logs to traces generated by OpenTelemetry we need to customize the JSON output of logback. To do that, create a `DataDogContextProvider` class with the following content:
+
+```java
+package com.example.application;
+
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import com.fasterxml.jackson.core.JsonGenerator;
+import net.logstash.logback.composite.AbstractJsonProvider;
+
+import java.io.IOException;
+import java.util.Map;
+
+public class DataDogContextProvider extends AbstractJsonProvider<ILoggingEvent> {
+    @Override
+    public void writeTo(JsonGenerator generator, ILoggingEvent iLoggingEvent) throws IOException {
+        Map<String, String> mdcPropertyMap = iLoggingEvent.getMDCPropertyMap();
+
+        if (mdcPropertyMap.containsKey("trace_id")) {
+            String traceId = mdcPropertyMap.get("trace_id");
+            String traceIdHexString = traceId.substring(traceId.length() - 16 );
+            long datadogTraceId = Long.parseUnsignedLong(traceIdHexString, 16);
+            String datadogTraceIdString = Long.toUnsignedString(datadogTraceId);
+
+            generator.writeStringField("dd.trace_id", datadogTraceIdString);
+            System.out.println("dd.trace_id: " + datadogTraceIdString);
+        }
+
+        if (mdcPropertyMap.containsKey("span_id")) {
+            String spanId = mdcPropertyMap.get("span_id");
+            String spanIdHexString = spanId.substring(spanId.length() - 16 );
+            long datadogSpanId = Long.parseUnsignedLong(spanIdHexString, 16);
+            String datadogSpanIdString = Long.toUnsignedString(datadogSpanId);
+
+            generator.writeStringField("dd.span_id", datadogSpanIdString);
+        }
+    }
+}
+```
+
+This class checks if the `trace_id` and `span_id` attributes have been set by OpenTelemetry for this log event, and writes corresponding DataDog trace and span IDs to the JSON output.
+
+After that create a custom logback encoder that makes use of this JSON provider. The encoder extends from `LogstashEncoder`, which is an encoder that generates JSON output that can be used by the DataDog logging endpoint:
+```java
+package com.example.application;
+
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import net.logstash.logback.LogstashFormatter;
+import net.logstash.logback.composite.AbstractCompositeJsonFormatter;
+import net.logstash.logback.encoder.LogstashEncoder;
+
+public class DataDogLogstashEncoder extends LogstashEncoder {
+    @Override
+    protected AbstractCompositeJsonFormatter<ILoggingEvent> createFormatter() {
+        AbstractCompositeJsonFormatter<ILoggingEvent> formatter = super.createFormatter();
+
+        ((LogstashFormatter)formatter).addProvider(new DataDogContextProvider());
+
+        return formatter;
+    }
+}
+```
+
+Then configure a new TCP appender in your logback configuration, using the encoder created above:
+```xml
+<appender name="JsonTcp" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+    <destination>tcp-intake.logs.datadoghq.eu:443</destination>
+    <keepAliveDuration>20 seconds</keepAliveDuration>
+    <encoder class="com.example.application.DataDogLogstashEncoder">
+        <prefix class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="ch.qos.logback.classic.PatternLayout">
+                <pattern>${DATA_DOG_API_KEY} %mdc{keyThatDoesNotExist}</pattern>
+            </layout>
+        </prefix>
+    </encoder>
+    <ssl />
+</appender>
+```
+
+Replace the domain of the `destination` property with the one for the region that you signed up for, and insert your DataDog API key into the `pattern` property.
+
+Then register the appender for the root logger:
+```
+<root level="info">
+    <appender-ref ref="JsonTcp" />
+    ...other appenders
+</root>
+```
+
+Now all traces in DataDog should also show the logs that were emitted during the trace.
