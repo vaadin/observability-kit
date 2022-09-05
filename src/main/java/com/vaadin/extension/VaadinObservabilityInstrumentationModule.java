@@ -4,6 +4,7 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static java.util.Arrays.asList;
 
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
+import com.vaadin.extension.instrumentation.StreamRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PwaHandlerInstrumentation;
@@ -58,7 +59,7 @@ public class VaadinObservabilityInstrumentationModule
 
     @Override
     public List<TypeInstrumentation> typeInstrumentations() {
-        // TypeIntrumentation for this instrumentation module
+        // TypeInstrumentation for this instrumentation module
         // @formatter:off
         return asList(
                 // This would be the actual request start for the application, but it only wraps to VaadinRequest and VaadinResponse
@@ -68,6 +69,7 @@ public class VaadinObservabilityInstrumentationModule
                 new WebcomponentBootstrapHandlerInstrumentation(),
                 new WebComponentProviderInstrumentation(),
                 new AfterNavigationStateRendererInstrumentation(),
+                new StreamRequestHandlerInstrumentation(),
                 new EventRpcHandlerInstrumentation(),
                 new NavigationRpcHandlerInstrumentation(),
                 new MapSyncRpcHandlerInstrumentation(),
