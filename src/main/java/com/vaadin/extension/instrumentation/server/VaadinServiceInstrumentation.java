@@ -28,6 +28,9 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import javax.servlet.http.HttpServletResponse;
 
 /**
@@ -65,24 +68,22 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
                     && !Configuration.isEnabled(TraceLevel.MAXIMUM)) {
                 return;
             }
+            String sessionId = vaadinRequest.getWrappedSession().getId();
+            Map<String, String> spanMap = new HashMap<>();
+            spanMap.put(HTTP_TARGET, vaadinRequest.getPathInfo());
+            spanMap.put(SESSION_ID, sessionId);
+            spanMap.put(REQUEST_TYPE, vaadinRequest
+                    .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER));
 
             // Using instrumentation to get this as LocalRootSpan!
             InstrumentationRequest request = new InstrumentationRequest(
-                    "Request handle");
+                    "Request handle", spanMap);
 
             context = INSTRUMENTER.start(currentContext(), request);
-            String sessionId = vaadinRequest.getWrappedSession().getId();
 
+            // TODO: add the key automatically to context with instrumenter
             scope = context.with(ContextKeys.SESSION_ID, sessionId)
                     .makeCurrent();
-
-            Span span = Span.fromContextOrNull(context);
-            if (span != null) {
-                span.setAttribute(HTTP_TARGET, vaadinRequest.getPathInfo());
-                span.setAttribute(SESSION_ID, sessionId);
-                span.setAttribute(REQUEST_TYPE, vaadinRequest.getParameter(
-                        ApplicationConstants.REQUEST_TYPE_PARAMETER));
-            }
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

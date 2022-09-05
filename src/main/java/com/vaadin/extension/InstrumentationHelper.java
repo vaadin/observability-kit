@@ -31,12 +31,13 @@ public class InstrumentationHelper {
     public static final String INSTRUMENTATION_VERSION = "1.0-alpha";
 
     private static final SpanNameGenerator generator = new SpanNameGenerator();
+    private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
 
     public static final Instrumenter<InstrumentationRequest, Void> INSTRUMENTER = Instrumenter
             .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
                     INSTRUMENTATION_NAME, generator)
             .setInstrumentationVersion(INSTRUMENTATION_VERSION)
-            .buildInstrumenter();
+            .addAttributesExtractor(attrGet).buildInstrumenter();
 
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
