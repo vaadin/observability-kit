@@ -5,11 +5,11 @@ import static java.util.Arrays.asList;
 
 import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.DataCommunicatorInstrumentation;
-import com.vaadin.extension.instrumentation.PushAtmosphereHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.PushHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.PushRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.communication.PushAtmosphereHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.communication.PushHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.communication.PushRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PwaHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.SessionRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.StreamRequestHandlerInstrumentation;

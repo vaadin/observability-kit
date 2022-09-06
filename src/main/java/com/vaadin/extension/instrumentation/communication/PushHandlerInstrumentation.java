@@ -1,4 +1,4 @@
-package com.vaadin.extension.instrumentation;
+package com.vaadin.extension.instrumentation.communication;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
@@ -15,26 +15,22 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-public class PushAtmosphereHandlerInstrumentation
-        implements TypeInstrumentation {
+public class PushHandlerInstrumentation implements TypeInstrumentation {
 
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
         return hasClassesNamed(
-                "com.vaadin.flow.server.communication.PushAtmosphereHandler");
+                "com.vaadin.flow.server.communication.PushHandler");
     }
 
     // This instrumentation only matches AttachExistingElementRpcHandler on the
     // rpcEvent stack.
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named(
-                "com.vaadin.flow.server.communication.PushAtmosphereHandler");
+        return named("com.vaadin.flow.server.communication.PushHandler");
     }
 
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("onMessage"),
-                this.getClass().getName() + "$MessageAdvice");
-        transformer.applyAdviceToMethod(named("onRequest"),
                 this.getClass().getName() + "$MessageAdvice");
     }
 

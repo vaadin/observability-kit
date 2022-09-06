@@ -1,8 +1,9 @@
-package com.vaadin.extension.instrumentation;
+package com.vaadin.extension.instrumentation.communication;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.VaadinRequest;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
