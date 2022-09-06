@@ -3,7 +3,7 @@ package com.vaadin.extension;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static java.util.Arrays.asList;
 
-import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrumentation;
+import com.vaadin.extension.instrumentation.AbstractNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.DataCommunicatorInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
@@ -69,7 +69,7 @@ public class VaadinObservabilityInstrumentationModule
                 new AttachTemplateChildRpcHandlerInstrumentation(),
                 new WebcomponentBootstrapHandlerInstrumentation(),
                 new WebComponentProviderInstrumentation(),
-                new AfterNavigationStateRendererInstrumentation(),
+                new AbstractNavigationStateRendererInstrumentation(),
                 new StreamRequestHandlerInstrumentation(),
                 new EventRpcHandlerInstrumentation(),
                 new NavigationRpcHandlerInstrumentation(),
