@@ -38,3 +38,9 @@ The `NEW RELIC SERVER` is the endpoint URL provided by New Relic, and `LICENSE K
 From the `Browse data` dropdown select either `Traces`, `Metrics`, or `Logs`.
 
 Note that there is some delay with New Relic processing ingested data, which can take up to a minute.
+
+== Attribute Length Limitations
+
+New Relic discards traces and events that have attributes which exceed their hard limit for attributes. In particular the max. attribute value length is 4095 characters, which can result in exception events being discarded if the `exception.stacktrace` attribute contains a stacktrace that is longer than that. Reference: https://docs.newrelic.com/docs/more-integrations/open-source-telemetry-integrations/opentelemetry/best-practices/opentelemetry-best-practices-attributes
+
+For the New Relic integration we should document that the agent should be run with a respective attribute value limit: `-Dotel.attribute.value.length.limit=4095`, otherwise data such as exceptions might get lost. The setting causes OpenTelemetry to truncate attribute values to the limit. This also means that stracktraces can be cut off.
