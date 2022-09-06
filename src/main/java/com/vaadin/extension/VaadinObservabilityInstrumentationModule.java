@@ -20,6 +20,7 @@ import com.vaadin.extension.instrumentation.communication.rpc.MapSyncRpcHandlerI
 import com.vaadin.extension.instrumentation.communication.rpc.NavigationRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.rpc.PublishedServerEventHandlerRpcHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.rpc.ReturnChannelHandlerInstrumentation;
+import com.vaadin.extension.instrumentation.server.ErrorHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.server.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinServiceInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
@@ -84,7 +85,8 @@ public class VaadinObservabilityInstrumentationModule
                 new PwaHandlerInstrumentation(),
                 new UnsupportedBrowserHandlerInstrumentation(),
                 new ReturnChannelHandlerInstrumentation(),
-                new VaadinSessionInstrumentation());
+                new VaadinSessionInstrumentation(),
+                new ErrorHandlerInstrumentation());
         // @formatter:on
     }
 }
