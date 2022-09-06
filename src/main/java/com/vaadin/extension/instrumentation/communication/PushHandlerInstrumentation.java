@@ -32,6 +32,8 @@ public class PushHandlerInstrumentation implements TypeInstrumentation {
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("onMessage"),
                 this.getClass().getName() + "$MessageAdvice");
+        transformer.applyAdviceToMethod(named("handleConnectionLost"),
+                this.getClass().getName() + "$ConnectionLostAdvice");
     }
 
     @SuppressWarnings("unused")
@@ -42,6 +44,26 @@ public class PushHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Local("otelScope") Scope scope) {
 
             span = InstrumentationHelper.startSpan("Push : " + methodName);
+
+            Context context = currentContext().with(span);
+            scope = context.makeCurrent();
+        }
+
+        @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
+        public static void onExit(@Advice.Thrown Throwable throwable,
+                @Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
+            InstrumentationHelper.endSpan(span, throwable, scope);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    public static class ConnectionLostAdvice {
+        @Advice.OnMethodEnter()
+        public static void onEnter(@Advice.Local("otelSpan") Span span,
+                @Advice.Local("otelScope") Scope scope) {
+
+            span = InstrumentationHelper.startSpan("Push : ConnectionLost");
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();

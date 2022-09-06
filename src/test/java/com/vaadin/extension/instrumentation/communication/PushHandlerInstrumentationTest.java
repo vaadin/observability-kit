@@ -21,14 +21,13 @@ class PushHandlerInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
-    public void onConnect_createsSpan() {
-        PushHandlerInstrumentation.MessageAdvice.onEnter("onConnect", null,
-                null);
-        PushHandlerInstrumentation.MessageAdvice.onExit(null,
+    public void connectionLost_createsSpan() {
+        PushHandlerInstrumentation.ConnectionLostAdvice.onEnter(null, null);
+        PushHandlerInstrumentation.ConnectionLostAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
-        assertEquals("Push : onConnect", span.getName());
+        assertEquals("Push : ConnectionLost", span.getName());
     }
 
     @Test
