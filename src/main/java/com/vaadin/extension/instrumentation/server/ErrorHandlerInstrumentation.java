@@ -21,11 +21,8 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * Instruments VaadinService to add the HTTP session id to the context, to be
- * retrieved by nested instrumentations.
- * <p>
- * Also sets the application RootSpan as this is the in point for handling the
- * incoming requests.
+ * Instruments the ErrorHandler that is executed for unhandled exceptions from
+ * request handlers.
  */
 public class ErrorHandlerInstrumentation implements TypeInstrumentation {
 
@@ -36,7 +33,7 @@ public class ErrorHandlerInstrumentation implements TypeInstrumentation {
 
     public ElementMatcher<TypeDescription> typeMatcher() {
         return implementsInterface(
-                named("com.vaadin.flow.server.VaadinService"));
+                named("com.vaadin.flow.server.ErrorHandler"));
     }
 
     public void transform(TypeTransformer transformer) {
