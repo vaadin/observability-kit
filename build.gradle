@@ -71,6 +71,7 @@ dependencies {
 
   implementation enforcedPlatform("com.vaadin:vaadin-bom:${vaadinVersion}")
   compileOnly("com.vaadin:flow-server")
+  compileOnly("com.vaadin:flow-data")
 //  implementation 'com.vaadin:license-checker'
 
   //Provides @AutoService annotation that makes registration of our SPI implementations much easier
@@ -96,6 +97,7 @@ dependencies {
 
   //All dependencies below are only for tests
   testImplementation("com.vaadin:flow-server")
+  testImplementation("com.vaadin:flow-data")
   testImplementation("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-semconv:${versions.opentelemetryJavaagentAlpha}")
   testImplementation("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
   testImplementation("org.mockito:mockito-inline:${versions.mockito}")
