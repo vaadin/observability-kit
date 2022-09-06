@@ -7,7 +7,6 @@ import com.vaadin.extension.instrumentation.AfterNavigationStateRendererInstrume
 import com.vaadin.extension.instrumentation.DataCommunicatorInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
-import com.vaadin.extension.instrumentation.communication.PushAtmosphereHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PushHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PushRequestHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PwaHandlerInstrumentation;
@@ -81,7 +80,6 @@ public class VaadinObservabilityInstrumentationModule
                 new StaticFileServerInstrumentation(),
                 new VaadinServiceInstrumentation(),
                 new PushHandlerInstrumentation(),
-                new PushAtmosphereHandlerInstrumentation(),
                 new VaadinSessionInstrumentation(),
                 new DataCommunicatorInstrumentation()
         ));
