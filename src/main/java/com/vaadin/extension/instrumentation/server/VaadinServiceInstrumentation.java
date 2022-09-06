@@ -1,11 +1,11 @@
 package com.vaadin.extension.instrumentation.server;
 
-import static com.vaadin.extension.Constants.HTTP_TARGET;
 import static com.vaadin.extension.Constants.REQUEST_TYPE;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTER;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.*;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.ContextKeys;
@@ -19,6 +19,7 @@ import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -31,12 +32,13 @@ import net.bytebuddy.matcher.ElementMatcher;
 import java.util.HashMap;
 import java.util.Map;
 
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 /**
  * Instruments VaadinService to add the HTTP session id to the context, to be
  * retrieved by nested instrumentations.
- *
+ * <p>
  * Also sets the application RootSpan as this is the in point for handling the
  * incoming requests.
  */
@@ -70,14 +72,27 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
             }
             String sessionId = vaadinRequest.getWrappedSession().getId();
             Map<String, String> spanMap = new HashMap<>();
-            spanMap.put(HTTP_TARGET, vaadinRequest.getPathInfo());
+            // Add semantic HTTP attributes
+            HttpServletRequest servletRequest = ((HttpServletRequest) vaadinRequest);
+            spanMap.put(HTTP_SCHEME.getKey(), servletRequest.getScheme());
+            spanMap.put(HTTP_METHOD.getKey(), vaadinRequest.getMethod());
+            spanMap.put(HTTP_HOST.getKey(), vaadinRequest.getRemoteHost());
+            String httpTarget = servletRequest.getPathInfo();
+            String queryString = servletRequest.getQueryString();
+            if (queryString != null) {
+                httpTarget += "?" + queryString;
+            }
+            spanMap.put(HTTP_TARGET.getKey(), httpTarget);
+            spanMap.put(HTTP_ROUTE.getKey(), vaadinRequest.getPathInfo());
+
+            // Add custom Vaadin attributes
             spanMap.put(SESSION_ID, sessionId);
             spanMap.put(REQUEST_TYPE, vaadinRequest
                     .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER));
 
             // Using instrumentation to get this as LocalRootSpan!
             InstrumentationRequest request = new InstrumentationRequest(
-                    "Request handle", spanMap);
+                    "Request handle", SpanKind.SERVER, spanMap);
 
             context = INSTRUMENTER.start(currentContext(), request);
 
@@ -91,10 +106,12 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
                 @Advice.Argument(1) VaadinResponse vaadinResponse,
                 @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
-            if (((HttpServletResponse) vaadinResponse)
-                    .getStatus() == HttpStatusCode.NOT_FOUND.getCode()) {
-                Span span = Span.fromContextOrNull(context);
-                if (span != null) {
+            Span span = Span.fromContextOrNull(context);
+            if (span != null) {
+                span.setAttribute(HTTP_STATUS_CODE.getKey(),
+                        ((HttpServletResponse) vaadinResponse).getStatus());
+                if (((HttpServletResponse) vaadinResponse)
+                        .getStatus() == HttpStatusCode.NOT_FOUND.getCode()) {
                     span.setStatus(StatusCode.ERROR, "Request was not handled");
                 }
             }
