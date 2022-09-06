@@ -1,5 +1,6 @@
 package com.vaadin.extension;
 
+import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.flow.server.Constants.VAADIN_MAPPING;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 
@@ -15,6 +16,7 @@ import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 
@@ -25,10 +27,22 @@ import java.util.Optional;
 import javax.servlet.http.HttpServletRequest;
 
 public class InstrumentationHelper {
+    public static final String INSTRUMENTATION_NAME = "com.vaadin.observability.instrumentation";
+    public static final String INSTRUMENTATION_VERSION = "1.0-alpha";
+
+    private static final SpanNameGenerator generator = new SpanNameGenerator();
+    private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
+
+    public static final Instrumenter<InstrumentationRequest, Void> INSTRUMENTER = Instrumenter
+            .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
+                    INSTRUMENTATION_NAME, generator)
+            .setInstrumentationVersion(INSTRUMENTATION_VERSION)
+            .addAttributesExtractor(attrGet)
+            .buildInstrumenter(InstrumentationRequest::getSpanKind);
 
     public static Tracer getTracer() {
-        return GlobalOpenTelemetry.getTracer(
-                "com.vaadin.observability.instrumentation", "1.0-alpha");
+        return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
+                INSTRUMENTATION_VERSION);
     }
 
     /**
@@ -63,7 +77,7 @@ public class InstrumentationHelper {
 
         String sessionId = context.get(ContextKeys.SESSION_ID);
         if (sessionId != null && !sessionId.isEmpty()) {
-            span.setAttribute("vaadin.session.id", sessionId);
+            span.setAttribute(SESSION_ID, sessionId);
         }
 
         return span;
@@ -161,17 +175,22 @@ public class InstrumentationHelper {
 
     public static void handleException(Span span, Throwable throwable) {
         if (throwable != null) {
-            // This will actually mark the span as having an exception which
-            // shows on the dataUI
+            // Mark the span as error
             span.setStatus(StatusCode.ERROR, throwable.getMessage());
-            // Add log trace of exception.
+            // Add exception as event to the span
             span.recordException(throwable);
+            // Also mark root span as having an error, as several monitoring
+            // solutions (New Relic, DataDog) only monitor for errors in root /
+            // server spans
+            String errorName = throwable.getClass().getCanonicalName() + ": "
+                    + throwable.getMessage();
+            LocalRootSpan.current().setStatus(StatusCode.ERROR, errorName);
         }
     }
 
     /**
      * Get the file name from the HTTP request.
-     * 
+     *
      * @param request
      *            http request to get file name from
      * @return file name

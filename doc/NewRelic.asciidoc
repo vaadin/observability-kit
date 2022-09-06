@@ -1,7 +1,7 @@
 = Collecting Metrics with New Relic
 
 https://newrelic.com[New Relic] is an observability platform, and is supported by OpenTelemetry through the OLTP/HTTP exporter protocol.
-This document provides instructions on how to collect traces from a locally running Java app into New Relic.
+This document provides instructions on how to collect traces, metrics, and logs from a locally running Java app into New Relic.
 
 == Create a New Relic Account
 
@@ -22,7 +22,9 @@ Start the OpenTelemetry Java agent with the respective system properties:
 [source,shell]
 ----
 java -javaagent:opentelemetry-javaagent.jar \
+     -Dotel.traces.exporter=otlp \
      -Dotel.metrics.exporter=otlp \
+     -Dotel.logs.exporter=otlp \
      -Dotel.exporter.otlp.endpoint=[NEW RELIC SERVER]:4317 \
      -Dotel.exporter.otlp.headers=Api-Key="[LICENSE KEY]" \
      -Dotel.exporter.otlp.protocol=http/protobuf
@@ -32,7 +34,13 @@ java -javaagent:opentelemetry-javaagent.jar \
 [NOTE]
 The `NEW RELIC SERVER` is the endpoint URL provided by New Relic, and `LICENSE KEY` is the copied key.
 
-== Checking Traces From Application
-From the `Browse data` dropdown select `Traces`
+== Viewing Data from the Application
+From the `Browse data` dropdown select either `Traces`, `Metrics`, or `Logs`.
 
-Traces sent from the application should be visible here (possibly at some delay)
+Note that there is some delay with New Relic processing ingested data, which can take up to a minute.
+
+== Attribute Length Limitations
+
+New Relic discards traces and events that have attributes which exceed their hard limit for attributes. In particular the max. attribute value length is 4095 characters, which can result in exception events being discarded if the `exception.stacktrace` attribute contains a stacktrace that is longer than that. Reference: https://docs.newrelic.com/docs/more-integrations/open-source-telemetry-integrations/opentelemetry/best-practices/opentelemetry-best-practices-attributes
+
+For the New Relic integration we should document that the agent should be run with a respective attribute value limit: `-Dotel.attribute.value.length.limit=4095`, otherwise data such as exceptions might get lost. The setting causes OpenTelemetry to truncate attribute values to the limit. This also means that stracktraces can be cut off.
