@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.communication.rpc;
 
+import static com.vaadin.extension.Constants.VIEW;
 import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
@@ -87,8 +88,7 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 // If possible add active view class name as an attribute to the
                 // span
                 if (elementInfo.getViewLabel() != null) {
-                    span.setAttribute("vaadin.view",
-                            elementInfo.getViewLabel());
+                    span.setAttribute(VIEW, elementInfo.getViewLabel());
                 }
 
                 Context context = currentContext().with(span);

@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.communication.rpc;
 
+import static com.vaadin.extension.Constants.VIEW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.vaadin.extension.conf.TraceLevel;
@@ -44,8 +45,8 @@ class AttachExistingElementRpcHandlerInstrumentationTest
                 .get(AttributeKey.stringKey("vaadin.element.tag")));
         assertEquals("target-element[foo]", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.element.target")));
-        assertEquals("TestView", span.getAttributes()
-                .get(AttributeKey.stringKey("vaadin.view")));
+        assertEquals("TestView",
+                span.getAttributes().get(AttributeKey.stringKey(VIEW)));
     }
 
     @Test

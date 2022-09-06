@@ -3,6 +3,7 @@ package com.vaadin.extension.instrumentation.communication;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
+import com.vaadin.flow.component.UI;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.Test;
@@ -21,13 +22,35 @@ class PushHandlerInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
-    public void connectionLost_createsSpan() {
-        PushHandlerInstrumentation.ConnectionLostAdvice.onEnter(null, null);
-        PushHandlerInstrumentation.ConnectionLostAdvice.onExit(null,
-                getCapturedSpan(0), null);
+    public void onConnect_createsSpan() {
+        UI.setCurrent(getMockUI());
+        try {
+            PushHandlerInstrumentation.ConnectionAdvice.onEnter("onConnect",
+                    null, null);
+            PushHandlerInstrumentation.ConnectionAdvice.onExit(null,
+                    getCapturedSpan(0), null);
 
-        SpanData span = getExportedSpan(0);
-        assertEquals("Push : ConnectionLost", span.getName());
+            SpanData span = getExportedSpan(0);
+            assertEquals("Push : onConnect", span.getName());
+        } finally {
+            UI.setCurrent(null);
+        }
+    }
+
+    @Test
+    public void connectionLost_createsSpan() {
+        UI.setCurrent(getMockUI());
+        try {
+            PushHandlerInstrumentation.ConnectionAdvice
+                    .onEnter("connectionLost", null, null);
+            PushHandlerInstrumentation.ConnectionAdvice.onExit(null,
+                    getCapturedSpan(0), null);
+
+            SpanData span = getExportedSpan(0);
+            assertEquals("Push : connectionLost", span.getName());
+        } finally {
+            UI.setCurrent(null);
+        }
     }
 
     @Test

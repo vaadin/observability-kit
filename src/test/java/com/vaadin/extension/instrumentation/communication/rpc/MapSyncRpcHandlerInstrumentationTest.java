@@ -1,6 +1,7 @@
 package com.vaadin.extension.instrumentation.communication.rpc;
 
 import static com.vaadin.extension.Constants.SESSION_ID;
+import static com.vaadin.extension.Constants.VIEW;
 import static org.junit.jupiter.api.Assertions.*;
 
 import elemental.json.Json;
@@ -43,8 +44,8 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals("Sync: test-component[foo]", span.getName());
         assertEquals("test-component", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.element.tag")));
-        assertEquals("TestView", span.getAttributes()
-                .get(AttributeKey.stringKey("vaadin.view")));
+        assertEquals("TestView",
+                span.getAttributes().get(AttributeKey.stringKey(VIEW)));
         assertEquals(getMockSessionId(),
                 span.getAttributes().get(AttributeKey.stringKey(SESSION_ID)));
     }
