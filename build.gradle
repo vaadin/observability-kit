@@ -13,12 +13,12 @@ plugins {
   id "com.github.johnrengelman.shadow" version "7.1.2"
   id "com.diffplug.spotless" version "6.9.1"
 
-  id "io.opentelemetry.instrumentation.muzzle-generation" version "1.16.0-alpha-SNAPSHOT"
-  id "io.opentelemetry.instrumentation.muzzle-check" version "1.16.0-alpha-SNAPSHOT"
+  id "io.opentelemetry.instrumentation.muzzle-generation" version "1.17.0-alpha-SNAPSHOT"
+  id "io.opentelemetry.instrumentation.muzzle-check" version "1.17.0-alpha-SNAPSHOT"
 }
 
-group 'io.opentelemetry.example'
-version '1.0'
+group 'com.vaadin.observability'
+version project.getProperty('projectVersion')
 
 ext {
   versions = [
@@ -124,7 +124,7 @@ dependencies {
 //The location of extension directory inside agent jar is hard-coded in the agent source code
 task extendedAgent(type: Jar) {
   dependsOn(configurations.otel)
-  archiveFileName = "opentelemetry-javaagent.jar"
+  archiveFileName = "vaadin-opentelemetry-javaagent-${projectVersion}.jar"
   from zipTree(configurations.otel.singleFile)
   from(tasks.shadowJar.archiveFile) {
     into "extensions"
