@@ -17,7 +17,7 @@ The extension is added using the system property `otel.javaagent.extensions`
 .All jars in same place execution
 [source,text]
 ----
-java -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.extensions=opentelemetry-custom-instrumentation-extension-1.0-all.jar -jar target/myapp-1.0-SNAPSHOT.jar
+java -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.extensions=opentelemetry-vaadin-observability-instrumentation-extension-1.0-SNAPSHOT-all.jar -jar target/myapp-1.0-SNAPSHOT.jar
 ----
 
 === Running the agent as extendedAgent build
@@ -28,7 +28,7 @@ only the `javaagent` gflag is needed
 .Simple embedded extension
 [source,text]
 ----
-java -javaagent:opentelemetry-javaagent.jar -jar target/myapp-1.0-SNAPSHOT.jar
+java -javaagent:vaadin-opentelemetry-javaagent-1.0-SNAPSHOT.jar -jar target/myapp-1.0-SNAPSHOT.jar
 ----
 
 === Connecting to Jaeger Monitor
