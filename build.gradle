@@ -124,7 +124,7 @@ dependencies {
 //The location of extension directory inside agent jar is hard-coded in the agent source code
 task extendedAgent(type: Jar) {
   dependsOn(configurations.otel)
-  archiveFileName = "opentelemetry-javaagent.jar"
+  archiveFileName = "vaadin-observability-javaagent.jar"
   from zipTree(configurations.otel.singleFile)
   from(tasks.shadowJar.archiveFile) {
     into "extensions"
