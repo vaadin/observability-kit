@@ -1,19 +1,16 @@
 package com.vaadin.extension.instrumentation.server;
 
-import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTER;
-import static com.vaadin.extension.InstrumentationHelper.handleException;
-import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.implementsInterface;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
-import com.vaadin.extension.InstrumentationRequest;
 import com.vaadin.flow.server.ErrorEvent;
 
 import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.SpanKind;
+import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
@@ -43,30 +40,19 @@ public class ErrorHandlerInstrumentation implements TypeInstrumentation {
 
     @SuppressWarnings("unused")
     public static class ErrorAdvice {
-        @Advice.OnMethodEnter()
+        @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter(@Advice.Argument(0) ErrorEvent event,
                 @Advice.Local("otelContext") Context context,
                 @Advice.Local("otelScope") Scope scope) {
-            // Using instrumentation to get this as LocalRootSpan!
-            InstrumentationRequest request = new InstrumentationRequest(
-                    "Internal Error", SpanKind.SERVER);
-
-            context = INSTRUMENTER.start(currentContext(), request);
-            scope = context.makeCurrent();
-            handleException(Span.fromContextOrNull(context),
-                    event.getThrowable());
-        }
-
-        @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(@Advice.Thrown Throwable throwable,
-                @Advice.Local("otelContext") Context context,
-                @Advice.Local("otelScope") Scope scope) {
-            if (scope == null) {
-                return;
-            }
-            scope.close();
-
-            INSTRUMENTER.end(context, null, null, throwable);
+            final Span rootSpan = LocalRootSpan.current();
+            // Also mark root span as having an error, as several monitoring
+            // solutions (New Relic, DataDog) only monitor for errors in root /
+            // server spans
+            String errorName = event.getThrowable().getClass()
+                    .getCanonicalName() + ": "
+                    + event.getThrowable().getMessage();
+            rootSpan.setStatus(StatusCode.ERROR, errorName);
+            rootSpan.addEvent("exception");
         }
     }
 }
