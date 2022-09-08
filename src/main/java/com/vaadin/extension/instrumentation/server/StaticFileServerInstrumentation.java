@@ -48,7 +48,7 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
     @SuppressWarnings("unused")
     public static class HandleRequestAdvice {
 
-        @Advice.OnMethodEnter()
+        @Advice.OnMethodEnter(suppress = Throwable.class)
         public static void onEnter(
                 @Advice.Local("startTimestamp") Instant startTimestamp) {
             startTimestamp = Instant.now();
@@ -64,7 +64,6 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
                 // Do not add a span if static file is not served from here.
                 return;
             }
-
             final String requestFilename = getRequestFilename(request);
 
             final String spanName = "StaticFileRequest";
@@ -76,6 +75,8 @@ public class StaticFileServerInstrumentation implements TypeInstrumentation {
             if (requestFilename.startsWith("/VAADIN/build/vaadin-")) {
                 // Loading the bundle we do not have a registry to lean on.
                 localRootSpan.updateName("/ : Load frontend bundle");
+                // Update span name as we might not have a root span
+                span.updateName("Load frontend bundle");
             } else {
                 localRootSpan.updateName(requestFilename);
             }

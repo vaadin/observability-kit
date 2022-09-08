@@ -73,7 +73,7 @@ class StaticFileServerInstrumentationTest extends AbstractInstrumentationTest {
         }
 
         SpanData rootSpan = getExportedSpan(1);
-        assertEquals("StaticFileRequest", getExportedSpan(0).getName());
+        assertEquals("Load frontend bundle", getExportedSpan(0).getName());
         assertEquals("/ : Load frontend bundle", rootSpan.getName());
     }
 
