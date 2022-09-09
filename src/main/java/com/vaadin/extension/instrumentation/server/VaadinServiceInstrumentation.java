@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.server;
 
+import static com.vaadin.extension.Constants.FLOW_VERSION;
 import static com.vaadin.extension.Constants.REQUEST_TYPE;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTER;
@@ -16,6 +17,7 @@ import com.vaadin.flow.server.HandlerHelper;
 import com.vaadin.flow.server.HttpStatusCode;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
+import com.vaadin.flow.server.Version;
 import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.trace.Span;
@@ -89,6 +91,7 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
             spanMap.put(SESSION_ID, sessionId);
             spanMap.put(REQUEST_TYPE, vaadinRequest
                     .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER));
+            spanMap.put(FLOW_VERSION, Version.getFullVersion());
 
             // Using instrumentation to get this as LocalRootSpan!
             InstrumentationRequest request = new InstrumentationRequest(
