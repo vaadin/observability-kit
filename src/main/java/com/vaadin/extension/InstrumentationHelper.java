@@ -179,6 +179,13 @@ public class InstrumentationHelper {
             span.setStatus(StatusCode.ERROR, throwable.getMessage());
             // Add exception as event to the span
             span.recordException(throwable);
+            // Also mark root span as having an error, as several monitoring
+            // solutions (New Relic, DataDog) only monitor for errors in root /
+            // server spans
+            String errorName = throwable.getClass().getCanonicalName() + ": "
+                    + throwable.getMessage();
+            final Span root = LocalRootSpan.current();
+            root.setStatus(StatusCode.ERROR, errorName);
         }
     }
 

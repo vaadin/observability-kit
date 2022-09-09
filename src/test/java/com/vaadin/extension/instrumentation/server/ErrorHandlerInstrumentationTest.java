@@ -34,9 +34,6 @@ class ErrorHandlerInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals(StatusCode.ERROR, rootSpan.getStatus().getStatusCode());
         assertEquals("java.lang.IllegalAccessError: not allowed",
                 rootSpan.getStatus().getDescription());
-        assertEquals(1, rootSpan.getEvents().size(),
-                "Root span should contain the 'exception' event");
-        assertEquals("exception", rootSpan.getEvents().get(0).getName());
     }
 
 }

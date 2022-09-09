@@ -52,7 +52,6 @@ public class ErrorHandlerInstrumentation implements TypeInstrumentation {
                     .getCanonicalName() + ": "
                     + event.getThrowable().getMessage();
             rootSpan.setStatus(StatusCode.ERROR, errorName);
-            rootSpan.addEvent("exception");
         }
     }
 }
