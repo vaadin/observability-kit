@@ -1,5 +1,6 @@
 package com.vaadin.extension;
 
+import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTATION_VERSION;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static java.util.Arrays.asList;
 
@@ -25,6 +26,8 @@ import com.vaadin.extension.instrumentation.server.ErrorHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.server.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinServiceInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
+import com.vaadin.pro.licensechecker.BuildType;
+import com.vaadin.pro.licensechecker.LicenseChecker;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -36,6 +39,12 @@ import java.util.List;
 @AutoService(InstrumentationModule.class)
 public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
+
+    static {
+        LicenseChecker.checkLicenseFromStaticBlock("vaadin-observability",
+                INSTRUMENTATION_VERSION, BuildType.PRODUCTION);
+    }
+
     // The instrumentation names should reflect what is in `settings.gradle`
     // `rootProject.name`
     public static final String INSTRUMENTATION_NAME = "vaadin-observability";
