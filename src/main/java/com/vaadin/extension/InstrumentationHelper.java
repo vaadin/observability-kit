@@ -184,7 +184,8 @@ public class InstrumentationHelper {
             // server spans
             String errorName = throwable.getClass().getCanonicalName() + ": "
                     + throwable.getMessage();
-            LocalRootSpan.current().setStatus(StatusCode.ERROR, errorName);
+            final Span root = LocalRootSpan.current();
+            root.setStatus(StatusCode.ERROR, errorName);
         }
     }
 
