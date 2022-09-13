@@ -72,7 +72,7 @@ dependencies {
   implementation enforcedPlatform("com.vaadin:vaadin-bom:${vaadinVersion}")
   compileOnly("com.vaadin:flow-server")
   compileOnly("com.vaadin:flow-data")
-//  implementation 'com.vaadin:license-checker'
+  implementation('com.vaadin:license-checker')
 
   //Provides @AutoService annotation that makes registration of our SPI implementations much easier
   compileOnly deps.autoservice
