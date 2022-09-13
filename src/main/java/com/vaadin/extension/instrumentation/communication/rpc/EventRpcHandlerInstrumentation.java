@@ -1,6 +1,5 @@
 package com.vaadin.extension.instrumentation.communication.rpc;
 
-import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
@@ -13,19 +12,15 @@ import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
-import com.vaadin.flow.internal.StateTree;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
-import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
-
-import java.util.Optional;
 
 /**
  * This is a Targeted instrumentation for EventRpcHandler which adds information
@@ -94,13 +89,6 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
                 Context context = currentContext().with(span);
                 scope = context.makeCurrent();
             }
-
-            // Set the root span name to be the event
-            final Optional<String> activeRouteTemplate = getActiveRouteTemplate(
-                    ((StateTree) node.getOwner()).getUI());
-            String routeName = String.format("/%s",
-                    activeRouteTemplate.orElse(""));
-            LocalRootSpan.current().updateName(routeName);
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

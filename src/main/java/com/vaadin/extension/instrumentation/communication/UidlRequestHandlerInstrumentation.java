@@ -7,6 +7,9 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.conf.TraceLevel;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.VaadinRequest;
+import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -57,10 +60,17 @@ public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
-        public static void onExit(@Advice.Thrown Throwable throwable,
+        public static void onExit(@Advice.Argument(0) VaadinSession session,
+                @Advice.Argument(1) VaadinRequest request,
+                @Advice.Thrown Throwable throwable,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
             InstrumentationHelper.endSpan(span, throwable, scope);
+
+            UI ui = session.getService().findUI(request);
+            if (ui != null) {
+                InstrumentationHelper.updateHttpRoute(ui);
+            }
         }
     }
 }
