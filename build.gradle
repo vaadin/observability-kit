@@ -1,5 +1,6 @@
 plugins {
   id "java"
+  id 'maven-publish'
 
   /*
   Instrumentation agent extension mechanism expects a single jar containing everything required
@@ -124,7 +125,7 @@ dependencies {
 //The location of extension directory inside agent jar is hard-coded in the agent source code
 task extendedAgent(type: Jar) {
   dependsOn(configurations.otel)
-  archiveFileName = "vaadin-opentelemetry-javaagent-${projectVersion}.jar"
+  archiveFileName = "vaadin-opentelemetry-javaagent-${version}.jar"
   from zipTree(configurations.otel.singleFile)
   from(tasks.shadowJar.archiveFile) {
     into "extensions"
@@ -191,3 +192,33 @@ spotless {
 }
 sourceCompatibility = JavaVersion.VERSION_11
 targetCompatibility = JavaVersion.VERSION_11
+
+
+publishing {
+  publications {
+    maven(MavenPublication) {
+      artifactId = 'vaadin-opentelemetry-javaagent'
+      artifact ("${jar.destinationDir}/vaadin-opentelemetry-javaagent-${version}.jar")
+      pom {
+        name = 'Vaadin Observability Kit'
+        description = 'Observability for vaadin'
+        url = 'http://www.vaadin.com/'
+        licenses {
+          license {
+            name = 'Commercial Vaadin Developer License 4.0 (CVDLv4)'
+            url = 'https://vaadin.com/license/cvdl-4.0'
+          }
+        }
+      }
+    }
+  }
+  repositories {
+    maven {
+      url = "${mavenUrl}"
+      credentials {
+        username = "${mavenUser}"
+        password = "${mavenPwd}"
+      }
+    }
+  }
+}
