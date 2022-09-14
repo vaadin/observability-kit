@@ -67,7 +67,7 @@ public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
                 @Advice.Local("otelScope") Scope scope) {
             InstrumentationHelper.endSpan(span, throwable, scope);
 
-            UI ui = session.getService().findUI(request);
+            UI ui = UI.getCurrent();
             if (ui != null) {
                 InstrumentationHelper.updateHttpRoute(ui);
             }
