@@ -120,57 +120,42 @@ class PublishedServerEventHandlerRpcHandlerInstrumentationTest
     @Test
     public void invokeAdvice_respectsTraceLevel() throws NoSuchMethodException {
         configureTraceLevel(TraceLevel.MINIMUM);
-        try (var ignored = withRootContext()) {
-            PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
-                    .onEnter(component,
-                            TestComponent.class.getMethod("clientEvent"), null,
-                            null);
+        PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
+                .onEnter(component,
+                        TestComponent.class.getMethod("clientEvent"), null,
+                        null);
 
-            PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
-                    .onExit(null, getCapturedSpanOrNull(0), null);
-        }
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
 
-        // Should not export span, apart from root span
-        assertEquals(1, getExportedSpanCount());
-        // Should update root span
-        SpanData rootSpan = getExportedSpan(0);
-        assertEquals("/test-route", rootSpan.getName());
+        // Should not export span
+        assertEquals(0, getExportedSpanCount());
 
         configureTraceLevel(TraceLevel.DEFAULT);
         resetSpans();
-        try (var ignored = withRootContext()) {
-            PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
-                    .onEnter(component,
-                            TestComponent.class.getMethod("clientEvent"), null,
-                            null);
+        PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
+                .onEnter(component,
+                        TestComponent.class.getMethod("clientEvent"), null,
+                        null);
 
-            PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
-                    .onExit(null, getCapturedSpanOrNull(0), null);
-        }
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
 
         // Should export span
-        assertEquals(2, getExportedSpanCount());
-        // Should update root span
-        rootSpan = getExportedSpan(1);
-        assertEquals("/test-route", rootSpan.getName());
+        assertEquals(1, getExportedSpanCount());
 
         configureTraceLevel(TraceLevel.MAXIMUM);
         resetSpans();
-        try (var ignored = withRootContext()) {
-            PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
-                    .onEnter(component,
-                            TestComponent.class.getMethod("clientEvent"), null,
-                            null);
+        PublishedServerEventHandlerRpcHandlerInstrumentation.InvokeAdvice
+                .onEnter(component,
+                        TestComponent.class.getMethod("clientEvent"), null,
+                        null);
 
-            PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
-                    .onExit(null, getCapturedSpanOrNull(0), null);
-        }
+        PublishedServerEventHandlerRpcHandlerInstrumentation.HandleAdvice
+                .onExit(null, getCapturedSpanOrNull(0), null);
 
         // Should export span, apart from root span
-        assertEquals(2, getExportedSpanCount());
-        // Should update root span
-        rootSpan = getExportedSpan(1);
-        assertEquals("/test-route", rootSpan.getName());
+        assertEquals(1, getExportedSpanCount());
     }
 
     @Tag("test-component")
