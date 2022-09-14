@@ -55,3 +55,16 @@ export OTEL_METRICS_EXPORTER=none
 export OTEL_TRACES_EXPORTER=jaeger
 export OTEL.EXPORTER.JAEGER.ENDPOINT=http://localhost:14250
 ```
+
+### Maven deployment of extendedAgent
+
+To deploy the extended agent to a maven repository you need to supply credentials as properties `mavenUser` and `mavenPwd`, also the repository URL needs to be given as `mavenUrl`.
+
+These can be given on the command line with the `-P` flag or in the `gradle.properties` file.
+
+If targeting a repository behind http then you need to add the `allowInsecureProtocol = true` flag to the `repositories { maven {` block.
+
+With the parameters in place just run
+```shell
+gradle build extendedAgent publish
+```
