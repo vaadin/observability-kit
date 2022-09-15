@@ -201,7 +201,7 @@ public abstract class AbstractInstrumentationTest {
             rootInstrumenter = Instrumenter
                     .builder(GlobalOpenTelemetry.get(), "test",
                             RootContextScope::getRootSpanName)
-                    .newInstrumenter();
+                    .buildInstrumenter();
             rootContext = rootInstrumenter.start(Context.root(), null);
             scope = rootContext.makeCurrent();
         }
