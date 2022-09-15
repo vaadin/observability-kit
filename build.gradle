@@ -125,7 +125,7 @@ dependencies {
 //The location of extension directory inside agent jar is hard-coded in the agent source code
 task extendedAgent(type: Jar) {
   dependsOn(configurations.otel)
-  archiveFileName = "vaadin-opentelemetry-javaagent-${version}.jar"
+  archiveFileName = "vaadin-opentelemetry-javaagent-${projectVersion}.jar"
   from zipTree(configurations.otel.singleFile)
   from(tasks.shadowJar.archiveFile) {
     into "extensions"
@@ -198,7 +198,7 @@ publishing {
   publications {
     maven(MavenPublication) {
       artifactId = 'vaadin-opentelemetry-javaagent'
-      artifact ("${jar.destinationDir}/vaadin-opentelemetry-javaagent-${version}.jar")
+      artifact ("${jar.destinationDirectory}/vaadin-opentelemetry-javaagent-${projectVersion}.jar")
       pom {
         name = 'Vaadin Observability Kit'
         description = 'Observability for vaadin'
