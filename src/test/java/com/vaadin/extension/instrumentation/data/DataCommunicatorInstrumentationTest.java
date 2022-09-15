@@ -1,7 +1,8 @@
-package com.vaadin.extension.instrumentation;
+package com.vaadin.extension.instrumentation.data;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.data.provider.DataCommunicator;
 import com.vaadin.flow.data.provider.DataProvider;
 
