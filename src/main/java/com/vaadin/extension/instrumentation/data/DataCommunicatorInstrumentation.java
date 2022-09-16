@@ -1,4 +1,4 @@
-package com.vaadin.extension.instrumentation;
+package com.vaadin.extension.instrumentation.data;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static net.bytebuddy.matcher.ElementMatchers.named;
