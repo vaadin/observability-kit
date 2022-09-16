@@ -24,7 +24,6 @@
         <maven.compiler.target>11</maven.compiler.target>
 
         <gradle.executable>./gradlew</gradle.executable>
-        <project.version>1.0-SNAPSHOT</project.version>
         <vaadin.version>23.2.0</vaadin.version>
     </properties>
 
