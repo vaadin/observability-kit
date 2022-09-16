@@ -24,7 +24,7 @@
         <maven.compiler.target>11</maven.compiler.target>
 
         <gradle.executable>./gradlew</gradle.executable>
-        <version>1.0-SNAPSHOT</version>
+        <projectVersion>1.0-SNAPSHOT</projectVersion>
         <vaadinVersion>23.2.0</version>
     </properties>
 
@@ -45,7 +45,7 @@
                                 <argument>clean</argument>
                                 <argument>build</argument>
                                 <argument>extendedAgent</argument>
-                                <argument>-PprojectVersion=${version}</argument>
+                                <argument>-PprojectVersion=${projectVersion}</argument>
                                 <argument>-PvaadinVersion=${vaadinVersion}</argument>
                                 <argument>-S</argument>
                             </arguments>
