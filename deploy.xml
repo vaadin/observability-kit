@@ -25,7 +25,7 @@
 
         <gradle.executable>./gradlew</gradle.executable>
         <projectVersion>1.0-SNAPSHOT</projectVersion>
-        <vaadinVersion>23.2.0</version>
+        <vaadinVersion>23.2.0</vaadinVersion>
     </properties>
 
     <build>
