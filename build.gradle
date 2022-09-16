@@ -155,6 +155,22 @@ task extendedAgent(type: Jar) {
   }
 }
 
+// Copy sources and replace the 2 placeholders on copy
+task sources(type: Copy) {
+  from 'src/main/java'
+  into 'build/adjustedSrc'
+
+    filter { String line -> line.replace('@INSTRUMENTATION_NAME@', "com.vaadin.observability.instrumentation")}
+    filter { String line -> line.replace('@INSTRUMENTATION_VERSION@', "${projectVersion}")}
+}
+
+// Prepare sources, before compile, compile adjusted sources
+compileJava {
+  dependsOn sources
+  source = sources.destinationDir
+  classpath = sourceSets.main.compileClasspath
+}
+
 tasks {
 
   compileJava {
