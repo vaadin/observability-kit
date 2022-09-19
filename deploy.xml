@@ -100,7 +100,7 @@
                                 <resource>
                                     <directory>build/libs/</directory>
                                     <includes>
-                                        <include>**/vaadin-opentelemetry-javaagent-${version}.jar</include>
+                                        <include>**/vaadin-opentelemetry-javaagent-${project.version}.jar</include>
                                     </includes>
                                 </resource>
                             </resources>
@@ -113,6 +113,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
                 <executions>
                     <execution>
                         <id>default-jar</id>
