@@ -24,4 +24,12 @@ class InstrumentationHelperTest extends AbstractInstrumentationTest {
         assertEquals("Test span", testSpan.getName());
         assertSpanHasException(testSpan, exception);
     }
+
+    @Test
+    public void assertStringsReplaced() {
+        assertNotEquals("@INSTRUMENTATION_NAME@",
+                InstrumentationHelper.INSTRUMENTATION_NAME);
+        assertNotEquals("@INSTRUMENTATION_VERSION@",
+                InstrumentationHelper.INSTRUMENTATION_VERSION);
+    }
 }
