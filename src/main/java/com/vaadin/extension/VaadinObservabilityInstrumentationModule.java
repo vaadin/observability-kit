@@ -23,6 +23,7 @@ import com.vaadin.extension.instrumentation.communication.rpc.PublishedServerEve
 import com.vaadin.extension.instrumentation.communication.rpc.ReturnChannelHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.data.DataCommunicatorInstrumentation;
 import com.vaadin.extension.instrumentation.data.HierarchicalDataProviderInstrumentation;
+import com.vaadin.extension.instrumentation.data.renderer.ComponentRendererInstrumentation;
 import com.vaadin.extension.instrumentation.server.ErrorHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.server.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinServiceInstrumentation;
@@ -77,6 +78,7 @@ public class VaadinObservabilityInstrumentationModule
                 // This would be the actual request start for the application, but it only wraps to VaadinRequest and VaadinResponse
                 // Skipping this will have StaticFileRequest handle create a single span.
 //                new VaadinServletInstrumentation(),
+                new ComponentRendererInstrumentation(),
                 new AttachTemplateChildRpcHandlerInstrumentation(),
                 new WebcomponentBootstrapHandlerInstrumentation(),
                 new WebComponentProviderInstrumentation(),
