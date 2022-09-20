@@ -1,7 +1,9 @@
 package com.vaadin.extension.instrumentation.server;
 
+import static com.vaadin.extension.Constants.*;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
@@ -9,6 +11,7 @@ import com.vaadin.flow.server.HandlerHelper;
 import com.vaadin.flow.server.HttpStatusCode;
 import com.vaadin.flow.shared.ApplicationConstants;
 
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.trace.data.SpanData;
@@ -19,6 +22,7 @@ import org.mockito.Mockito;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 
 class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
 
@@ -27,7 +31,11 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
 
     @BeforeEach
     void init() {
+        HttpSession session = Mockito.mock(HttpSession.class);
+        Mockito.when(session.getId()).thenReturn("1234");
+
         servletRequest = Mockito.mock(HttpServletRequest.class);
+        Mockito.when(servletRequest.getSession()).thenReturn(session);
         Mockito.when(servletRequest.getScheme()).thenReturn("https");
         Mockito.when(servletRequest.getMethod()).thenReturn("POST");
         Mockito.when(servletRequest.getRemoteHost()).thenReturn("example.com");
@@ -45,9 +53,10 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     @Test
     public void service_createsSpan() {
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null);
+                null, false);
+
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent());
+                currentContext(), currentContext().makeCurrent(), true);
 
         SpanData span = getExportedSpan(0);
         assertEquals("/route", span.getName());
@@ -66,16 +75,38 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
-    public void handleRequest_existingRootSpan_doesNotCreateSpan() {
+    public void service_existingRootSpan_doesNotCreateSpan() {
         try (var ignored = withRootContext()) {
             VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest,
-                    null, null);
+                    null, null, false);
             VaadinServletInstrumentation.MethodAdvice.onExit(null,
                     servletResponse, currentContext(),
-                    currentContext().makeCurrent());
+                    currentContext().makeCurrent(), true);
         }
 
         assertEquals(1, getExportedSpanCount());
+    }
+
+    @Test
+    public void service_enhancesRootSpan() {
+        try (var ignored = withRootContext()) {
+            VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest,
+                    null, null, false);
+            VaadinServletInstrumentation.MethodAdvice.onExit(null,
+                    servletResponse, currentContext(),
+                    currentContext().makeCurrent(), false);
+        }
+
+        assertEquals(1, getExportedSpanCount());
+
+        SpanData span = getExportedSpan(0);
+        assertEquals("1234",
+                span.getAttributes().get(AttributeKey.stringKey(SESSION_ID)));
+        assertEquals("uidl",
+                span.getAttributes().get(AttributeKey.stringKey(REQUEST_TYPE)));
+        assertNotNull(
+                span.getAttributes().get(AttributeKey.stringKey(FLOW_VERSION)),
+                "Flow version should be added as attribute");
     }
 
     @Test
@@ -86,9 +117,9 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
                         HandlerHelper.RequestType.HEARTBEAT.getIdentifier());
 
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null);
+                null, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent());
+                currentContext(), currentContext().makeCurrent(), false);
 
         assertEquals(0, getExportedSpanCount(),
                 "No span should be made for heartbeat");
@@ -103,22 +134,22 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
         configureTraceLevel(TraceLevel.MAXIMUM);
 
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null);
+                null, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent());
+                currentContext(), currentContext().makeCurrent(), true);
 
         assertEquals(1, getExportedSpanCount(),
                 "Maximum trace should generate heartbeat");
     }
 
     @Test
-    public void handleRequestWithNotFound_setsErrorStatus() {
+    public void service_notFound_setsErrorStatus() {
         Mockito.when(servletResponse.getStatus())
                 .thenReturn(HttpStatusCode.NOT_FOUND.getCode());
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null);
+                null, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent());
+                currentContext(), currentContext().makeCurrent(), true);
 
         SpanData span = getExportedSpan(0);
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
@@ -127,12 +158,12 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
-    public void handleRequestWithException_setsErrorStatus() {
+    public void service_throwsException_setsErrorStatus() {
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null);
+                null, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(
                 new IllegalStateException("exception"), servletResponse,
-                currentContext(), currentContext().makeCurrent());
+                currentContext(), currentContext().makeCurrent(), true);
 
         SpanData span = getExportedSpan(0);
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());

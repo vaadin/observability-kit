@@ -11,7 +11,6 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.RouteConfiguration;
 import com.vaadin.flow.server.HandlerHelper;
 import com.vaadin.flow.server.HttpStatusCode;
-import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.Version;
 import com.vaadin.flow.shared.ApplicationConstants;
 
@@ -37,6 +36,7 @@ import java.util.Optional;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
 
 public class InstrumentationHelper {
     public static final String INSTRUMENTATION_NAME = "@INSTRUMENTATION_NAME@";
@@ -158,74 +158,55 @@ public class InstrumentationHelper {
      *            the context that contains the root span
      * @param throwable
      *            the throwable to record, or null
-     * @param scope
-     *            the scope to close, or null
      */
     public static void endRootSpan(HttpServletResponse servletResponse,
-            Context context, Throwable throwable, Scope scope) {
-        Span span = Span.fromContextOrNull(context);
-        if (span != null) {
-            span.setAttribute(HTTP_STATUS_CODE.getKey(),
+            Context context, Throwable throwable) {
+        Span rootSpan = LocalRootSpan.fromContextOrNull(context);
+        if (rootSpan != null) {
+            rootSpan.setAttribute(HTTP_STATUS_CODE.getKey(),
                     servletResponse.getStatus());
             if (servletResponse.getStatus() == HttpStatusCode.NOT_FOUND
                     .getCode()) {
-                span.setStatus(StatusCode.ERROR, "Request was not handled");
+                rootSpan.setStatus(StatusCode.ERROR, "Request was not handled");
             }
         }
         INSTRUMENTER.end(context, null, null, throwable);
-
-        if (scope != null) {
-            scope.close();
-        }
     }
 
     /**
-     * Enhances the root span with data from a VaadinRequest and creates a
-     * context containing VaadinRequest specific data, like session ID.
+     * Enhances the root span with data from a servlet request adds additional
+     * data to the context, like session ID.
      *
-     * @param vaadinRequest
+     * @param servletRequest
      *            the request
      * @return the created context
      */
-    public static Context enhanceRootSpan(VaadinRequest vaadinRequest) {
+    public static Context enhanceRootSpan(HttpServletRequest servletRequest,
+            Context context) {
         // Set Vaadin specific attributes on root span
-        Context context = Context.current();
         Span rootSpan = LocalRootSpan.fromContext(context);
-        String sessionId = vaadinRequest.getWrappedSession().getId();
+        HttpSession session = servletRequest.getSession();
 
         rootSpan.setAttribute(FLOW_VERSION, Version.getFullVersion());
-        rootSpan.setAttribute(SESSION_ID, sessionId);
-        rootSpan.setAttribute(REQUEST_TYPE, vaadinRequest
+        rootSpan.setAttribute(SESSION_ID, session.getId());
+        rootSpan.setAttribute(REQUEST_TYPE, servletRequest
                 .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER));
 
         // Add session id to context
-        return context.with(ContextKeys.SESSION_ID, sessionId);
+        return context.with(ContextKeys.SESSION_ID, session.getId());
     }
 
     /**
-     * Determines whether a higher-level instrumentation, for example the Tomcat
-     * or Servlet instrumentation, has already created a root server span.
+     * Determines whether a higher-level instrumentation, for example a servlet
+     * or application server instrumentation, has already created a root server
+     * span.
      *
      * @return whether a server root span already exists
      */
-    public static boolean doesRootSpanExist() {
+    public static boolean checkRootSpan() {
         // For now assume that a root span will be a server root span
         Context currentContext = Context.current();
         return LocalRootSpan.fromContextOrNull(currentContext) != null;
-    }
-
-    /**
-     * Determines if the specified context also contains the local root span
-     *
-     * @param context
-     *            the context to check for whether it holds the root span
-     * @return whether the specified context contains the root span
-     */
-    public static boolean hasRootSpan(Context context) {
-        Span rootSpan = LocalRootSpan.fromContextOrNull(context);
-        Span currentSpan = Span.fromContextOrNull(context);
-
-        return rootSpan != null && rootSpan == currentSpan;
     }
 
     public static void updateHttpRoute(UI ui) {
