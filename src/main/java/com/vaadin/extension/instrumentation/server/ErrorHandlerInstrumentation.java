@@ -28,11 +28,13 @@ public class ErrorHandlerInstrumentation implements TypeInstrumentation {
         return hasClassesNamed("com.vaadin.flow.server.ErrorHandler");
     }
 
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return implementsInterface(
                 named("com.vaadin.flow.server.ErrorHandler"));
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("error"),
                 this.getClass().getName() + "$ErrorAdvice");

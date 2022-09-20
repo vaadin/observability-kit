@@ -31,11 +31,13 @@ public class ReturnChannelHandlerInstrumentation
 
     // This instrumentation only matches ReturnChannelHandler on the rpcEvent
     // stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.ReturnChannelHandler");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$MethodAdvice");

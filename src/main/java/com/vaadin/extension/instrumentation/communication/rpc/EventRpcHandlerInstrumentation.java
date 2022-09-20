@@ -35,6 +35,7 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
     }
 
     // This intrumentation only matches EventRpcHandler on the rpcEvent stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.EventRpcHandler");
@@ -42,6 +43,7 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
 
     // Here we are interested in the handleNode method where we already have
     // resolved some of the json.
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$MethodAdvice");

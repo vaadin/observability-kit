@@ -37,11 +37,13 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
 
     // This instrumentation only matches MapSyncRpcHandler on the rpcEvent
     // stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$MethodAdvice");

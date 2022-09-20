@@ -39,11 +39,13 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
 
     // This instrumentation only matches NavigationRpcHandler on the rpcEvent
     // stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.PublishedServerEventHandlerRpcHandler");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$HandleAdvice");

@@ -51,10 +51,12 @@ public class VaadinServiceInstrumentation implements TypeInstrumentation {
         return hasClassesNamed("com.vaadin.flow.server.VaadinService");
     }
 
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named("com.vaadin.flow.server.VaadinService");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleRequest"),
                 this.getClass().getName() + "$MethodAdvice");
