@@ -2,7 +2,6 @@ package com.vaadin.extension;
 
 import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTATION_VERSION;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
-import static java.util.Arrays.asList;
 
 import com.vaadin.extension.instrumentation.AbstractNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
@@ -37,6 +36,8 @@ import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import net.bytebuddy.matcher.ElementMatcher;
 
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @AutoService(InstrumentationModule.class)
 public class VaadinObservabilityInstrumentationModule
@@ -73,36 +74,59 @@ public class VaadinObservabilityInstrumentationModule
     @Override
     public List<TypeInstrumentation> typeInstrumentations() {
         // TypeInstrumentation for this instrumentation module
+        return Stream
+                .of(instrumentation(), rpcHandlerInstrumentation(),
+                        requestHandlerInstrumentation(), dataInstrumentation(),
+                        serverInstrumentation())
+                .flatMap(i -> i).collect(Collectors.toList());
+    }
+
+    private Stream<TypeInstrumentation> instrumentation() {
         // @formatter:off
-        return asList(
-                // This would be the actual request start for the application, but it only wraps to VaadinRequest and VaadinResponse
-                // Skipping this will have StaticFileRequest handle create a single span.
-//                new VaadinServletInstrumentation(),
-                new ComponentRendererInstrumentation(),
+        return Stream.of(new AbstractNavigationStateRendererInstrumentation());
+        // @formatter:on
+    }
+
+    private Stream<TypeInstrumentation> rpcHandlerInstrumentation() {
+        // @formatter:off
+        return Stream.of(new AttachExistingElementRpcHandlerInstrumentation(),
                 new AttachTemplateChildRpcHandlerInstrumentation(),
-                new WebcomponentBootstrapHandlerInstrumentation(),
-                new WebComponentProviderInstrumentation(),
-                new AbstractNavigationStateRendererInstrumentation(),
-                new StreamRequestHandlerInstrumentation(),
                 new EventRpcHandlerInstrumentation(),
-                new NavigationRpcHandlerInstrumentation(),
                 new MapSyncRpcHandlerInstrumentation(),
-                new AttachExistingElementRpcHandlerInstrumentation(),
-                new JavaScriptBootstrapHandlerInstrumentation(),
+                new NavigationRpcHandlerInstrumentation(),
                 new PublishedServerEventHandlerRpcHandlerInstrumentation(),
+                new ReturnChannelHandlerInstrumentation());
+        // @formatter:on
+    }
+
+    private Stream<TypeInstrumentation> requestHandlerInstrumentation() {
+        // @formatter:off
+        return Stream.of(new HeartbeatHandlerInstrumentation(),
+                new JavaScriptBootstrapHandlerInstrumentation(),
+                new PwaHandlerInstrumentation(),
                 new SessionRequestHandlerInstrumentation(),
+                new StreamRequestHandlerInstrumentation(),
+                new UidlRequestHandlerInstrumentation(),
+                new UnsupportedBrowserHandlerInstrumentation(),
+                new WebcomponentBootstrapHandlerInstrumentation(),
+                new WebComponentProviderInstrumentation());
+        // @formatter:on
+    }
+
+    private Stream<TypeInstrumentation> dataInstrumentation() {
+        // @formatter:off
+        return Stream.of(new ComponentRendererInstrumentation(),
+                new DataCommunicatorInstrumentation(),
+                new HierarchicalDataProviderInstrumentation());
+        // @formatter:on
+    }
+
+    private Stream<TypeInstrumentation> serverInstrumentation() {
+        // @formatter:off
+        return Stream.of(new ErrorHandlerInstrumentation(),
                 new StaticFileServerInstrumentation(),
                 new VaadinServiceInstrumentation(),
-                new HeartbeatHandlerInstrumentation(),
-                new UidlRequestHandlerInstrumentation(),
-                new PwaHandlerInstrumentation(),
-                new UnsupportedBrowserHandlerInstrumentation(),
-                new ReturnChannelHandlerInstrumentation(),
-                new VaadinSessionInstrumentation(),
-                new ErrorHandlerInstrumentation(),
-                new DataCommunicatorInstrumentation(),
-                new HierarchicalDataProviderInstrumentation()
-        );
+                new VaadinSessionInstrumentation());
         // @formatter:on
     }
 }
