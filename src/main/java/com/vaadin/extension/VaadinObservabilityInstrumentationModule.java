@@ -25,7 +25,7 @@ import com.vaadin.extension.instrumentation.data.HierarchicalDataProviderInstrum
 import com.vaadin.extension.instrumentation.data.renderer.ComponentRendererInstrumentation;
 import com.vaadin.extension.instrumentation.server.ErrorHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.server.StaticFileServerInstrumentation;
-import com.vaadin.extension.instrumentation.server.VaadinServiceInstrumentation;
+import com.vaadin.extension.instrumentation.server.VaadinServletInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
 import com.vaadin.pro.licensechecker.BuildType;
 import com.vaadin.pro.licensechecker.LicenseChecker;
@@ -125,7 +125,7 @@ public class VaadinObservabilityInstrumentationModule
         // @formatter:off
         return Stream.of(new ErrorHandlerInstrumentation(),
                 new StaticFileServerInstrumentation(),
-                new VaadinServiceInstrumentation(),
+                new VaadinServletInstrumentation(),
                 new VaadinSessionInstrumentation());
         // @formatter:on
     }
