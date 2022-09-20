@@ -30,10 +30,12 @@ public class VaadinServletInstrumentation implements TypeInstrumentation {
         return hasClassesNamed("com.vaadin.flow.server.VaadinServlet");
     }
 
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named("com.vaadin.flow.server.VaadinServlet");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(
                 named("service")
