@@ -1,28 +1,32 @@
 package com.vaadin.extension.instrumentation.data.renderer;
 
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.sdk.trace.data.SpanData;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.Tag;
 
-import static org.junit.jupiter.api.Assertions.*;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import org.junit.jupiter.api.Test;
 
-class ComponentRendererInstrumentationTest  extends
-        AbstractInstrumentationTest {
+class ComponentRendererInstrumentationTest extends AbstractInstrumentationTest {
     @Test
-    public void fetchFromDataProvider_createsSpan() {
-        Component component = Mockito.mock(Component.class);
-        ComponentRendererInstrumentation.CreateComponentAdvice.onEnter(null, null);
-        ComponentRendererInstrumentation.CreateComponentAdvice.onExit(null, component,
-                getCapturedSpan(0), null);
+    public void componentRenderer_createComponent_generatesSpan() {
+        Component component = new Div();
+        ComponentRendererInstrumentation.CreateComponentAdvice.onEnter(null,
+                null);
+        ComponentRendererInstrumentation.CreateComponentAdvice.onExit(null,
+                component, getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
         assertEquals("Component creation", span.getName());
-        String dataProviderType = span.getAttributes()
+        String componentClass = span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.component"));
-        assertNotNull(dataProviderType);
+        assertEquals("Div", componentClass);
+    }
+
+    @Tag("div")
+    private class Div extends Component {
     }
 }
