@@ -34,11 +34,13 @@ public class AttachTemplateChildRpcHandlerInstrumentation
 
     // This instrumentation only matches AttachExistingElementRpcHandler on the
     // rpcEvent stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.AttachTemplateChildRpcHandler");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$AttachElementAdvice");
