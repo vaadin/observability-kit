@@ -1,30 +1,42 @@
 package com.vaadin.extension;
 
-import static com.vaadin.extension.Constants.SESSION_ID;
+import static com.vaadin.extension.Constants.*;
 import static com.vaadin.flow.server.Constants.VAADIN_MAPPING;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.*;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.RouteConfiguration;
+import com.vaadin.flow.server.HandlerHelper;
+import com.vaadin.flow.server.HttpStatusCode;
+import com.vaadin.flow.server.VaadinRequest;
+import com.vaadin.flow.server.Version;
+import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
+import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
+import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 public class InstrumentationHelper {
     public static final String INSTRUMENTATION_NAME = "@INSTRUMENTATION_NAME@";
@@ -81,7 +93,6 @@ public class InstrumentationHelper {
         }
 
         return span;
-
     }
 
     /**
@@ -107,6 +118,116 @@ public class InstrumentationHelper {
         }
     }
 
+    /**
+     * Creates a server root span from the HTTP servlet request, and returns a
+     * context containing the created span
+     *
+     * @param servletRequest
+     *            the servlet request
+     * @return the context that was created
+     */
+    public static Context startRootSpan(HttpServletRequest servletRequest) {
+        Map<String, String> spanMap = new HashMap<>();
+
+        // Add semantic HTTP attributes
+        spanMap.put(HTTP_SCHEME.getKey(), servletRequest.getScheme());
+        spanMap.put(HTTP_METHOD.getKey(), servletRequest.getMethod());
+        spanMap.put(HTTP_HOST.getKey(), servletRequest.getRemoteHost());
+        String httpTarget = servletRequest.getContextPath()
+                + servletRequest.getPathInfo();
+        String queryString = servletRequest.getQueryString();
+        if (queryString != null) {
+            httpTarget += "?" + queryString;
+        }
+        spanMap.put(HTTP_TARGET.getKey(), httpTarget);
+        spanMap.put(HTTP_ROUTE.getKey(), servletRequest.getPathInfo());
+
+        String rootSpanName = servletRequest.getPathInfo();
+        InstrumentationRequest request = new InstrumentationRequest(
+                rootSpanName, SpanKind.SERVER, spanMap);
+
+        return INSTRUMENTER.start(Context.current(), request);
+    }
+
+    /**
+     * Ends the root span from the specified context.
+     *
+     * @param servletResponse
+     *            the response for the current server root span
+     * @param context
+     *            the context that contains the root span
+     * @param throwable
+     *            the throwable to record, or null
+     * @param scope
+     *            the scope to close, or null
+     */
+    public static void endRootSpan(HttpServletResponse servletResponse,
+            Context context, Throwable throwable, Scope scope) {
+        Span span = Span.fromContextOrNull(context);
+        if (span != null) {
+            span.setAttribute(HTTP_STATUS_CODE.getKey(),
+                    servletResponse.getStatus());
+            if (servletResponse.getStatus() == HttpStatusCode.NOT_FOUND
+                    .getCode()) {
+                span.setStatus(StatusCode.ERROR, "Request was not handled");
+            }
+        }
+        INSTRUMENTER.end(context, null, null, throwable);
+
+        if (scope != null) {
+            scope.close();
+        }
+    }
+
+    /**
+     * Enhances the root span with data from a VaadinRequest and creates a
+     * context containing VaadinRequest specific data, like session ID.
+     *
+     * @param vaadinRequest
+     *            the request
+     * @return the created context
+     */
+    public static Context enhanceRootSpan(VaadinRequest vaadinRequest) {
+        // Set Vaadin specific attributes on root span
+        Context context = Context.current();
+        Span rootSpan = LocalRootSpan.fromContext(context);
+        String sessionId = vaadinRequest.getWrappedSession().getId();
+
+        rootSpan.setAttribute(FLOW_VERSION, Version.getFullVersion());
+        rootSpan.setAttribute(SESSION_ID, sessionId);
+        rootSpan.setAttribute(REQUEST_TYPE, vaadinRequest
+                .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER));
+
+        // Add session id to context
+        return context.with(ContextKeys.SESSION_ID, sessionId);
+    }
+
+    /**
+     * Determines whether a higher-level instrumentation, for example the Tomcat
+     * or Servlet instrumentation, has already created a root server span.
+     *
+     * @return whether a server root span already exists
+     */
+    public static boolean doesRootSpanExist() {
+        // For now assume that a root span will be a server root span
+        Context currentContext = Context.current();
+        return LocalRootSpan.fromContextOrNull(currentContext) != null;
+    }
+
+    /**
+     * Determines if the specified context also contains the local root span
+     *
+     * @param context
+     *            the context to check for whether it holds the root span
+     * @return whether the specified context contains the root span
+     */
+    public static boolean hasRootSpan(Context context) {
+        Span rootSpan = LocalRootSpan.fromContextOrNull(context);
+        Span currentSpan = Span.fromContextOrNull(context);
+
+        return rootSpan != null && rootSpan == currentSpan;
+    }
+
     public static void updateHttpRoute(UI ui) {
         Span localRootSpan = LocalRootSpan.fromContextOrNull(Context.current());
 
@@ -117,17 +238,16 @@ public class InstrumentationHelper {
         Optional<String> routeTemplate = getActiveRouteTemplate(ui);
 
         if (routeTemplate.isPresent()) {
-            // Update root span name to contain the route.
-            // Not using HttpRouteHolder.updateHttpRoute here, as that uses
-            // additional logic that might prevent an update, for example
-            // when the route was already updated by a previous instrumentation.
-            // Updating the root span directly allows us to cover the case
-            // where a request is made against the current route, but the
-            // request actually navigates to a new route, in which case the
-            // root span should show the new route rather than the previous one.
             String route = "/" + routeTemplate.get();
+            // Update root span name to contain the route.
             localRootSpan.updateName(route);
             localRootSpan.setAttribute(SemanticAttributes.HTTP_ROUTE, route);
+            // Also update using HttpRouteHolder to prevent subsequent
+            // instrumentations from overwriting the route.
+            // HttpRouteSource.NESTED_CONTROLLER is the most specific type of
+            // route
+            HttpRouteHolder.updateHttpRoute(Context.current(),
+                    HttpRouteSource.NESTED_CONTROLLER, route);
         }
         // Update http.target to contain actual path with params
         String locationPath = "/"
@@ -216,5 +336,11 @@ public class InstrumentationHelper {
             return request.getPathInfo();
         }
         return request.getServletPath() + request.getPathInfo();
+    }
+
+    public static boolean isRequestType(HttpServletRequest servletRequest,
+            HandlerHelper.RequestType requestType) {
+        return requestType.getIdentifier().equals(servletRequest
+                .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER));
     }
 }

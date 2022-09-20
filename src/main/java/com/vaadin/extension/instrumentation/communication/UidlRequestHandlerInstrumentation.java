@@ -69,6 +69,8 @@ public class UidlRequestHandlerInstrumentation implements TypeInstrumentation {
 
             UI ui = UI.getCurrent();
             if (ui != null) {
+                // Update HTTP route to the view that the UI is on after all RPC
+                // requests are handled
                 InstrumentationHelper.updateHttpRoute(ui);
             }
         }
