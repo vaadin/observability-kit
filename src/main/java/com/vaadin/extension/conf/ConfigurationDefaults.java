@@ -42,7 +42,8 @@ import java.util.stream.Collectors;
 public class ConfigurationDefaults
         implements AutoConfigurationCustomizerProvider {
 
-    private static final Logger logger = Logger.getLogger(ConfigurationDefaults.class.getName());
+    private static final Logger logger = Logger
+            .getLogger(ConfigurationDefaults.class.getName());
 
     static final String CONFIGURATION_FILE_PROPERTY = "otel.javaagent.configuration-file";
 
@@ -85,7 +86,6 @@ public class ConfigurationDefaults
             String defaultValue, Map<String, String> defaultConfig) {
         map.put(key, defaultConfig.getOrDefault(key, defaultValue));
     }
-
 
     public Map<String, String> getPropertyFileProperties() {
 
