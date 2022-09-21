@@ -1,12 +1,10 @@
-package com.vaadin.extension.instrumentation.communication.rpc;
+package com.vaadin.extension.instrumentation.data;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
-import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.extension.conf.Configuration;
-import com.vaadin.extension.conf.TraceLevel;
+import com.vaadin.flow.data.provider.DataCommunicator;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -18,44 +16,36 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * Instruments ReturnChannelHandler to add a span for its execution
+ * Instruments DataCommunicator to add a span for the duration of data provider
+ * fetches
  */
-public class ReturnChannelHandlerInstrumentation
-        implements TypeInstrumentation {
+public class DataCommunicatorInstrumentation implements TypeInstrumentation {
 
-    @Override
-    public ElementMatcher<ClassLoader> classLoaderOptimization() {
-        return hasClassesNamed(
-                "com.vaadin.flow.server.communication.rpc.ReturnChannelHandler");
-    }
-
-    // This instrumentation only matches ReturnChannelHandler on the rpcEvent
-    // stack.
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named(
-                "com.vaadin.flow.server.communication.rpc.ReturnChannelHandler");
+        return named("com.vaadin.flow.data.provider.DataCommunicator");
     }
 
     @Override
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("handleNode"),
-                this.getClass().getName() + "$MethodAdvice");
-
+        transformer.applyAdviceToMethod(named("fetchFromProvider"),
+                this.getClass().getName() + "$FetchAdvice");
     }
 
     @SuppressWarnings("unused")
-    public static class MethodAdvice {
+    public static class FetchAdvice {
 
-        @Advice.OnMethodEnter()
-        public static void onEnter(@Advice.Local("otelSpan") Span span,
+        @Advice.OnMethodEnter(suppress = Throwable.class)
+        public static void onEnter(
+                @Advice.This DataCommunicator dataCommunicator,
+                @Advice.Argument(0) int offset, @Advice.Argument(1) int limit,
+                @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
-                return;
-            }
-
-            String spanName = "Handle return channel";
-            span = InstrumentationHelper.startSpan(spanName);
+            span = InstrumentationHelper.startSpan("Data Provider Fetch");
+            span.setAttribute("vaadin.dataprovider.type", dataCommunicator
+                    .getDataProvider().getClass().getCanonicalName());
+            span.setAttribute("vaadin.dataprovider.limit", limit);
+            span.setAttribute("vaadin.dataprovider.offset", offset);
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();

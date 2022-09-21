@@ -41,6 +41,7 @@ import java.util.List;
 public abstract class AbstractInstrumentationTest {
 
     private UI mockUI;
+    private MockedStatic<UI> UiStaticMock;
     private VaadinSession mockSession;
     private VaadinService mockService;
     private Scope sessionScope;
@@ -69,14 +70,14 @@ public abstract class AbstractInstrumentationTest {
     }
 
     @BeforeEach
-    public void resetSpans() {
-        OpenTelemetryTestTools.getSpanBuilderCapture().reset();
-        OpenTelemetryTestTools.getSpanExporter().reset();
-    }
+    public void setupMocks() {
+        // Reset span data
+        resetSpans();
 
-    @BeforeEach
-    public void setupMockUi() {
+        // Setup mock UI
         mockUI = new UI();
+        UiStaticMock = Mockito.mockStatic(UI.class);
+        UiStaticMock.when(UI::getCurrent).thenReturn(mockUI);
 
         mockService = new MockVaadinService(mockUI);
 
@@ -90,16 +91,12 @@ public abstract class AbstractInstrumentationTest {
                 TestView.class);
         mockUI.getInternals().showRouteTarget(new Location("test-route"),
                 new TestView(), new ArrayList<>());
-    }
 
-    @BeforeEach
-    public void openSessionContext() {
+        // Add session to context
         sessionScope = Context.current()
                 .with(ContextKeys.SESSION_ID, getMockSessionId()).makeCurrent();
-    }
 
-    @BeforeEach
-    public void setupConfigurationMock() {
+        // Mock configuration static
         configuredTraceLevel = TraceLevel.DEFAULT;
         ConfigurationMock = Mockito.mockStatic(Configuration.class);
         ConfigurationMock.when(() -> Configuration.isEnabled(Mockito.any()))
@@ -110,17 +107,19 @@ public abstract class AbstractInstrumentationTest {
     }
 
     @AfterEach
-    public void closeSessionContext() {
+    public void cleanupMocks() {
         sessionScope.close();
-    }
-
-    @AfterEach
-    public void closeConfigurationMock() {
+        UiStaticMock.close();
         ConfigurationMock.close();
     }
 
     protected RootContextScope withRootContext() {
         return new RootContextScope();
+    }
+
+    protected void resetSpans() {
+        OpenTelemetryTestTools.getSpanBuilderCapture().reset();
+        OpenTelemetryTestTools.getSpanExporter().reset();
     }
 
     protected Span getCapturedSpan(int index) {
@@ -202,7 +201,7 @@ public abstract class AbstractInstrumentationTest {
             rootInstrumenter = Instrumenter
                     .builder(GlobalOpenTelemetry.get(), "test",
                             RootContextScope::getRootSpanName)
-                    .newInstrumenter();
+                    .buildInstrumenter();
             rootContext = rootInstrumenter.start(Context.root(), null);
             scope = rootContext.makeCurrent();
         }

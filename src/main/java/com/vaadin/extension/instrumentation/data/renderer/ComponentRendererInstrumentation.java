@@ -1,10 +1,11 @@
-package com.vaadin.extension.instrumentation;
+package com.vaadin.extension.instrumentation.data.renderer;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
+import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.flow.data.provider.DataCommunicator;
+import com.vaadin.flow.component.Component;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -16,36 +17,34 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 /**
- * Instruments DataCommunicator to add a span for the duration of data provider
- * fetches
+ * Instruments the ErrorHandler that is executed for unhandled exceptions from
+ * request handlers.
  */
-public class DataCommunicatorInstrumentation implements TypeInstrumentation {
+public class ComponentRendererInstrumentation implements TypeInstrumentation {
+
+    @Override
+    public ElementMatcher<ClassLoader> classLoaderOptimization() {
+        return hasClassesNamed(
+                "com.vaadin.flow.data.renderer.ComponentRenderer");
+    }
 
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named("com.vaadin.flow.data.provider.DataCommunicator");
+        return named("com.vaadin.flow.data.renderer.ComponentRenderer");
     }
 
     @Override
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("fetchFromProvider"),
-                this.getClass().getName() + "$FetchAdvice");
+        transformer.applyAdviceToMethod(named("createComponent"),
+                this.getClass().getName() + "$CreateComponentAdvice");
     }
 
     @SuppressWarnings("unused")
-    public static class FetchAdvice {
-
+    public static class CreateComponentAdvice {
         @Advice.OnMethodEnter(suppress = Throwable.class)
-        public static void onEnter(
-                @Advice.This DataCommunicator dataCommunicator,
-                @Advice.Argument(0) int offset, @Advice.Argument(1) int limit,
-                @Advice.Local("otelSpan") Span span,
+        public static void onEnter(@Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            span = InstrumentationHelper.startSpan("Data Provider Fetch");
-            span.setAttribute("vaadin.dataprovider.type", dataCommunicator
-                    .getDataProvider().getClass().getCanonicalName());
-            span.setAttribute("vaadin.dataprovider.limit", limit);
-            span.setAttribute("vaadin.dataprovider.offset", offset);
+            span = InstrumentationHelper.startSpan("Component creation");
 
             Context context = currentContext().with(span);
             scope = context.makeCurrent();
@@ -53,8 +52,11 @@ public class DataCommunicatorInstrumentation implements TypeInstrumentation {
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
+                @Advice.Return Component component,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
+            span.setAttribute("vaadin.component",
+                    component.getClass().getSimpleName());
             InstrumentationHelper.endSpan(span, throwable, scope);
         }
     }

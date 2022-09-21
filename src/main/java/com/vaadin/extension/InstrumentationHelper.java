@@ -27,8 +27,8 @@ import java.util.Optional;
 import javax.servlet.http.HttpServletRequest;
 
 public class InstrumentationHelper {
-    public static final String INSTRUMENTATION_NAME = "com.vaadin.observability.instrumentation";
-    public static final String INSTRUMENTATION_VERSION = "1.0-alpha";
+    public static final String INSTRUMENTATION_NAME = "@INSTRUMENTATION_NAME@";
+    public static final String INSTRUMENTATION_VERSION = "@INSTRUMENTATION_VERSION@";
 
     private static final SpanNameGenerator generator = new SpanNameGenerator();
     private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
@@ -184,7 +184,8 @@ public class InstrumentationHelper {
             // server spans
             String errorName = throwable.getClass().getCanonicalName() + ": "
                     + throwable.getMessage();
-            LocalRootSpan.current().setStatus(StatusCode.ERROR, errorName);
+            final Span root = LocalRootSpan.current();
+            root.setStatus(StatusCode.ERROR, errorName);
         }
     }
 

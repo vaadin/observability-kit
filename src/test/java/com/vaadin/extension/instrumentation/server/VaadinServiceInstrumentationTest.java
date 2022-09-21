@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.server;
 
+import static com.vaadin.extension.Constants.FLOW_VERSION;
 import static com.vaadin.extension.Constants.REQUEST_TYPE;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
@@ -73,6 +74,9 @@ class VaadinServiceInstrumentationTest extends AbstractInstrumentationTest {
                 span.getAttributes().get(AttributeKey.stringKey(SESSION_ID)));
         assertEquals("uidl",
                 span.getAttributes().get(AttributeKey.stringKey(REQUEST_TYPE)));
+        assertNotNull(
+                span.getAttributes().get(AttributeKey.stringKey(FLOW_VERSION)),
+                "Flow version should be added as attribute");
     }
 
     @Test

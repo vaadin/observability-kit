@@ -37,11 +37,13 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
 
     // This instrumentation only matches MapSyncRpcHandler on the rpcEvent
     // stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.MapSyncRpcHandler");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$MethodAdvice");
@@ -64,8 +66,9 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
                     node);
             final Element element = elementInfo.getElement();
 
+            String property = null;
             if (jsonObject.hasKey("property") && jsonObject.hasKey("value")) {
-                final String property = jsonObject.getString("property");
+                property = jsonObject.getString("property");
                 final String value = jsonObject.get("value").asString();
                 // skip if property or attribute is same
                 if (value.equals(element.getProperty(property, null))
@@ -75,8 +78,14 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
             }
 
             String spanName = "Sync: " + elementInfo.getElementLabel();
+            if (property != null) {
+                spanName += "." + property;
+            }
             span = InstrumentationHelper.startSpan(spanName);
             span.setAttribute("vaadin.element.tag", element.getTag());
+            if (property != null) {
+                span.setAttribute("vaadin.element.property", property);
+            }
             // If possible add active view class name as an attribute to the
             // span
             if (elementInfo.getViewLabel() != null) {

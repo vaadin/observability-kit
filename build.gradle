@@ -1,5 +1,6 @@
 plugins {
   id "java"
+  id 'maven-publish'
 
   /*
   Instrumentation agent extension mechanism expects a single jar containing everything required
@@ -24,10 +25,10 @@ ext {
   versions = [
     bytebuddy: "1.12.13",
     junit: "5.6.2",
-    opentelemetry              : "1.17.0",
-    opentelemetryAlpha         : "1.17.0-alpha",
-    opentelemetryJavaagent     : "1.17.0",
-    opentelemetryJavaagentAlpha: "1.17.0-alpha",
+    opentelemetry              : "1.18.0",
+    opentelemetryAlpha         : "1.18.0-alpha",
+    opentelemetryJavaagent     : "1.18.0",
+    opentelemetryJavaagentAlpha: "1.18.0-alpha",
     logbackClassic: "1.2.9",
     mockito: "4.7.0",
     servletApi: "3.0.1",
@@ -72,7 +73,7 @@ dependencies {
   implementation enforcedPlatform("com.vaadin:vaadin-bom:${vaadinVersion}")
   compileOnly("com.vaadin:flow-server")
   compileOnly("com.vaadin:flow-data")
-//  implementation 'com.vaadin:license-checker'
+  implementation('com.vaadin:license-checker')
 
   //Provides @AutoService annotation that makes registration of our SPI implementations much easier
   compileOnly deps.autoservice
@@ -132,12 +133,42 @@ task extendedAgent(type: Jar) {
 
   //Preserve MANIFEST.MF file from the upstream javaagent
   doFirst {
-    manifest.from(
-      zipTree(configurations.otel.singleFile).matching {
-        include 'META-INF/MANIFEST.MF'
-      }.singleFile
+
+    def lines = zipTree(configurations.otel.singleFile).matching { include 'META-INF/MANIFEST.MF' }.singleFile.readLines()
+    for(int i = 0;i < lines.size(); i++) {
+      // Connect values that are split to multiple lines
+      if(!lines[i].contains(':')) {
+        lines[i-1] = lines[i-1].trim() + lines[i].trim();
+        lines.remove(i);
+        i--;
+      }
+      // Replace version line
+      if(lines[i].startsWith("Implementation-Version")) {
+        lines[i] = "Implementation-Version: ${versions.opentelemetryJavaagent} - vaadin ${projectVersion}"
+      }
+    }
+    manifest.attributes(
+            lines.collectEntries(l -> [
+              l.split(':')[0], l.split(':')[1]
+            ])
     )
   }
+}
+
+// Copy sources and replace the 2 placeholders on copy
+task sources(type: Copy) {
+  from 'src/main/java'
+  into 'build/adjustedSrc'
+
+    filter { String line -> line.replace('@INSTRUMENTATION_NAME@', "com.vaadin.observability.instrumentation")}
+    filter { String line -> line.replace('@INSTRUMENTATION_VERSION@', "${projectVersion}")}
+}
+
+// Prepare sources, before compile, compile adjusted sources
+compileJava {
+  dependsOn sources
+  source = sources.destinationDir
+  classpath = sourceSets.main.compileClasspath
 }
 
 tasks {
@@ -177,3 +208,33 @@ spotless {
 }
 sourceCompatibility = JavaVersion.VERSION_11
 targetCompatibility = JavaVersion.VERSION_11
+
+
+publishing {
+  publications {
+    maven(MavenPublication) {
+      artifactId = 'vaadin-opentelemetry-javaagent'
+      artifact ("${jar.destinationDirectory}/vaadin-opentelemetry-javaagent-${projectVersion}.jar")
+      pom {
+        name = 'Vaadin Observability Kit'
+        description = 'Observability for vaadin'
+        url = 'http://www.vaadin.com/'
+        licenses {
+          license {
+            name = 'Commercial Vaadin Developer License 4.0 (CVDLv4)'
+            url = 'https://vaadin.com/license/cvdl-4.0'
+          }
+        }
+      }
+    }
+  }
+  repositories {
+    maven {
+      url = "${mavenUrl}"
+      credentials {
+        username = "${mavenUser}"
+        password = "${mavenPwd}"
+      }
+    }
+  }
+}

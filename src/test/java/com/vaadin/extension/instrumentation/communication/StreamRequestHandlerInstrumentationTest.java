@@ -6,6 +6,7 @@ import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.VaadinRequest;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -34,7 +35,7 @@ public class StreamRequestHandlerInstrumentationTest
     public void handleRequest_mainSpanIsUpdated() {
         final VaadinRequest request = Mockito.mock(VaadinRequest.class);
 
-        final String fileName = "/VAADIN/dynamic/resource/0/aa284e2/file";
+        final String fileName = "/dynamic/resource/0/aa284e2/image.png";
         Mockito.when(request.getPathInfo()).thenReturn(fileName);
 
         try (var ignored = withRootContext()) {
@@ -45,8 +46,13 @@ public class StreamRequestHandlerInstrumentationTest
         }
 
         assertEquals("Handle dynamic file", getExportedSpan(0).getName());
-        assertEquals("/VAADIN/dynamic/resource/[UIID]/[SECKEY]/file",
+        assertEquals("/dynamic/resource/[ui]/[secret]/image.png",
                 getExportedSpan(1).getName());
+        assertEquals("/dynamic/resource/[ui]/[secret]/image.png",
+                getExportedSpan(1).getAttributes()
+                        .get(SemanticAttributes.HTTP_ROUTE));
+        assertEquals("/dynamic/resource/0/aa284e2/image.png", getExportedSpan(1)
+                .getAttributes().get(SemanticAttributes.HTTP_TARGET));
     }
 
     @Test

@@ -28,6 +28,8 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         jsonObject.put("type", "mSync");
         jsonObject.put("node", 128);
         jsonObject.put("feature", 1);
+        jsonObject.put("property", "value");
+        jsonObject.put("value", "foo");
     }
 
     @Test
@@ -40,9 +42,11 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
                 getCapturedSpan(0), null);
 
         SpanData span = getExportedSpan(0);
-        assertEquals("Sync: test-component[foo]", span.getName());
+        assertEquals("Sync: test-component[foo].value", span.getName());
         assertEquals("test-component", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.element.tag")));
+        assertEquals("value", span.getAttributes()
+                .get(AttributeKey.stringKey("vaadin.element.property")));
         assertEquals("TestView", span.getAttributes()
                 .get(AttributeKey.stringKey("vaadin.view")));
         assertEquals(getMockSessionId(),

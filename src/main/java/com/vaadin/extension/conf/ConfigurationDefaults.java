@@ -3,7 +3,8 @@ package com.vaadin.extension.conf;
 import com.vaadin.extension.Constants;
 
 import com.google.auto.service.AutoService;
-import io.opentelemetry.javaagent.extension.config.ConfigPropertySource;
+import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizer;
+import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -24,11 +25,16 @@ import java.util.Map;
  * <li>hard-coded defaults
  * </ul>
  */
-@AutoService(ConfigPropertySource.class)
-public class ConfigurationDefaults implements ConfigPropertySource {
+@AutoService(AutoConfigurationCustomizerProvider.class)
+public class ConfigurationDefaults
+        implements AutoConfigurationCustomizerProvider {
 
     @Override
-    public Map<String, String> getProperties() {
+    public void customize(AutoConfigurationCustomizer autoConfiguration) {
+        autoConfiguration.addPropertiesSupplier(this::getDefaultProperties);
+    }
+
+    private Map<String, String> getDefaultProperties() {
         Map<String, String> properties = new HashMap<>();
         // Disable the built-in vaadin instrumentation
         properties.put("otel.instrumentation.vaadin.enabled", "false");

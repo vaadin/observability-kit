@@ -99,20 +99,6 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     }
 
     @Test
-    public void handleNode_updatesRootSpan() {
-        try (var ignored = withRootContext()) {
-            EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-
-                    component.getElement().getNode(), jsonObject, null, null);
-            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                    getCapturedSpan(0), null);
-        }
-
-        SpanData exportedRootSpan = getExportedSpan(1);
-        assertEquals("/test-route", exportedRootSpan.getName());
-    }
-
-    @Test
     public void handleNodeWithException_setsErrorStatus() {
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
                 component.getElement().getNode(), jsonObject, null, null);
@@ -135,45 +121,30 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     @Test
     public void handleNode_respectsTraceLevel() {
         configureTraceLevel(TraceLevel.MINIMUM);
-        try (var ignored = withRootContext()) {
-            EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                    component.getElement().getNode(), jsonObject, null, null);
-            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                    getCapturedSpanOrNull(0), null);
-        }
-        // Should not export span, apart from root span
-        assertEquals(1, getExportedSpanCount());
-        // Should update root span
-        SpanData rootSpan = getExportedSpan(0);
-        assertEquals("/test-route", rootSpan.getName());
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpanOrNull(0), null);
+        // Should not export span
+        assertEquals(0, getExportedSpanCount());
 
         configureTraceLevel(TraceLevel.DEFAULT);
         resetSpans();
-        try (var ignored = withRootContext()) {
-            EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                    component.getElement().getNode(), jsonObject, null, null);
-            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                    getCapturedSpanOrNull(0), null);
-        }
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpanOrNull(0), null);
         // Should export span
-        assertEquals(2, getExportedSpanCount());
-        // Should update root span
-        rootSpan = getExportedSpan(1);
-        assertEquals("/test-route", rootSpan.getName());
+        assertEquals(1, getExportedSpanCount());
 
         configureTraceLevel(TraceLevel.MAXIMUM);
         resetSpans();
-        try (var ignored = withRootContext()) {
-            EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                    component.getElement().getNode(), jsonObject, null, null);
-            EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
-                    getCapturedSpanOrNull(0), null);
-        }
+        EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
+                component.getElement().getNode(), jsonObject, null, null);
+        EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
+                getCapturedSpanOrNull(0), null);
         // Should export span
-        assertEquals(2, getExportedSpanCount());
-        // Should update root span
-        rootSpan = getExportedSpan(1);
-        assertEquals("/test-route", rootSpan.getName());
+        assertEquals(1, getExportedSpanCount());
     }
 
     @Tag("test-component")

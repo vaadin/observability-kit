@@ -1,6 +1,5 @@
 package com.vaadin.extension.instrumentation.communication.rpc;
 
-import static com.vaadin.extension.InstrumentationHelper.getActiveRouteTemplate;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
@@ -40,11 +39,13 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
 
     // This instrumentation only matches NavigationRpcHandler on the rpcEvent
     // stack.
+    @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named(
                 "com.vaadin.flow.server.communication.rpc.PublishedServerEventHandlerRpcHandler");
     }
 
+    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(named("handleNode"),
                 this.getClass().getName() + "$HandleAdvice");
@@ -113,10 +114,6 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                 Context context = currentContext().with(span);
                 scope = context.makeCurrent();
             }
-
-            // Set the root span name to be the event
-            LocalRootSpan.current().updateName("/"
-                    + getActiveRouteTemplate(component.getUI().get()).get());
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)

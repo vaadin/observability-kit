@@ -11,6 +11,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
+import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
@@ -65,21 +66,18 @@ public class StreamRequestHandlerInstrumentation
             Span span = InstrumentationHelper.startSpan(spanName,
                     startTimestamp);
 
-            // Replace the UIID and security key
-            Span localRootSpan = LocalRootSpan.current();
+            // Update root span
             String pathInfo = request.getPathInfo();
-            String prefix = "/VAADIN/dynamic/resource/";
-            if (pathInfo.contains(prefix)) {
-                int index = pathInfo.indexOf(prefix) + prefix.length();
-                String[] parts = pathInfo.substring(index).split("/", 3);
-                String requestFilename = pathInfo.substring(0, index)
-                        + "[UIID]/[SECKEY]/" + parts[2];
+            String[] pathParts = pathInfo.split("/");
+            String filename = pathParts[pathParts.length - 1];
+            String rootSpanName = "/dynamic/resource/[ui]/[secret]/" + filename;
 
-                localRootSpan.updateName(requestFilename);
-                localRootSpan.setAttribute("http.target", requestFilename);
-            } else {
-                localRootSpan.updateName(pathInfo);
-            }
+            Span localRootSpan = LocalRootSpan.current();
+            localRootSpan.updateName(rootSpanName);
+            localRootSpan.setAttribute(SemanticAttributes.HTTP_TARGET,
+                    request.getPathInfo());
+            localRootSpan.setAttribute(SemanticAttributes.HTTP_ROUTE,
+                    rootSpanName);
 
             InstrumentationHelper.endSpan(span, throwable, null);
         }

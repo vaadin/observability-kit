@@ -10,17 +10,7 @@ to get an embedded full agent.
 
 The agent is run with the `javaagent` flag for instance `java -javaagent:opentelemetry-javaagent.jar -jar project.jar`
 
-=== Running the agent with the extension
-
-The extension is added using the system property `otel.javaagent.extensions`
-
-.All jars in same place execution
-[source,text]
-----
-java -javaagent:opentelemetry-javaagent.jar -Dotel.javaagent.extensions=opentelemetry-vaadin-observability-instrumentation-extension-1.0-SNAPSHOT-all.jar -jar target/myapp-1.0-SNAPSHOT.jar
-----
-
-=== Running the agent as extendedAgent build
+=== Running the extendedAgent
 
 If the agent is built as an extended agent with the extension embedded
 only the `javaagent` gflag is needed
