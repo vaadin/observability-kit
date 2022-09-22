@@ -66,12 +66,8 @@ public class ConfigurationDefaults
         // Set the service name to vaadin by default.
         addProperty(properties, "otel.service.name", "vaadin", defaultconfig);
 
-        addProperty(properties, "otel.instrumentation.java-http-client.enabled",
-                "false", defaultconfig);
         addProperty(properties, "otel.instrumentation.jetty.enabled", "false",
                 defaultconfig);
-        addProperty(properties, "otel.instrumentation.jetty-httpclient.enabled",
-                "false", defaultconfig);
         addProperty(properties, "otel.instrumentation.servlet.enabled", "false",
                 defaultconfig);
         addProperty(properties, "otel.instrumentation.tomcat.enabled", "false",
