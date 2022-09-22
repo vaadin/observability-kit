@@ -144,7 +144,7 @@ task extendedAgent(type: Jar) {
       }
       // Replace version line
       if(lines[i].startsWith("Implementation-Version")) {
-        lines[i] = "Implementation-Version: ${versions.opentelemetryJavaagent} - vaadin ${projectVersion}"
+        lines[i] = "Implementation-Version:${versions.opentelemetryJavaagent} - vaadin ${projectVersion}"
       }
     }
     manifest.attributes(
