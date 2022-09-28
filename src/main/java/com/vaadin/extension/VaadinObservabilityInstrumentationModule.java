@@ -44,13 +44,13 @@ public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
 
     static {
-        LicenseChecker.checkLicenseFromStaticBlock("vaadin-observability",
+        LicenseChecker.checkLicenseFromStaticBlock("vaadin-observability-kit",
                 INSTRUMENTATION_VERSION, BuildType.PRODUCTION);
     }
 
     // The instrumentation names should reflect what is in `settings.gradle`
     // `rootProject.name`
-    public static final String INSTRUMENTATION_NAME = "vaadin-observability";
+    public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
     public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-" + INSTRUMENTATION_VERSION;
 
     public VaadinObservabilityInstrumentationModule() {
