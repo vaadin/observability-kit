@@ -51,7 +51,8 @@ public class VaadinObservabilityInstrumentationModule
     // The instrumentation names should reflect what is in `settings.gradle`
     // `rootProject.name`
     public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
-    public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-" + INSTRUMENTATION_VERSION;
+    public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-"
+            + INSTRUMENTATION_VERSION;
 
     public VaadinObservabilityInstrumentationModule() {
         super(INSTRUMENTATION_NAME, EXTENDED_NAME);
