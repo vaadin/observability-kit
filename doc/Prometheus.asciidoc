@@ -12,7 +12,7 @@ java -javaagent:opentelemetry-javaagent.jar \
      -Dotel.metrics.exporter=prometheus \
      -Dotel.exporter.prometheus.host=0.0.0.0 \
      -Dotel.exporter.prometheus.port=9464 \
-     -jar target/myapp-2.0-SNAPSHOT.jar
+     -jar target/myapp-1.0-SNAPSHOT.jar
 ----
 
 Note that this creates a separate server running on the specified host and port from which the Prometheus server can scrape data from. Host and port are optional, `0.0.0.0` and `9464` are the default values.

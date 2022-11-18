@@ -74,7 +74,7 @@ Start the OpenTelemetry Java agent:
 [source,shell]
 ----
 java -javaagent:opentelemetry-javaagent.jar \
-     -jar target/myapp-2.0-SNAPSHOT.jar
+     -jar target/myapp-1.0-SNAPSHOT.jar
 ----
 
 The agent does not require any further configuration when using the OpenTelemetry collector, and if the collector is running on the same host. If the collector is not running on the host system, the URL of the collector can be set using the `otel.exporter.otlp.endpoint` system variable.
