@@ -28,7 +28,7 @@ java -javaagent:opentelemetry-javaagent.jar \
      -Dotel.exporter.otlp.endpoint=[NEW RELIC SERVER]:4317 \
      -Dotel.exporter.otlp.headers=Api-Key="[LICENSE KEY]" \
      -Dotel.exporter.otlp.protocol=http/protobuf
-     -jar target/myapp-1.0-SNAPSHOT.jar
+     -jar target/myapp-2.0-SNAPSHOT.jar
 ----
 
 [NOTE]

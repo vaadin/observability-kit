@@ -18,7 +18,7 @@ only the `javaagent` gflag is needed
 .Simple embedded extension
 [source,text]
 ----
-java -javaagent:vaadin-opentelemetry-javaagent-1.0-SNAPSHOT.jar -jar target/myapp-1.0-SNAPSHOT.jar
+java -javaagent:vaadin-opentelemetry-javaagent-2.0-SNAPSHOT.jar -jar target/myapp-2.0-SNAPSHOT.jar
 ----
 
 === Connecting to Jaeger Monitor
@@ -33,6 +33,6 @@ need to be given. Then as we have the default settings so we will disable metric
 .Sample jaeger startup embedded extension
 [source,text]
 ----
-java -javaagent:opentelemetry-javaagent.jar -Dotel.traces.exporter=jaeger -Dotel.exporter.jaeger.endpoint=http://localhost:14250 -Dotel.metrics.exporter=none -jar target/myapp-1.0-SNAPSHOT.jar
+java -javaagent:opentelemetry-javaagent.jar -Dotel.traces.exporter=jaeger -Dotel.exporter.jaeger.endpoint=http://localhost:14250 -Dotel.metrics.exporter=none -jar target/myapp-2.0-SNAPSHOT.jar
 ----
 
