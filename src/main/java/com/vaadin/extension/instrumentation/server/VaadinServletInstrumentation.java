@@ -17,8 +17,8 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Instruments VaadinServlet to create a server root span if none exists yet.
@@ -39,10 +39,10 @@ public class VaadinServletInstrumentation implements TypeInstrumentation {
     public void transform(TypeTransformer transformer) {
         transformer.applyAdviceToMethod(
                 named("service")
-                        .and(takesArgument(0,
-                                named("javax.servlet.http.HttpServletRequest")))
+                        .and(takesArgument(0, named(
+                                "jakarta.servlet.http.HttpServletRequest")))
                         .and(takesArgument(1, named(
-                                "javax.servlet.http.HttpServletResponse"))),
+                                "jakarta.servlet.http.HttpServletResponse"))),
                 this.getClass().getName() + "$MethodAdvice");
     }
 
