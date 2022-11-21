@@ -6,7 +6,7 @@ import io.opentelemetry.instrumentation.api.instrumenter.AttributesExtractor;
 
 import java.util.Map;
 
-import javax.annotation.Nullable;
+import jakarta.annotation.Nullable;
 
 public class SpanAttributeGenerator
         implements AttributesExtractor<InstrumentationRequest, Object> {
