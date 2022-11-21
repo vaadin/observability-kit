@@ -175,7 +175,7 @@ compileJava {
 tasks {
 
   compileJava {
-    options.release.set(11)
+    options.release.set(17)
   }
 
   assemble.dependsOn(shadowJar)
@@ -201,8 +201,8 @@ spotless {
     importOrder('\\#', 'elemental', 'com.vaadin', 'com.google.gwt', '', 'java', 'jakarta')
   }
 }
-sourceCompatibility = JavaVersion.VERSION_11
-targetCompatibility = JavaVersion.VERSION_11
+sourceCompatibility = JavaVersion.VERSION_17
+targetCompatibility = JavaVersion.VERSION_17
 
 
 publishing {
