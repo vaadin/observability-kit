@@ -15,7 +15,7 @@ Sample usage would then be for instance:
 Using the project as an extension (instead of embedding):
 `java -javaagent:../opentelemetry-javaagent.jar -Dotel.traces.exporter=jaeger -Dotel.javaagent.extensions=../extension/build/libs/opentelemetry-custom-instrumentation-extension-1.0-all.jar -Dotel.exporter.jaeger.endpoint=http://localhost:14250 -Dotel.metrics.exporter=none -jar target/myapp-1.0-SNAPSHOT.jar`
 
-This has the paths  
+This has the paths
 `/extension` (this project)
 `/my-app` (the application)
 
