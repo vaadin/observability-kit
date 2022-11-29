@@ -31,7 +31,7 @@
         <maven.compiler.target>11</maven.compiler.target>
 
         <gradle.executable>./gradlew</gradle.executable>
-        <vaadin.version>23.2.0</vaadin.version>
+        <flow.version>23.3-SNAPSHOT</flow.version>
     </properties>
 
     <build>
@@ -52,7 +52,7 @@
                                 <argument>build</argument>
                                 <argument>extendedAgent</argument>
                                 <argument>-PprojectVersion=${project.version}</argument>
-                                <argument>-PvaadinVersion=${vaadin.version}</argument>
+                                <argument>-PflowVersion=${flow.version}</argument>
                                 <argument>-S</argument>
                             </arguments>
                         </configuration>
