@@ -25,10 +25,8 @@ ext {
   versions = [
     bytebuddy: "1.12.13",
     junit: "5.6.2",
-    opentelemetry              : "1.18.0",
-    opentelemetryAlpha         : "1.18.0-alpha",
-    opentelemetryJavaagent     : "1.18.0",
-    opentelemetryJavaagentAlpha: "1.18.0-alpha",
+    opentelemetry              : "1.20.2",
+    opentelemetryJavaagent     : "1.20.2",
     logbackClassic: "1.2.9",
     mockito: "4.7.0",
     servletApi: "3.0.1",
@@ -70,9 +68,9 @@ dependencies {
   runtime all necessary classes are provided by javaagent itself.
    */
   compileOnly("io.opentelemetry:opentelemetry-sdk-extension-autoconfigure-spi:${versions.opentelemetry}")
-  compileOnly("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${versions.opentelemetryJavaagentAlpha}")
-  compileOnly("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-semconv:${versions.opentelemetryJavaagentAlpha}")
-  compileOnly("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
+  compileOnly("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${versions.opentelemetryJavaagent}")
+  compileOnly("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-semconv:${versions.opentelemetryJavaagent}")
+  compileOnly("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagent}")
 
   compileOnly("com.vaadin:flow-server:${flowVersion}")
   compileOnly("com.vaadin:flow-data:${flowVersion}")
@@ -102,8 +100,8 @@ dependencies {
   //All dependencies below are only for tests
   testImplementation("com.vaadin:flow-server:${flowVersion}")
   testImplementation("com.vaadin:flow-data:${flowVersion}")
-  testImplementation("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-semconv:${versions.opentelemetryJavaagentAlpha}")
-  testImplementation("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
+  testImplementation("io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-semconv:${versions.opentelemetryJavaagent}")
+  testImplementation("io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagent}")
   testImplementation("org.mockito:mockito-inline:${versions.mockito}")
   testImplementation("net.bytebuddy:byte-buddy:${versions.bytebuddy}")
   testImplementation("net.bytebuddy:byte-buddy-agent:${versions.bytebuddy}")
@@ -117,11 +115,11 @@ dependencies {
   otel("io.opentelemetry.javaagent:opentelemetry-javaagent:${versions.opentelemetryJavaagent}")
 
   //TODO remove when start using io.opentelemetry.instrumentation.javaagent-instrumentation plugin
-  add("codegen", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagentAlpha}")
+  add("codegen", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagent}")
   add("codegen", "ch.qos.logback:logback-classic:${versions.logbackClassic}")
-  add("muzzleBootstrap", "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-annotation-support:${versions.opentelemetryJavaagentAlpha}")
-  add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagentAlpha}")
-  add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagentAlpha}")
+  add("muzzleBootstrap", "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-annotation-support:${versions.opentelemetryJavaagent}")
+  add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-extension-api:${versions.opentelemetryJavaagent}")
+  add("muzzleTooling", "io.opentelemetry.javaagent:opentelemetry-javaagent-tooling:${versions.opentelemetryJavaagent}")
 }
 
 //Produces a copy of upstream javaagent with this extension jar included inside it
