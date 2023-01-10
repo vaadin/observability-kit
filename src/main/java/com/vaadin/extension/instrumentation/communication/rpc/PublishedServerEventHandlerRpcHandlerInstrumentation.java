@@ -68,8 +68,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                                         named("java.lang.reflect.Method")))
                                 .and(takesArgument(2,
                                         named("elemental.json.JsonArray")))
-                                .and(takesArgument(3, int.class))
-                                .and(takesArgument(4, boolean.class)),
+                                .and(takesArgument(3, int.class)),
                         this.getClass().getName() + "$InvokeAdvice");
     }
 

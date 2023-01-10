@@ -19,7 +19,6 @@ import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.RouteConfiguration;
 import com.vaadin.flow.server.HandlerHelper;
-import com.vaadin.flow.server.HttpStatusCode;
 import com.vaadin.flow.server.Version;
 import com.vaadin.flow.shared.ApplicationConstants;
 
