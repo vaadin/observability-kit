@@ -14,8 +14,8 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
+import com.vaadin.extension.HttpStatusCode;
 import com.vaadin.extension.InstrumentationHelper;
-import com.vaadin.flow.server.HttpStatusCode;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;

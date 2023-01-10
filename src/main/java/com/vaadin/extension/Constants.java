@@ -20,4 +20,6 @@ public class Constants {
     public static final String SESSION_ID = "vaadin.session.id";
     public static final String REQUEST_TYPE = "vaadin.request.type";
     public static final String FLOW_VERSION = "vaadin.flow.version";
+
+    public static final String REQUEST_LOCATION_PARAMETER = "location";
 }

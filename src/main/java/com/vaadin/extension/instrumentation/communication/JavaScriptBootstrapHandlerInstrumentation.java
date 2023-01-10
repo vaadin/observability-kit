@@ -13,9 +13,9 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
+import com.vaadin.extension.Constants;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -70,8 +70,8 @@ public class JavaScriptBootstrapHandlerInstrumentation
             Span localRootSpan = LocalRootSpan
                     .fromContextOrNull(Context.current());
             if (localRootSpan != null) {
-                String location = request.getParameter(
-                        ApplicationConstants.REQUEST_LOCATION_PARAMETER);
+                String location = request
+                        .getParameter(Constants.REQUEST_LOCATION_PARAMETER);
                 String route = "/" + InstrumentationHelper
                         .getRouteTemplateForLocation(location).orElse("");
 
