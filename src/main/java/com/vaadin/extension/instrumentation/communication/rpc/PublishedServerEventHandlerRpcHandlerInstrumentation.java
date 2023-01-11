@@ -1,3 +1,12 @@
+/*-
+ * Copyright (C) 2022 Vaadin Ltd
+ *
+ * This program is available under Vaadin Commercial License and Service Terms.
+ *
+ *
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
+ */
 package com.vaadin.extension.instrumentation.communication.rpc;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
@@ -59,8 +68,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                                         named("java.lang.reflect.Method")))
                                 .and(takesArgument(2,
                                         named("elemental.json.JsonArray")))
-                                .and(takesArgument(3, int.class))
-                                .and(takesArgument(4, boolean.class)),
+                                .and(takesArgument(3, int.class)),
                         this.getClass().getName() + "$InvokeAdvice");
     }
 

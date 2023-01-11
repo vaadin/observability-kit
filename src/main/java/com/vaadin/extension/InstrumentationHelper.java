@@ -1,3 +1,12 @@
+/*-
+ * Copyright (C) 2022 Vaadin Ltd
+ *
+ * This program is available under Vaadin Commercial License and Service Terms.
+ *
+ *
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
+ */
 package com.vaadin.extension;
 
 import static com.vaadin.extension.Constants.*;
@@ -10,7 +19,6 @@ import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.RouteConfiguration;
 import com.vaadin.flow.server.HandlerHelper;
-import com.vaadin.flow.server.HttpStatusCode;
 import com.vaadin.flow.server.Version;
 import com.vaadin.flow.shared.ApplicationConstants;
 

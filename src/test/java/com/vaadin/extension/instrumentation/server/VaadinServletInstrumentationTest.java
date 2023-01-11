@@ -5,10 +5,10 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import com.vaadin.extension.HttpStatusCode;
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.HandlerHelper;
-import com.vaadin.flow.server.HttpStatusCode;
 import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.common.AttributeKey;

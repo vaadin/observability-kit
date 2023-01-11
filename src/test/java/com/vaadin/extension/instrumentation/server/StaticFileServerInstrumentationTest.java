@@ -2,11 +2,11 @@ package com.vaadin.extension.instrumentation.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.vaadin.extension.HttpStatusCode;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
-import com.vaadin.flow.server.HttpStatusCode;
 import com.vaadin.flow.server.StaticFileServer;
 
 import io.opentelemetry.api.common.AttributeKey;
