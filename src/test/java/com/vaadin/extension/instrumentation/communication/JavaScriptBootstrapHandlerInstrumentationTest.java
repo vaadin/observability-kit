@@ -2,9 +2,9 @@ package com.vaadin.extension.instrumentation.communication;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import com.vaadin.extension.Constants;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
@@ -24,8 +24,7 @@ class JavaScriptBootstrapHandlerInstrumentationTest
 
     @Test
     public void synchronizedHandleRequest_createsSpan() {
-        Mockito.when(request
-                .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
+        Mockito.when(request.getParameter(Constants.REQUEST_LOCATION_PARAMETER))
                 .thenReturn("test-route");
 
         JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
@@ -39,8 +38,7 @@ class JavaScriptBootstrapHandlerInstrumentationTest
 
     @Test
     public void synchronizedHandleRequest_updatesRootSpan() {
-        Mockito.when(request
-                .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
+        Mockito.when(request.getParameter(Constants.REQUEST_LOCATION_PARAMETER))
                 .thenReturn("test-route");
 
         try (var ignored = withRootContext()) {
@@ -58,8 +56,7 @@ class JavaScriptBootstrapHandlerInstrumentationTest
 
     @Test
     public void synchronizedHandleRequest_withException_setsErrorStatus() {
-        Mockito.when(request
-                .getParameter(ApplicationConstants.REQUEST_LOCATION_PARAMETER))
+        Mockito.when(request.getParameter(Constants.REQUEST_LOCATION_PARAMETER))
                 .thenReturn("test-route");
 
         JavaScriptBootstrapHandlerInstrumentation.SynchronizedHandleRequestAdvice
