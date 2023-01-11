@@ -5,7 +5,7 @@ plugins {
   /*
   Instrumentation agent extension mechanism expects a single jar containing everything required
   for your extension. This also includes any external libraries that your extension uses and
-  cannot access from application classpath (see comment below about `javax.servlet-api` dependency).
+  cannot access from application classpath (see comment below about `jakarta.servlet-api` dependency).
 
   Thus we use Shadow Gradle plugin to package our classes and all required runtime dependencies
   into a single jar.
@@ -31,7 +31,7 @@ ext {
     opentelemetryJavaagentAlpha: "1.21.0-alpha",
     logbackClassic: "1.2.9",
     mockito: "4.7.0",
-    servletApi: "3.0.1",
+    servletApi: "6.0.0",
   ]
 
   deps = [
@@ -41,6 +41,7 @@ ext {
 
 repositories {
   mavenCentral()
+  maven { url = 'https://maven.vaadin.com/vaadin-prereleases' }
   maven {
     name = "vaadin-prereleases"
     url = uri("https://maven.vaadin.com/vaadin-prereleases/")
@@ -90,7 +91,7 @@ dependencies {
    NB! Only Advice (and "helper") classes of instrumentation modules can access classes from application classpath.
    See https://github.com/open-telemetry/opentelemetry-java-instrumentation/blob/main/docs/contributing/writing-instrumentation-module.md#advice-classes
    */
-  compileOnly group: 'javax.servlet', name: 'javax.servlet-api', version: versions.servletApi
+  compileOnly group: 'jakarta.servlet', name: 'jakarta.servlet-api', version: versions.servletApi
 
   /*
   This dependency is required for DemoSpanProcessor both during compile and runtime.
@@ -107,7 +108,7 @@ dependencies {
   testImplementation("org.mockito:mockito-inline:${versions.mockito}")
   testImplementation("net.bytebuddy:byte-buddy:${versions.bytebuddy}")
   testImplementation("net.bytebuddy:byte-buddy-agent:${versions.bytebuddy}")
-  testImplementation("javax.servlet:javax.servlet-api:${versions.servletApi}")
+  testImplementation("jakarta.servlet:jakarta.servlet-api:${versions.servletApi}")
 
   testImplementation("org.junit.jupiter:junit-jupiter-api:${versions.junit}")
   testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${versions.junit}")
@@ -177,7 +178,7 @@ compileJava {
 tasks {
 
   compileJava {
-    options.release.set(11)
+    options.release.set(17)
   }
 
   assemble.dependsOn(shadowJar)
@@ -189,15 +190,9 @@ test {
 
 muzzle {
   pass {
-    group.set("javax.servlet")
-    module.set("javax.servlet-api")
-    versions.set("[3.0,)")
-    assertInverse.set(true)
-  }
-  pass {
-    group.set("javax.servlet")
-    module.set("servlet-api")
-    versions.set("[2.2, 3.0)")
+    group.set("jakarta.servlet")
+    module.set("jakarta.servlet-api")
+    versions.set("[5.0.0,)")
     assertInverse.set(true)
   }
 }
@@ -206,11 +201,11 @@ spotless {
   java {
     removeUnusedImports()
     eclipse().configFile('eclipse/VaadinJavaConventions.xml')
-    importOrder('\\#', 'elemental', 'com.vaadin', 'com.google.gwt', '', 'java', 'javax')
+    importOrder('\\#', 'elemental', 'com.vaadin', 'com.google.gwt', '', 'java', 'jakarta')
   }
 }
-sourceCompatibility = JavaVersion.VERSION_11
-targetCompatibility = JavaVersion.VERSION_11
+sourceCompatibility = JavaVersion.VERSION_17
+targetCompatibility = JavaVersion.VERSION_17
 
 
 publishing {
