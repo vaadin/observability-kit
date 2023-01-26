@@ -12,12 +12,10 @@
     <artifactId>observability-kit-agent</artifactId>
 
     <properties>
+        <extension.name>vaadin-opentelemetry-extension</extension.name>
         <google.auto-service.version>1.0</google.auto-service.version>
-        <gradle.executable>./gradlew</gradle.executable>
-        <INSTRUMENTATION_NAME>com.vaadin.observability.instrumentation</INSTRUMENTATION_NAME>
-        <INSTRUMENTATION_VERSION>${project.version}</INSTRUMENTATION_VERSION>
     </properties>
-    
+
     <dependencies>
         <dependency>
             <groupId>jakarta.servlet</groupId>
@@ -63,10 +61,26 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>io.opentelemetry.javaagent</groupId>
+            <artifactId>opentelemetry-javaagent-tooling</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+        This dependency is required for DemoSpanProcessor both during compile
+        and runtime. Only dependencies added with the default compile scope will
+        be picked up by the Shade plugin and added to the resulting JAR for our
+        extension's distribution.
+        -->
+        <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
             <version>3.12.0</version>
         </dependency>
+        <!--
+        This dependency is required to be used as the main artifact for the
+        resulting agent JAR so we need it here even if it's not used, but it is
+        excluded from the extension distribution by the Shade plugin.
+        -->
         <dependency>
             <groupId>io.opentelemetry.javaagent</groupId>
             <artifactId>opentelemetry-javaagent</artifactId>
@@ -74,7 +88,7 @@
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-api</artifactId>
+            <artifactId>junit-jupiter</artifactId>
             <version>5.8.0</version>
             <scope>test</scope>
         </dependency>
@@ -100,7 +114,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
-                            <finalName>vaadin-opentelemetry-extension-${project.version}</finalName>
+                            <finalName>${extension.name}-${project.version}</finalName>
                             <artifactSet>
                                 <excludes>
                                     <exclude>io.opentelemetry.javaagent:opentelemetry-javaagent</exclude>
@@ -125,8 +139,8 @@
                             </artifactSet>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
-                                    <resource>extensions/vaadin-opentelemetry-extension-${project.version}.jar</resource>
-                                    <file>${project.build.directory}/vaadin-opentelemetry-extension-${project.version}.jar</file>
+                                    <resource>extensions/${extension.name}-${project.version}.jar</resource>
+                                    <file>${project.build.directory}/${extension.name}-${project.version}.jar</file>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
