@@ -1,5 +1,7 @@
 package com.vaadin.extension;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.text.MatchesPattern.matchesPattern;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
@@ -26,10 +28,8 @@ class InstrumentationHelperTest extends AbstractInstrumentationTest {
     }
 
     @Test
-    public void assertStringsReplaced() {
-        assertNotEquals("@INSTRUMENTATION_NAME@",
-                InstrumentationHelper.INSTRUMENTATION_NAME);
-        assertNotEquals("@INSTRUMENTATION_VERSION@",
-                InstrumentationHelper.INSTRUMENTATION_VERSION);
+    public void assertInstrumentationVersionSet() {
+        assertThat(InstrumentationHelper.INSTRUMENTATION_VERSION,
+                matchesPattern("^\\d\\.\\d.*"));
     }
 }

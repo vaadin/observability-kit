@@ -9,7 +9,6 @@
  */
 package com.vaadin.extension;
 
-import static com.vaadin.extension.InstrumentationHelper.INSTRUMENTATION_VERSION;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 
 import com.vaadin.extension.instrumentation.AbstractNavigationStateRendererInstrumentation;
@@ -53,18 +52,12 @@ public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
 
     static {
-        LicenseChecker.checkLicenseFromStaticBlock("vaadin-observability-kit",
-                INSTRUMENTATION_VERSION, BuildType.PRODUCTION);
+        LicenseChecker.checkLicenseFromStaticBlock(InstrumentationHelper.INSTRUMENTATION_NAME,
+                InstrumentationHelper.INSTRUMENTATION_VERSION, BuildType.PRODUCTION);
     }
 
-    // The instrumentation names should reflect what is in `settings.gradle`
-    // `rootProject.name`
-    public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
-    public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-"
-            + INSTRUMENTATION_VERSION;
-
     public VaadinObservabilityInstrumentationModule() {
-        super(INSTRUMENTATION_NAME, EXTENDED_NAME);
+        super(InstrumentationHelper.INSTRUMENTATION_NAME);
     }
 
     @Override

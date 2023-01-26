@@ -35,20 +35,41 @@ import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
 public class InstrumentationHelper {
-    public static final String INSTRUMENTATION_NAME = "@INSTRUMENTATION_NAME@";
-    public static final String INSTRUMENTATION_VERSION = "@INSTRUMENTATION_VERSION@";
+
+    private static final Logger LOGGER = LoggerFactory
+            .getLogger(InstrumentationHelper.class);
+
+    final static String INSTRUMENTATION_NAME = "vaadin-observability-kit";
+    static String INSTRUMENTATION_VERSION;
+
+    static {
+        Properties properties = new Properties();
+
+        try {
+            properties.load(Thread.currentThread().getContextClassLoader()
+                    .getResourceAsStream("observability-kit.properties"));
+        } catch (Exception e) {
+            LOGGER.warn("Unable to read observability-kit.properties", e);
+            throw new ExceptionInInitializerError(e);
+        }
+
+        INSTRUMENTATION_VERSION = properties.getProperty("observability-kit.version");
+    }
 
     private static final SpanNameGenerator generator = new SpanNameGenerator();
     private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
