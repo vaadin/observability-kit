@@ -55,13 +55,32 @@ public class VaadinServletInstrumentation implements TypeInstrumentation {
                 this.getClass().getName() + "$MethodAdvice");
     }
 
+    public static class ScopeContainer {
+        Scope scope;
+
+        public Scope getScope() {
+            return scope;
+        }
+
+        public void setScope(Scope scope) {
+            this.scope = scope;
+        }
+
+        public ScopeContainer() {
+        }
+
+        public ScopeContainer(Scope scope) {
+            this.scope = scope;
+        }
+    }
+
     @SuppressWarnings("unused")
     public static class MethodAdvice {
         @Advice.OnMethodEnter()
         public static void onEnter(
                 @Advice.Argument(0) HttpServletRequest servletRequest,
                 @Advice.Local("otelContext") Context context,
-                @Advice.Local("otelScope") Scope scope,
+                @Advice.Local("scopeContainer") ScopeContainer scopeContainer,
                 @Advice.Local("rootSpanCreated") boolean rootSpanCreated) {
             rootSpanCreated = false;
             if (InstrumentationHelper.isRequestType(servletRequest,
@@ -81,17 +100,22 @@ public class VaadinServletInstrumentation implements TypeInstrumentation {
             // both, either an existing root span or a root span created above.
             context = InstrumentationHelper.enhanceRootSpan(servletRequest,
                     context);
-            scope = context.makeCurrent();
+            Scope scope = context.makeCurrent();
+            if (scopeContainer == null) {
+                scopeContainer = new ScopeContainer(scope);
+            } else {
+                scopeContainer.setScope(scope);
+            }
         }
 
         @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
         public static void onExit(@Advice.Thrown Throwable throwable,
                 @Advice.Argument(1) HttpServletResponse servletResponse,
                 @Advice.Local("otelContext") Context context,
-                @Advice.Local("otelScope") Scope scope,
+                @Advice.Local("scopeContainer") ScopeContainer scopeContainer,
                 @Advice.Local("rootSpanCreated") boolean rootSpanCreated) {
-            if (scope != null) {
-                scope.close();
+            if (scopeContainer != null && scopeContainer.getScope() != null) {
+                scopeContainer.getScope().close();
             }
             // If this instrumentation created the root span, then update it
             // from the response and end it

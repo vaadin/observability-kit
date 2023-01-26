@@ -28,9 +28,12 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
 
     HttpServletRequest servletRequest;
     HttpServletResponse servletResponse;
+    VaadinServletInstrumentation.ScopeContainer scopeContainer;
 
     @BeforeEach
     void init() {
+        scopeContainer = new VaadinServletInstrumentation.ScopeContainer();
+
         HttpSession session = Mockito.mock(HttpSession.class);
         Mockito.when(session.getId()).thenReturn("1234");
 
@@ -53,10 +56,10 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     @Test
     public void service_createsSpan() {
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null, false);
+                scopeContainer, false);
 
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent(), true);
+                currentContext(), scopeContainer, true);
 
         SpanData span = getExportedSpan(0);
         assertEquals("/route", span.getName());
@@ -78,10 +81,9 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     public void service_existingRootSpan_doesNotCreateSpan() {
         try (var ignored = withRootContext()) {
             VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest,
-                    null, null, false);
+                    null, scopeContainer, false);
             VaadinServletInstrumentation.MethodAdvice.onExit(null,
-                    servletResponse, currentContext(),
-                    currentContext().makeCurrent(), true);
+                    servletResponse, currentContext(), scopeContainer, true);
         }
 
         assertEquals(1, getExportedSpanCount());
@@ -91,10 +93,9 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     public void service_enhancesRootSpan() {
         try (var ignored = withRootContext()) {
             VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest,
-                    null, null, false);
+                    null, scopeContainer, false);
             VaadinServletInstrumentation.MethodAdvice.onExit(null,
-                    servletResponse, currentContext(),
-                    currentContext().makeCurrent(), false);
+                    servletResponse, currentContext(), scopeContainer, false);
         }
 
         assertEquals(1, getExportedSpanCount());
@@ -117,9 +118,9 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
                         HandlerHelper.RequestType.HEARTBEAT.getIdentifier());
 
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null, false);
+                scopeContainer, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent(), false);
+                currentContext(), scopeContainer, false);
 
         assertEquals(0, getExportedSpanCount(),
                 "No span should be made for heartbeat");
@@ -134,9 +135,9 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
         configureTraceLevel(TraceLevel.MAXIMUM);
 
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null, false);
+                scopeContainer, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent(), true);
+                currentContext(), scopeContainer, true);
 
         assertEquals(1, getExportedSpanCount(),
                 "Maximum trace should generate heartbeat");
@@ -147,9 +148,9 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
         Mockito.when(servletResponse.getStatus())
                 .thenReturn(HttpStatusCode.NOT_FOUND.getCode());
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null, false);
+                scopeContainer, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
-                currentContext(), currentContext().makeCurrent(), true);
+                currentContext(), scopeContainer, true);
 
         SpanData span = getExportedSpan(0);
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
@@ -160,10 +161,10 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     @Test
     public void service_throwsException_setsErrorStatus() {
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
-                null, false);
+                scopeContainer, false);
         VaadinServletInstrumentation.MethodAdvice.onExit(
                 new IllegalStateException("exception"), servletResponse,
-                currentContext(), currentContext().makeCurrent(), true);
+                currentContext(), scopeContainer, true);
 
         SpanData span = getExportedSpan(0);
         assertEquals(StatusCode.ERROR, span.getStatus().getStatusCode());
