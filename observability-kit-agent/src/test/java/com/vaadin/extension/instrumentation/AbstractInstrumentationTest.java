@@ -32,6 +32,7 @@ import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.platform.commons.util.ReflectionUtils;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
@@ -188,11 +189,47 @@ public abstract class AbstractInstrumentationTest {
         configuredTraceLevel = level;
     }
 
+    /**
+     * Patches the OpenTelemetry context storage to set a specific context.
+     * <p>
+     * This is necessary for testing instrumentations that create a sub-context
+     * during their execution. Since our test setup does not support closing
+     * these sub-contexts, this method allows forcing a specific context to be
+     * the current. This allows to either clear stale contexts between test
+     * runs, or roll back to a previous / parent context.
+     *
+     * @param context
+     *            the context to set as the current one, or {@code null} to
+     *            clear the current context
+     */
+    protected void fixCurrentContext(Context context) {
+        final var tlcs = "io.opentelemetry.context.ThreadLocalContextStorage";
+        final var fieldName = "THREAD_LOCAL_STORAGE";
+        ReflectionUtils.tryToLoadClass(tlcs).ifSuccess(ctxClass -> {
+            try {
+                final var field = ctxClass.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                final var tl = (ThreadLocal<Context>) field.get(null);
+
+                if (context != null) {
+                    tl.set(context);
+                } else {
+                    tl.remove();
+                }
+            } catch (NoSuchFieldException | SecurityException
+                    | IllegalArgumentException | IllegalAccessException e) {
+                e.printStackTrace();
+            }
+        }).ifFailure(e -> {
+            e.printStackTrace();
+        });
+    }
+
     @Tag("test-view")
     protected static class TestView extends Component {
     }
 
-    protected static class RootContextScope implements AutoCloseable {
+    protected class RootContextScope implements AutoCloseable {
         private final Scope scope;
         private final Instrumenter<Object, Object> rootInstrumenter;
         private final Context rootContext;
@@ -212,6 +249,9 @@ public abstract class AbstractInstrumentationTest {
 
         @Override
         public void close() {
+            // Roll back to the root context we created, otherwise our root span
+            // will not be created
+            fixCurrentContext(rootContext);
             scope.close();
             rootInstrumenter.end(rootContext, null, null, null);
         }
