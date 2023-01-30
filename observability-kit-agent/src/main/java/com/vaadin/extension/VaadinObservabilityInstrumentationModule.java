@@ -52,12 +52,14 @@ public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
 
     static {
-        LicenseChecker.checkLicenseFromStaticBlock(InstrumentationHelper.INSTRUMENTATION_NAME,
-                InstrumentationHelper.INSTRUMENTATION_VERSION, BuildType.PRODUCTION);
+        LicenseChecker.checkLicenseFromStaticBlock(
+                InstrumentationHelper.PRODUCT_NAME,
+                InstrumentationHelper.VERSION, BuildType.PRODUCTION);
     }
 
     public VaadinObservabilityInstrumentationModule() {
-        super(InstrumentationHelper.INSTRUMENTATION_NAME);
+        super(InstrumentationHelper.PRODUCT_NAME,
+                InstrumentationHelper.INSTRUMENTATION_NAME);
     }
 
     @Override

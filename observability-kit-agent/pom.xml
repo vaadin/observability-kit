@@ -12,7 +12,7 @@
     <artifactId>observability-kit-agent</artifactId>
 
     <properties>
-        <extension.name>vaadin-opentelemetry-extension</extension.name>
+        <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
         <google.auto-service.version>1.0</google.auto-service.version>
     </properties>
 
@@ -156,7 +156,7 @@
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
-                                        <Implementation-Version>${opentelemetry.version}-vaadin-${project.version}</Implementation-Version>
+                                        <Implementation-Version>${opentelemetry.version}~vaadin-${project.version}</Implementation-Version>
                                     </manifestEntries>
                                 </transformer>
                             </transformers>
