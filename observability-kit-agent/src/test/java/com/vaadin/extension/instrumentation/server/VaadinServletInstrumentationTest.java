@@ -48,6 +48,12 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
 
         servletResponse = Mockito.mock(HttpServletResponse.class);
         Mockito.when(servletResponse.getStatus()).thenReturn(200);
+
+        // VaadinServletInstrumentation creates a sub-context during its
+        // execution, which can not be properly closed with our current test
+        // setup. Reset the current context instead, so that they don't
+        // interfere with the next test run.
+        fixCurrentContext(null);
     }
 
     @Test
