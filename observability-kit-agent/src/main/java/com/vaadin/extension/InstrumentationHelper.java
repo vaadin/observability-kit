@@ -46,38 +46,18 @@ import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 
 public class InstrumentationHelper {
 
-    private static final Logger LOGGER = LoggerFactory
-            .getLogger(InstrumentationHelper.class);
-
     final static String INSTRUMENTATION_NAME = "opentelemetry-vaadin-observability-instrumentation-extension";
     final static String PRODUCT_NAME = "vaadin-observability-kit";
-    static String VERSION;
-
-    static {
-        Properties properties = new Properties();
-
-        try {
-            properties.load(Thread.currentThread().getContextClassLoader()
-                    .getResourceAsStream("observability-kit.properties"));
-        } catch (Exception e) {
-            LOGGER.warn("Unable to read observability-kit.properties", e);
-            throw new ExceptionInInitializerError(e);
-        }
-
-        VERSION = properties.getProperty("observability-kit.version");
-    }
+    final static String VERSION = "2.0";
 
     private static final SpanNameGenerator generator = new SpanNameGenerator();
     private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
