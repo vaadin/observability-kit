@@ -9,10 +9,21 @@
  */
 package com.vaadin.extension;
 
-import static com.vaadin.extension.Constants.*;
+import static com.vaadin.extension.Constants.FLOW_VERSION;
+import static com.vaadin.extension.Constants.REQUEST_TYPE;
+import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.flow.server.Constants.VAADIN_MAPPING;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
-import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.*;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_HOST;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_METHOD;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_ROUTE;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_SCHEME;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_STATUS_CODE;
+import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_TARGET;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
@@ -42,13 +53,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
-
 public class InstrumentationHelper {
-    public static final String INSTRUMENTATION_NAME = "@INSTRUMENTATION_NAME@";
-    public static final String INSTRUMENTATION_VERSION = "@INSTRUMENTATION_VERSION@";
+
+    final static String INSTRUMENTATION_NAME = "opentelemetry-vaadin-observability-instrumentation-extension";
+    final static String PRODUCT_NAME = "vaadin-observability-kit";
+    final static String VERSION = "2.0";
 
     private static final SpanNameGenerator generator = new SpanNameGenerator();
     private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
@@ -56,13 +65,13 @@ public class InstrumentationHelper {
     public static final Instrumenter<InstrumentationRequest, Void> INSTRUMENTER = Instrumenter
             .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
                     INSTRUMENTATION_NAME, generator)
-            .setInstrumentationVersion(INSTRUMENTATION_VERSION)
+            .setInstrumentationVersion(VERSION)
             .addAttributesExtractor(attrGet)
             .buildInstrumenter(InstrumentationRequest::getSpanKind);
 
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
-                INSTRUMENTATION_VERSION);
+                VERSION);
     }
 
     /**
