@@ -53,13 +53,16 @@ public class VaadinObservabilityInstrumentationModule
 
     static {
         LicenseChecker.checkLicenseFromStaticBlock(
-                InstrumentationHelper.PRODUCT_NAME,
-                InstrumentationHelper.VERSION, BuildType.PRODUCTION);
+                "vaadin-observability-kit",
+                InstrumentationHelper.INSTRUMENTATION_VERSION, BuildType.PRODUCTION);
     }
 
+    public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
+    public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-"
+            + InstrumentationHelper.INSTRUMENTATION_VERSION;
+
     public VaadinObservabilityInstrumentationModule() {
-        super(InstrumentationHelper.PRODUCT_NAME,
-                InstrumentationHelper.INSTRUMENTATION_NAME);
+        super(INSTRUMENTATION_NAME, EXTENDED_NAME);
     }
 
     @Override
