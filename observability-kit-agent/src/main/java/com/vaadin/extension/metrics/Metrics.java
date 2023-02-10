@@ -9,6 +9,7 @@
  */
 package com.vaadin.extension.metrics;
 
+import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
@@ -40,8 +41,10 @@ public class Metrics {
         // Ensure meters are only created once
         if (registered.compareAndSet(false, true)) {
             Meter meter = GlobalOpenTelemetry
-                    .meterBuilder("com.vaadin.observability.instrumentation")
-                    .setInstrumentationVersion("1.0-alpha").build();
+                    .meterBuilder(InstrumentationHelper.INSTRUMENTATION_NAME)
+                    .setInstrumentationVersion(
+                            InstrumentationHelper.INSTRUMENTATION_VERSION)
+                    .build();
 
             meter.gaugeBuilder("vaadin.session.count").ofLongs()
                     .setDescription("Number of open sessions").setUnit("count")

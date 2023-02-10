@@ -52,9 +52,9 @@ public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
 
     static {
-        LicenseChecker.checkLicenseFromStaticBlock(
-                "vaadin-observability-kit",
-                InstrumentationHelper.INSTRUMENTATION_VERSION, BuildType.PRODUCTION);
+        LicenseChecker.checkLicenseFromStaticBlock("vaadin-observability-kit",
+                InstrumentationHelper.INSTRUMENTATION_VERSION,
+                BuildType.PRODUCTION);
     }
 
     public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
