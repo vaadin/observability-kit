@@ -12,6 +12,7 @@ package com.vaadin.extension;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 
 import com.vaadin.extension.instrumentation.AbstractNavigationStateRendererInstrumentation;
+import com.vaadin.extension.instrumentation.client.ClientInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PwaHandlerInstrumentation;
@@ -82,7 +83,7 @@ public class VaadinObservabilityInstrumentationModule
         return Stream
                 .of(instrumentation(), rpcHandlerInstrumentation(),
                         requestHandlerInstrumentation(), dataInstrumentation(),
-                        serverInstrumentation())
+                        serverInstrumentation(), clientInstrumentation())
                 .flatMap(i -> i).collect(Collectors.toList());
     }
 
@@ -132,6 +133,12 @@ public class VaadinObservabilityInstrumentationModule
                 new StaticFileServerInstrumentation(),
                 new VaadinServletInstrumentation(),
                 new VaadinSessionInstrumentation());
+        // @formatter:on
+    }
+
+    private Stream<TypeInstrumentation> clientInstrumentation() {
+        // @formatter:off
+        return Stream.of(new ClientInstrumentation());
         // @formatter:on
     }
 }
