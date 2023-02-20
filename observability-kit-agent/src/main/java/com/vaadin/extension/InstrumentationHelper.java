@@ -54,10 +54,8 @@ import java.util.Map;
 import java.util.Optional;
 
 public class InstrumentationHelper {
-
-    final static String INSTRUMENTATION_NAME = "opentelemetry-vaadin-observability-instrumentation-extension";
-    final static String PRODUCT_NAME = "vaadin-observability-kit";
-    final static String VERSION = "2.0";
+    public static final String INSTRUMENTATION_NAME = "com.vaadin.observability.instrumentation";
+    public static final String INSTRUMENTATION_VERSION = "2.0";
 
     private static final SpanNameGenerator generator = new SpanNameGenerator();
     private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
@@ -65,13 +63,13 @@ public class InstrumentationHelper {
     public static final Instrumenter<InstrumentationRequest, Void> INSTRUMENTER = Instrumenter
             .<InstrumentationRequest, Void> builder(GlobalOpenTelemetry.get(),
                     INSTRUMENTATION_NAME, generator)
-            .setInstrumentationVersion(VERSION)
+            .setInstrumentationVersion(INSTRUMENTATION_VERSION)
             .addAttributesExtractor(attrGet)
             .buildInstrumenter(InstrumentationRequest::getSpanKind);
 
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
-                VERSION);
+                INSTRUMENTATION_VERSION);
     }
 
     /**

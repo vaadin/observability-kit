@@ -32,7 +32,8 @@ class InstrumentationHelperTest extends AbstractInstrumentationTest {
 
     @Test
     public void assertInstrumentationVersionSet() {
-        assertThat(getVersion(), startsWith(InstrumentationHelper.VERSION));
+        assertThat(getVersion(),
+                startsWith(InstrumentationHelper.INSTRUMENTATION_VERSION));
     }
 
     private String getVersion() {

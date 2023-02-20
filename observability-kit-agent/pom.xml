@@ -14,6 +14,7 @@
     <properties>
         <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
         <google.auto-service.version>1.0</google.auto-service.version>
+        <byte-buddy.plugin.version>1.13.0</byte-buddy.plugin.version>
     </properties>
 
     <dependencies>
@@ -76,6 +77,11 @@
             <artifactId>commons-lang3</artifactId>
             <version>3.12.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
+        </dependency>
         <!--
         This dependency is required to be used as the main artifact for the
         resulting agent JAR so we need it here even if it's not used, but it is
@@ -114,6 +120,37 @@
             </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy-maven-plugin</artifactId>
+                <version>${byte-buddy.plugin.version}</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>io.opentelemetry.javaagent</groupId>
+                        <artifactId>opentelemetry-muzzle</artifactId>
+                        <version>${opentelemetry.version}-alpha</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>com.google.auto.service</groupId>
+                        <artifactId>auto-service</artifactId>
+                        <version>${google.auto-service.version}</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>transform</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <transformations>
+                        <transformation>
+                            <plugin>com.vaadin.extension.ClasspathByteBuddyPlugin</plugin>
+                        </transformation>
+                    </transformations>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
