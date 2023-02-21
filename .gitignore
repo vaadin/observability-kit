@@ -4,6 +4,7 @@
 
 **/target
 **/error-screenshots
+**/node_modules
 
 **/.sts4-cache/*
 .factorypath

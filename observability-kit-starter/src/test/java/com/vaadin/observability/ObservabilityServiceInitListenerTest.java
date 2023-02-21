@@ -15,7 +15,7 @@ import com.vaadin.flow.server.VaadinSession;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -48,12 +48,12 @@ public class ObservabilityServiceInitListenerTest {
 
         service.fireUIInitListeners(ui);
 
-        verify(session).addRequestHandler(any());
+        verify(session).addRequestHandler(any(ObservabilityHandler.class));
         verify(ui).add(any(ObservabilityClient.class));
     }
 
     @Test
-    public void serviceInit_clientExists_clientNotInstalled() {
+    public void serviceInit_clientExists_removesExistingClients() {
         ServiceInitEvent serviceInitEvent = mock(ServiceInitEvent.class);
         VaadinService service = mock(VaadinService.class);
         ArgumentCaptor<UIInitListener> listenerArgument = ArgumentCaptor
@@ -74,15 +74,16 @@ public class ObservabilityServiceInitListenerTest {
         verify(service).addUIInitListener(any());
 
         UI ui = mock(UI.class);
-        ObservabilityClient client = mock(ObservabilityClient.class);
-        when(ui.getChildren()).thenReturn(Stream.of(client));
+        ObservabilityClient client1 = new ObservabilityClient();
+        ObservabilityClient client2 = new ObservabilityClient();
+        when(ui.getChildren()).thenReturn(Stream.of(client1, client2));
         VaadinSession session = mock(VaadinSession.class);
         when(ui.getSession()).thenReturn(session);
 
         service.fireUIInitListeners(ui);
 
-        verify(session).addRequestHandler(any());
-        verify(ui).remove(any(ObservabilityClient.class));
-        verify(ui, never()).add(any(ObservabilityClient.class));
+        verify(session).addRequestHandler(any(ObservabilityHandler.class));
+        verify(ui, times(2)).remove(any(ObservabilityClient.class));
+        verify(ui).add(any(ObservabilityClient.class));
     }
 }

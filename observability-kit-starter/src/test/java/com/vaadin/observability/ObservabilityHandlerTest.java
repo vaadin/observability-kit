@@ -13,8 +13,8 @@ import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.shared.ApplicationConstants;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,7 +32,7 @@ public class ObservabilityHandlerTest {
 
         ObservabilityHandler.ensureInstalled(ui);
 
-        verify(session).addRequestHandler(any());
+        verify(session).addRequestHandler(any(ObservabilityHandler.class));
     }
 
     @Test
@@ -43,19 +43,28 @@ public class ObservabilityHandlerTest {
 
         ObservabilityHandler handler = ObservabilityHandler.ensureInstalled(ui);
 
-        verify(session).addRequestHandler(any());
+        verify(session).addRequestHandler(any(ObservabilityHandler.class));
 
         ObservabilityHandler handler1 = ObservabilityHandler
                 .ensureInstalled(ui);
 
         verifyNoMoreInteractions(session);
-        assertEquals(handler, handler1);
+        assertSame(handler, handler1);
+    }
+
+    @Test
+    public void canHandleRequest_emptyPath_returnsFalse() {
+        VaadinRequest request = mock(VaadinRequest.class);
+        when(request.getPathInfo()).thenReturn("");
+
+        ObservabilityHandler handler = new ObservabilityHandler();
+        assertFalse(handler.canHandleRequest(request));
     }
 
     @Test
     public void canHandleRequest_invalidPath_returnsFalse() {
         VaadinRequest request = mock(VaadinRequest.class);
-        when(request.getPathInfo()).thenReturn("");
+        when(request.getPathInfo()).thenReturn("/foo");
 
         ObservabilityHandler handler = new ObservabilityHandler();
         assertFalse(handler.canHandleRequest(request));

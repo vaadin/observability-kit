@@ -45,8 +45,17 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
         ComponentUtil.setData(ui, ObservabilityHandler.class,
                 newObservabilityHandler);
 
-        ui.addDetachListener(detachEvent -> session
-                .removeRequestHandler(newObservabilityHandler));
+        ui.addAttachListener(attachEvent -> {
+            if (ComponentUtil.getData(ui, ObservabilityHandler.class) == null) {
+                session.addRequestHandler(newObservabilityHandler);
+                ComponentUtil.setData(ui, ObservabilityHandler.class,
+                        newObservabilityHandler);
+            }
+        });
+        ui.addDetachListener(detachEvent -> {
+            session.removeRequestHandler(newObservabilityHandler);
+            ComponentUtil.setData(ui, ObservabilityHandler.class, null);
+        });
         return newObservabilityHandler;
     }
 

@@ -24,6 +24,7 @@ import {OTLPTraceExporter} from "@opentelemetry/exporter-trace-otlp-http";
 export class ObservabilityClient extends LitElement {
   provider: WebTracerProvider;
   instanceId?: string;
+  unloadInstrumentations? : () => void;
 
   constructor() {
     super();
@@ -58,7 +59,7 @@ export class ObservabilityClient extends LitElement {
     });
 
     //Registering instrumentations
-    registerInstrumentations({
+    this.unloadInstrumentations = registerInstrumentations({
       instrumentations: [
         new DocumentLoadInstrumentation(),
         new UserInteractionInstrumentation(),
@@ -70,5 +71,13 @@ export class ObservabilityClient extends LitElement {
         new LongTaskInstrumentation()
       ],
     });
+  }
+
+  protected disconnectedCallback() {
+    super.disconnectedCallback();
+
+    if (this.unloadInstrumentations) {
+      this.unloadInstrumentations();
+    }
   }
 }

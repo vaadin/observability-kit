@@ -15,5 +15,5 @@ import com.vaadin.flow.component.dependency.NpmPackage;
 @NpmPackage(value = "@opentelemetry/exporter-trace-otlp-http", version = "0.35.0")
 @Tag("vaadin-observability-client")
 @JsModule("./components/observability-client.ts")
-public class ObservabilityClient extends Component {
+class ObservabilityClient extends Component {
 }

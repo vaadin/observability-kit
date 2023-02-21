@@ -1,11 +1,8 @@
 package com.vaadin.observability;
 
-import java.util.Optional;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinServiceInitListener;
@@ -25,16 +22,13 @@ public class ObservabilityServiceInitListener
             ObservabilityHandler handler = ObservabilityHandler
                     .ensureInstalled(ui);
 
-            Optional<Component> existingClient = ui.getChildren()
+            ui.getChildren()
                     .filter(child -> (child instanceof ObservabilityClient))
-                    .findFirst();
-            if (existingClient.isPresent()) {
-                ui.remove(existingClient.get());
-            } else {
-                ObservabilityClient client = new ObservabilityClient();
-                client.getElement().setProperty("instanceId", handler.getId());
-                ui.add(client);
-            }
+                    .forEach(ui::remove);
+
+            ObservabilityClient client = new ObservabilityClient();
+            client.getElement().setProperty("instanceId", handler.getId());
+            ui.add(client);
         });
     }
 }
