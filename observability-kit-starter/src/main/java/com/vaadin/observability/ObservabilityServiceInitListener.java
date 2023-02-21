@@ -22,8 +22,8 @@ public class ObservabilityServiceInitListener
         serviceInitEvent.getSource().addUIInitListener(event -> {
             UI ui = event.getUI();
 
-            ObservabilityHandler handler =
-                    ObservabilityHandler.ensureInstalled(ui);
+            ObservabilityHandler handler = ObservabilityHandler
+                    .ensureInstalled(ui);
 
             Optional<Component> existingClient = ui.getChildren()
                     .filter(child -> (child instanceof ObservabilityClient))

@@ -38,16 +38,15 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
             return observabilityHandler;
         }
 
-        ObservabilityHandler newObservabilityHandler =
-                new ObservabilityHandler();
+        ObservabilityHandler newObservabilityHandler = new ObservabilityHandler();
 
         VaadinSession session = ui.getSession();
         session.addRequestHandler(newObservabilityHandler);
         ComponentUtil.setData(ui, ObservabilityHandler.class,
                 newObservabilityHandler);
 
-        ui.addDetachListener(detachEvent ->
-                session.removeRequestHandler(newObservabilityHandler));
+        ui.addDetachListener(detachEvent -> session
+                .removeRequestHandler(newObservabilityHandler));
         return newObservabilityHandler;
     }
 

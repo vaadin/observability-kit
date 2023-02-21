@@ -10,6 +10,7 @@ import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
@@ -41,8 +42,11 @@ public class ClientInstrumentation implements TypeInstrumentation {
     public static class MethodAdvice {
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Argument(0) JsonNode root) {
-            Tracer tracer = InstrumentationHelper.getTracer();
+            if (!root.has("resourceSpans")) {
+                return;
+            }
 
+            Tracer tracer = InstrumentationHelper.getTracer();
             for (JsonNode resourceSpanNode : root.get("resourceSpans")) {
                 for (JsonNode scopeSpanNode : resourceSpanNode
                         .get("scopeSpans")) {
@@ -65,19 +69,20 @@ public class ClientInstrumentation implements TypeInstrumentation {
                         JsonNode parentSpanNode = parentEntry.getValue();
 
                         Span parentSpan = createSpan(tracer, parentSpanNode);
+                        try (Scope ignored = parentSpan.makeCurrent()) {
+                            for (Map.Entry<String, JsonNode> childEntry : childSpanNodes
+                                    .entrySet()) {
+                                JsonNode childSpanNode = childEntry.getValue();
 
-                        for (Map.Entry<String, JsonNode> childEntry : childSpanNodes
-                                .entrySet()) {
-                            JsonNode childSpanNode = childEntry.getValue();
-
-                            if (parentSpanId.equals(childSpanNode
-                                    .get("parentSpanId").asText())) {
-                                Span childSpan = createSpan(tracer,
-                                        childSpanNode);
-                                childSpan.end(
-                                        childSpanNode.get("endTimeUnixNano")
-                                                .asLong(),
-                                        TimeUnit.NANOSECONDS);
+                                if (parentSpanId.equals(childSpanNode
+                                        .get("parentSpanId").asText())) {
+                                    Span childSpan = createSpan(tracer,
+                                            childSpanNode);
+                                    childSpan.end(
+                                            childSpanNode.get("endTimeUnixNano")
+                                                    .asLong(),
+                                            TimeUnit.NANOSECONDS);
+                                }
                             }
                         }
 
