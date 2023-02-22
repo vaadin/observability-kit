@@ -55,7 +55,7 @@ import java.util.Optional;
 
 public class InstrumentationHelper {
     public static final String INSTRUMENTATION_NAME = "com.vaadin.observability.instrumentation";
-    public static final String INSTRUMENTATION_VERSION = "2.0";
+    public static final String INSTRUMENTATION_VERSION = "2.1";
 
     private static final SpanNameGenerator generator = new SpanNameGenerator();
     private static final SpanAttributeGenerator attrGet = new SpanAttributeGenerator();
