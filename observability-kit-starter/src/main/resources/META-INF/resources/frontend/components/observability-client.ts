@@ -73,7 +73,7 @@ export class ObservabilityClient extends LitElement {
     });
   }
 
-  protected disconnectedCallback() {
+  disconnectedCallback() {
     super.disconnectedCallback();
 
     if (this.unloadInstrumentations) {
