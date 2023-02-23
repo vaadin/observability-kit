@@ -1,0 +1,24 @@
+.list-view {
+  display: block;
+  height: 100%;
+}
+.list-view vaadin-grid-pro {
+  height: 100%;
+}
+.list-view vaadin-grid-filter,
+.list-view vaadin-grid-filter > * {
+  width: 100%;
+}
+.list-view vaadin-grid-pro vaadin-horizontal-layout {
+  align-items: center;
+}
+.list-view vaadin-grid-pro img {
+  border-radius: 50%;
+  flex-shrink: 0;
+  height: var(--lumo-size-m);
+  width: var(--lumo-size-m);
+}
+.list-view .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

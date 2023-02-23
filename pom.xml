@@ -23,6 +23,7 @@
         <module>observability-kit-agent</module>
         <module>observability-kit-starter</module>
         <module>observability-kit-test</module>
+        <module>observable-app</module>
     </modules>
 
     <properties>
@@ -30,6 +31,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <vaadin.version>24.0-SNAPSHOT</vaadin.version>
         <flow.version>24.0-SNAPSHOT</flow.version>
         <servlet.api.version>6.0.0</servlet.api.version>
         <opentelemetry.version>1.23.0</opentelemetry.version>
