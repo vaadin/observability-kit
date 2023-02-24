@@ -10,5 +10,4 @@ public class MainView extends Div {
     public MainView() {
         add(new H1("Observability Kit IT"));
     }
-
 }
