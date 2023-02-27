@@ -34,6 +34,7 @@
         <servlet.api.version>6.0.0</servlet.api.version>
         <opentelemetry.version>1.23.0</opentelemetry.version>
         <jetty.version>11.0.13</jetty.version>
+        <junit.version>5.9.2</junit.version>
         <testbench.version>9.0.0.rc1</testbench.version>
         <maven.jar.version>3.3.0</maven.jar.version>
         <maven.war.version>3.3.2</maven.war.version>
@@ -81,6 +82,20 @@
                 <groupId>io.opentelemetry.instrumentation</groupId>
                 <artifactId>opentelemetry-instrumentation-bom-alpha</artifactId>
                 <version>${opentelemetry.version}-alpha</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>com.vaadin</groupId>
+                <artifactId>vaadin-testbench-bom</artifactId>
+                <version>${testbench.version}</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
