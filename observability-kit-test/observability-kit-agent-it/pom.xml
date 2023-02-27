@@ -87,6 +87,64 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.eclipse.jetty</groupId>
+                <artifactId>jetty-maven-plugin</artifactId>
+                <configuration>
+                    <stopPort>8081</stopPort>
+                    <stopWait>5</stopWait>
+                    <stopKey>${project.artifactId}</stopKey>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>start-jetty</id>
+                        <phase>pre-integration-test</phase>
+                        <goals>
+                            <goal>start</goal>
+                        </goals>
+                        <configuration>
+                            <deployMode>FORK</deployMode>
+                            <jvmArgs>-javaagent:${basedir}/../../observability-kit-agent/target/observability-kit-agent-${project.version}.jar</jvmArgs>
+                            <env>
+                                <OTEL_EXPORTER_OTLP_PROTOCOL>http/protobuf</OTEL_EXPORTER_OTLP_PROTOCOL>
+                                <OTEL_METRIC_EXPORT_INTERVAL>5000</OTEL_METRIC_EXPORT_INTERVAL>
+                                <OTEL_METRICS_EXPORTER>${otel.exporter}</OTEL_METRICS_EXPORTER>
+                                <OTEL_TRACES_EXPORTER>${otel.exporter}</OTEL_TRACES_EXPORTER>
+                                <OTEL_LOGS_EXPORTER>${otel.exporter}</OTEL_LOGS_EXPORTER>
+                            </env>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>stop-jetty</id>
+                        <phase>post-integration-test</phase>
+                        <goals>
+                            <goal>stop</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Runs the integration tests (*IT) after the server is started -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <trimStackTrace>false</trimStackTrace>
+                    <enableAssertions>true</enableAssertions>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
     <profiles>
         <profile>
@@ -106,67 +164,6 @@
                         </executions>
                         <configuration>
                             <productionMode>true</productionMode>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-
-        <profile>
-            <id>it</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.eclipse.jetty</groupId>
-                        <artifactId>jetty-maven-plugin</artifactId>
-                        <configuration>
-                            <stopPort>8081</stopPort>
-                            <stopWait>5</stopWait>
-                            <stopKey>${project.artifactId}</stopKey>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>start-jetty</id>
-                                <phase>pre-integration-test</phase>
-                                <goals>
-                                    <goal>start</goal>
-                                </goals>
-                                <configuration>
-                                    <deployMode>FORK</deployMode>
-                                    <jvmArgs>-javaagent:${basedir}/../../observability-kit-agent/target/observability-kit-agent-${project.version}.jar</jvmArgs>
-                                    <env>
-                                        <OTEL_EXPORTER_OTLP_PROTOCOL>http/protobuf</OTEL_EXPORTER_OTLP_PROTOCOL>
-                                        <OTEL_METRIC_EXPORT_INTERVAL>5000</OTEL_METRIC_EXPORT_INTERVAL>
-                                        <OTEL_METRICS_EXPORTER>${otel.exporter}</OTEL_METRICS_EXPORTER>
-                                        <OTEL_TRACES_EXPORTER>${otel.exporter}</OTEL_TRACES_EXPORTER>
-                                        <OTEL_LOGS_EXPORTER>${otel.exporter}</OTEL_LOGS_EXPORTER>
-                                    </env>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>stop-jetty</id>
-                                <phase>post-integration-test</phase>
-                                <goals>
-                                    <goal>stop</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <!-- Runs the integration tests (*IT) after the server is started -->
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <goals>
-                                    <goal>integration-test</goal>
-                                    <goal>verify</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <trimStackTrace>false</trimStackTrace>
-                            <enableAssertions>true</enableAssertions>
                         </configuration>
                     </plugin>
                 </plugins>
