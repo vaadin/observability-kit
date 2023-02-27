@@ -1,13 +1,7 @@
 package com.vaadin.observability.test;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-
 import com.google.protobuf.InvalidProtocolBufferException;
-import io.github.bonigarcia.wdm.WebDriverManager;
+import com.vaadin.flow.component.html.testbench.H1Element;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.metrics.v1.Metric;
@@ -20,13 +14,12 @@ import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.junit.jupiter.MockServerSettings;
 import org.mockserver.model.Body;
 import org.mockserver.model.HttpRequest;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
 
-import com.vaadin.flow.component.html.testbench.H1Element;
-import com.vaadin.testbench.TestBench;
-import com.vaadin.testbench.TestBenchTestCase;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -35,20 +28,17 @@ import static org.mockserver.model.HttpResponse.response;
 
 @ExtendWith(MockServerExtension.class)
 @MockServerSettings(ports = { MainViewIT.EXPORTER_ENDPOINT_PORT })
-public class MainViewIT extends TestBenchTestCase {
+public class MainViewIT extends AbstractViewIT {
 
     static final int EXPORTER_ENDPOINT_PORT = 4318;
 
     private ClientAndServer collector;
 
     @BeforeEach
-    public void navigateToView(ClientAndServer collector) {
+    public void navigateToView(ClientAndServer collector) throws Exception {
+
         this.collector = collector;
         this.collector.when(request()).respond(response().withStatusCode(200));
-
-        WebDriverManager.chromedriver().setup();
-        setDriver(createHeadlessChromeDriver());
-        getDriver().get("http://localhost:8080/");
 
         // Wait for the view to be rendered
         waitUntil(driver -> $(H1Element.class).exists());
@@ -112,12 +102,8 @@ public class MainViewIT extends TestBenchTestCase {
         }
     }
 
-    private WebDriver createHeadlessChromeDriver() {
-        final var options = new ChromeOptions();
-        options.addArguments("--no-sandbox", "--disable-dev-shm-usage");
-        if (!Boolean.getBoolean("noHeadless")) {
-            options.addArguments("--headless");
-        }
-        return TestBench.createDriver(new ChromeDriver(options));
+    @Override
+    protected String getTestPath() {
+        return "/";
     }
 }
