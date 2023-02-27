@@ -33,6 +33,16 @@ You can login using:
 * user/user
 * admin/admin
 
+## Run with Instrumentation
+
+To run the project with the agent configure you can add the `observe` profile to the maven command.
+
+`./mvnw spring-boot:run -Pobserve`
+
+or, if you want to observe a production build
+
+`./mvnw spring-boot:run -Pproduction,observe`
+
 ## Deploying to Production
 
 To create a production build, call `mvnw clean package -Pproduction` (Windows),
