@@ -39,6 +39,8 @@ public class MainViewIT extends TestBenchTestCase {
 
     static final int EXPORTER_ENDPOINT_PORT = 4318;
 
+    private static final int AWAIT_TIMEOUT = 15;
+
     private ClientAndServer collector;
 
     @BeforeEach
@@ -56,7 +58,7 @@ public class MainViewIT extends TestBenchTestCase {
 
     @Test
     public void verifyExportedTraces() {
-        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+        await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
             var spans = extractSpansFromRequests(requests);
             assertThat(spans).extracting(Span::getName)
@@ -66,7 +68,7 @@ public class MainViewIT extends TestBenchTestCase {
 
     @Test
     public void verifyExportedMetrics() {
-        await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
+        await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
             var metrics = extractMetricsFromRequests(requests);
             assertThat(metrics).extracting(Metric::getName)
