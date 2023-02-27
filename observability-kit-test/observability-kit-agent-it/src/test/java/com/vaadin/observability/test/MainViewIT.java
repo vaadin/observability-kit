@@ -59,7 +59,8 @@ public class MainViewIT extends TestBenchTestCase {
         await().atMost(10, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
             var spans = extractSpansFromRequests(requests);
-            assertThat(spans).extracting(Span::getName).isNotEmpty();
+            assertThat(spans).extracting(Span::getName)
+                    .contains("SessionRequestHandler.handleRequest");
         });
     }
 
