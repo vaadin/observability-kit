@@ -16,6 +16,7 @@
         <maven.deploy.skip>true</maven.deploy.skip>
         <maven.install.skip>true</maven.install.skip>
         <exampledata.version>6.2.0</exampledata.version>
+        <vaadin.version>24.0-SNAPSHOT</vaadin.version>
         <spring-boot.jvmArguments>-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=5379 -Xmx1024M
         </spring-boot.jvmArguments>
         <agent.config>jaeger.properties</agent.config>
