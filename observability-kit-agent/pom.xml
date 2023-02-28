@@ -15,6 +15,7 @@
         <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
         <google.auto-service.version>1.0</google.auto-service.version>
         <byte-buddy.plugin.version>1.13.0</byte-buddy.plugin.version>
+        <maven.jar.forceCreation>true</maven.jar.forceCreation>
     </properties>
 
     <dependencies>
