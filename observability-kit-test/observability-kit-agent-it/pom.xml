@@ -24,7 +24,7 @@
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-dev</artifactId>
+            <artifactId>vaadin-dev-server</artifactId>
             <version>${flow.version}</version>
         </dependency>
         <dependency>
