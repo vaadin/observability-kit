@@ -125,6 +125,7 @@
                                 <OTEL_METRICS_EXPORTER>${otel.exporter}</OTEL_METRICS_EXPORTER>
                                 <OTEL_TRACES_EXPORTER>${otel.exporter}</OTEL_TRACES_EXPORTER>
                                 <OTEL_LOGS_EXPORTER>${otel.exporter}</OTEL_LOGS_EXPORTER>
+                                <OTEL_JAVAAGENT_DEBUG>true</OTEL_JAVAAGENT_DEBUG>
                             </env>
                         </configuration>
                     </execution>
