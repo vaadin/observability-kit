@@ -5,7 +5,6 @@ import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.dependency.NpmPackage;
 
-@NpmPackage(value = "lit", version = "")
 @NpmPackage(value = "@opentelemetry/sdk-trace-web", version = "1.8.0")
 @NpmPackage(value = "@opentelemetry/instrumentation", version = "0.35.0")
 @NpmPackage(value = "@opentelemetry/instrumentation-document-load", version = "0.31.0")
