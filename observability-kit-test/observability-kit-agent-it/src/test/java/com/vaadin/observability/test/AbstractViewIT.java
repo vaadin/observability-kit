@@ -3,8 +3,8 @@ package com.vaadin.observability.test;
 import com.vaadin.testbench.IPAddress;
 import com.vaadin.testbench.parallel.ParallelTest;
 import io.github.bonigarcia.wdm.WebDriverManager;
-import org.junit.Before;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 
 import java.io.File;
 
@@ -15,7 +15,7 @@ public abstract class AbstractViewIT extends ParallelTest {
     static String hostName;
     static boolean isHub;
 
-    @BeforeClass
+    @BeforeAll
     public static void setupClass() {
         String hubHost = System
                 .getProperty("com.vaadin.testbench.Parameters.hubHostname");
@@ -29,7 +29,7 @@ public abstract class AbstractViewIT extends ParallelTest {
         hostName = isHub ? IPAddress.findSiteLocalAddress() : "localhost";
     }
 
-    @Before
+    @BeforeEach
     public void setUp() {
         getDriver().get(getRootURL() + getTestPath());
     }
