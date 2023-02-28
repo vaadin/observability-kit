@@ -1,6 +1,7 @@
 package com.vaadin.observability.test;
 
 import com.vaadin.testbench.IPAddress;
+import com.vaadin.testbench.Parameters;
 import com.vaadin.testbench.parallel.ParallelTest;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import org.junit.jupiter.api.BeforeAll;
@@ -9,18 +10,16 @@ import org.junit.jupiter.api.BeforeEach;
 import java.io.File;
 
 public abstract class AbstractViewIT extends ParallelTest {
-    public static final int SERVER_PORT = Integer
-            .parseInt(System.getProperty("serverPort", "8080"));
+    public static final int SERVER_PORT = Integer.getInteger("serverPort", 8080);
 
     static String hostName;
     static boolean isHub;
 
     @BeforeAll
     public static void setupClass() {
-        String hubHost = System
-                .getProperty("com.vaadin.testbench.Parameters.hubHostname");
+        String hubHost = Parameters.getHubHostname();
         isHub = hubHost != null && !hubHost.isEmpty();
-        if (isHub) {
+        if (!isHub) {
             String driver = System.getProperty("webdriver.chrome.driver");
             if (driver == null || !new File(driver).exists()) {
                 WebDriverManager.chromedriver().setup();
