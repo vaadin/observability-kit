@@ -13,6 +13,7 @@ import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.metrics.v1.Metric;
 import io.opentelemetry.proto.trace.v1.Span;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockserver.integration.ClientAndServer;
@@ -51,13 +52,6 @@ public class MainViewIT extends AbstractViewIT {
 
     @BrowserTest
     public void verifyExportedTraces() {
-        try {
-            System.out.println("========================================\n\n"
-                    + Files.readString(Path.of("target/jetty-start.out"))
-                    + "\n\n=================================================");
-        } catch (Exception ex) {
-            // ignore
-        }
         await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
             var spans = extractSpansFromRequests(requests);
@@ -74,6 +68,18 @@ public class MainViewIT extends AbstractViewIT {
             assertThat(metrics).extracting(Metric::getName)
                     .contains("vaadin.ui.count");
         });
+    }
+
+    @AfterEach
+    void printJettyLog() {
+        try {
+            System.out.println("========================================\n\n"
+                    + Files.readString(Path.of("target/jetty-start.out"))
+                    + "\n\n=================================================");
+        } catch (Exception ex) {
+            // ignore
+            ex.printStackTrace();
+        }
     }
 
     private List<Span> extractSpansFromRequests(HttpRequest[] requests) {
