@@ -109,7 +109,10 @@
                         </goals>
                         <configuration>
                             <deployMode>FORK</deployMode>
-                            <jvmArgs>-javaagent:${basedir}/../../observability-kit-agent/target/observability-kit-agent-${project.version}.jar</jvmArgs>
+                            <jvmArgs>
+                                -javaagent:${basedir}/../../observability-kit-agent/target/observability-kit-agent-${project.version}.jar
+                                -Dvaadin.devmode.liveReload.enabled=false -Dvaadin.frontend.hotdeploy=false
+                            </jvmArgs>
                             <env>
                                 <OTEL_EXPORTER_OTLP_PROTOCOL>http/protobuf</OTEL_EXPORTER_OTLP_PROTOCOL>
                                 <OTEL_METRIC_EXPORT_INTERVAL>5000</OTEL_METRIC_EXPORT_INTERVAL>
