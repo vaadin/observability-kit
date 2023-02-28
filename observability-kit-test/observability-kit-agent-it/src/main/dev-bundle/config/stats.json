@@ -1,0 +1,27 @@
+{
+ "packageJsonDependencies": {
+  "@polymer/polymer": "3.5.1",
+  "@vaadin/common-frontend": "0.0.17",
+  "@vaadin/router": "1.7.4",
+  "construct-style-sheets-polyfill": "3.1.0",
+  "lit": "2.6.1"
+ },
+ "npmModules": {
+  "@lit/reactive-element": "1.6.1",
+  "@vaadin/common-frontend": "0.0.17",
+  "@vaadin/router": "1.7.4",
+  "lit-element": "3.2.2",
+  "lit-html": "2.6.1",
+  "tslib": "2.5.0"
+ },
+ "bundleImports": [
+  "@vaadin/common-frontend/ConnectionIndicator.js"
+ ],
+ "frontendHashes": {},
+ "themeJsonHashes": {},
+ "entryScripts": [
+  "VAADIN/build/indexhtml-bcce67ef.js"
+ ],
+ "webComponents": [],
+ "packageJsonHash": "955ae099228cabf33f158fa3570f8ae6521aaa7200798ac3682c2dc6be33c38b"
+}
