@@ -24,7 +24,7 @@
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-dev</artifactId>
+            <artifactId>vaadin-dev-server</artifactId>
             <version>${flow.version}</version>
         </dependency>
         <dependency>
@@ -35,7 +35,6 @@
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-testbench-core</artifactId>
-            <version>${testbench.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -47,7 +46,6 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.9.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -59,7 +57,6 @@
         <dependency>
             <groupId>org.seleniumhq.selenium</groupId>
             <artifactId>selenium-java</artifactId>
-            <version>4.8.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -153,7 +150,7 @@
                 <plugins>
                     <plugin>
                         <groupId>com.vaadin</groupId>
-                        <artifactId>vaadin-maven-plugin</artifactId>
+                        <artifactId>flow-maven-plugin</artifactId>
                         <executions>
                             <execution>
                                 <goals>
