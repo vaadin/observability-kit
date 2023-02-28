@@ -1,18 +1,21 @@
 package com.vaadin.observability.test;
 
-import com.vaadin.testbench.IPAddress;
-import com.vaadin.testbench.Parameters;
-import com.vaadin.testbench.parallel.ParallelTest;
+import java.io.File;
+
 import io.github.bonigarcia.wdm.WebDriverManager;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 
-import java.io.File;
+import com.vaadin.testbench.BrowserTestBase;
+import com.vaadin.testbench.IPAddress;
+import com.vaadin.testbench.Parameters;
 
-public abstract class AbstractViewIT extends ParallelTest {
-    public static final int SERVER_PORT = Integer.getInteger("serverPort", 8080);
+abstract class AbstractViewIT extends BrowserTestBase {
+
+    static final int SERVER_PORT = Integer.getInteger("serverPort", 8080);
 
     static String hostName;
+
     static boolean isHub;
 
     @BeforeAll

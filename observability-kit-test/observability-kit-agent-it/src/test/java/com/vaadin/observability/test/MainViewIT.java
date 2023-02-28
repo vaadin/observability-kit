@@ -1,13 +1,17 @@
 package com.vaadin.observability.test;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
 import com.google.protobuf.InvalidProtocolBufferException;
-import com.vaadin.flow.component.html.testbench.H1Element;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
 import io.opentelemetry.proto.metrics.v1.Metric;
 import io.opentelemetry.proto.trace.v1.Span;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockserver.integration.ClientAndServer;
 import org.mockserver.junit.jupiter.MockServerExtension;
@@ -15,11 +19,8 @@ import org.mockserver.junit.jupiter.MockServerSettings;
 import org.mockserver.model.Body;
 import org.mockserver.model.HttpRequest;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import com.vaadin.flow.component.html.testbench.H1Element;
+import com.vaadin.testbench.BrowserTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -46,7 +47,7 @@ public class MainViewIT extends AbstractViewIT {
         waitUntil(driver -> $(H1Element.class).exists());
     }
 
-    @Test
+    @BrowserTest
     public void verifyExportedTraces() {
         await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
@@ -56,7 +57,7 @@ public class MainViewIT extends AbstractViewIT {
         });
     }
 
-    @Test
+    @BrowserTest
     public void verifyExportedMetrics() {
         await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
