@@ -1,5 +1,7 @@
 package com.vaadin.observability.test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +51,13 @@ public class MainViewIT extends AbstractViewIT {
 
     @BrowserTest
     public void verifyExportedTraces() {
+        try {
+            System.out.println("========================================\n\n"
+                    + Files.readString(Path.of("target/jetty-start.out"))
+                    + "\n\n=================================================");
+        } catch (Exception ex) {
+            // ignore
+        }
         await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
             var spans = extractSpansFromRequests(requests);
