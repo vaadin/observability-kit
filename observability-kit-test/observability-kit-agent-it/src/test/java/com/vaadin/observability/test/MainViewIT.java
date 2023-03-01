@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -22,6 +23,7 @@ import org.mockserver.junit.jupiter.MockServerSettings;
 import org.mockserver.model.Body;
 import org.mockserver.model.HttpRequest;
 import org.openqa.selenium.By;
+import org.openqa.selenium.logging.LogEntry;
 
 import com.vaadin.flow.component.html.testbench.H1Element;
 import com.vaadin.testbench.BrowserTest;
@@ -74,14 +76,10 @@ public class MainViewIT extends AbstractViewIT {
 
     @AfterEach
     void printJettyLog() {
-        try {
-            System.out.println("========================================\n\n"
-                    + Files.readString(Path.of("target/jetty-start.out"))
-                    + "\n\n=================================================");
-        } catch (Exception ex) {
-            // ignore
-            ex.printStackTrace();
-        }
+        System.out.println("======================================== BROWSER LOGS\n\n" +
+        getLogEntries(Level.ALL).stream().map(LogEntry::getMessage).collect(Collectors.joining("\n"))
+                + "======================================== BROWSER LOGS END \n\n");
+        checkLogsForErrors();
     }
 
     private List<Span> extractSpansFromRequests(HttpRequest[] requests) {
