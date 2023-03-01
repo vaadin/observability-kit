@@ -42,7 +42,7 @@ abstract class AbstractViewIT extends BrowserTestBase
     }
 
     @BeforeEach
-    public void setUp() {
+    public void setup() {
         getDriver().get(getRootURL() + getTestPath());
     }
 
@@ -90,7 +90,7 @@ abstract class AbstractViewIT extends BrowserTestBase
         return null;
     }
 
-    WebDriver createHeadlessChromeDriver() {
+    private WebDriver createHeadlessChromeDriver() {
         for (int i = 0; i < 3; i++) {
             try {
                 return tryCreateHeadlessChromeDriver();
@@ -123,5 +123,4 @@ abstract class AbstractViewIT extends BrowserTestBase
         return ManagementFactory.getRuntimeMXBean().getInputArguments()
                 .toString().contains("jdwp");
     }
-
 }
