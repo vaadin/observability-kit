@@ -1,4 +1,5 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -14,6 +15,7 @@
     <properties>
         <failOnMissingWebXml>false</failOnMissingWebXml>
         <otel.exporter>otlp</otel.exporter>
+        <otel.debug>false</otel.debug>
     </properties>
 
     <dependencies>
@@ -24,13 +26,26 @@
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
+            <artifactId>flow-client</artifactId>
+            <version>${flow.version}</version>
+        </dependency>
+        <!--
+        <dependency>
+            <groupId>com.vaadin</groupId>
             <artifactId>vaadin-dev-server</artifactId>
             <version>${flow.version}</version>
         </dependency>
+        -->
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>flow-html-components</artifactId>
             <version>${flow.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.6</version>
+            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
@@ -84,9 +99,22 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-    
+
     <build>
         <plugins>
+            <plugin>
+                <groupId>com.vaadin</groupId>
+                <artifactId>flow-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default</id>
+                        <goals>
+                            <goal>prepare-frontend</goal>
+                            <goal>build-frontend</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.eclipse.jetty</groupId>
                 <artifactId>jetty-maven-plugin</artifactId>
@@ -104,13 +132,16 @@
                         </goals>
                         <configuration>
                             <deployMode>FORK</deployMode>
-                            <jvmArgs>-javaagent:${basedir}/../../observability-kit-agent/target/observability-kit-agent-${project.version}.jar</jvmArgs>
+                            <jvmArgs>
+                                -javaagent:${basedir}/../../observability-kit-agent/target/observability-kit-agent-${project.version}.jar
+                            </jvmArgs>
                             <env>
                                 <OTEL_EXPORTER_OTLP_PROTOCOL>http/protobuf</OTEL_EXPORTER_OTLP_PROTOCOL>
                                 <OTEL_METRIC_EXPORT_INTERVAL>5000</OTEL_METRIC_EXPORT_INTERVAL>
                                 <OTEL_METRICS_EXPORTER>${otel.exporter}</OTEL_METRICS_EXPORTER>
                                 <OTEL_TRACES_EXPORTER>${otel.exporter}</OTEL_TRACES_EXPORTER>
                                 <OTEL_LOGS_EXPORTER>${otel.exporter}</OTEL_LOGS_EXPORTER>
+                                <OTEL_JAVAAGENT_DEBUG>${otel.debug}</OTEL_JAVAAGENT_DEBUG>
                             </env>
                         </configuration>
                     </execution>
@@ -143,29 +174,5 @@
         </plugins>
     </build>
 
-    <profiles>
-        <profile>
-            <id>production</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>com.vaadin</groupId>
-                        <artifactId>flow-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <goals>
-                                    <goal>build-frontend</goal>
-                                </goals>
-                                <phase>compile</phase>
-                            </execution>
-                        </executions>
-                        <configuration>
-                            <productionMode>true</productionMode>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 
 </project>

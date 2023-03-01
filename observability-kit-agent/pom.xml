@@ -15,6 +15,12 @@
         <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
         <google.auto-service.version>1.0</google.auto-service.version>
         <byte-buddy.plugin.version>1.13.0</byte-buddy.plugin.version>
+
+        <!--
+            Create JAR at every plugin execution to avoid issues with double execution of shade plugin,
+            such as shading the shaded artifact
+        -->
+        <maven.jar.forceCreation>true</maven.jar.forceCreation>
     </properties>
 
     <dependencies>
@@ -120,6 +126,18 @@
         </resources>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!--
+                        Incremental compilation causes errors in byte-buddy-maven-plugin
+                        It seems like byte-buddy fails because it is trying to instrument
+                        and already patched class
+                    -->
+                    <useIncrementalCompilation>false</useIncrementalCompilation>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>net.bytebuddy</groupId>
                 <artifactId>byte-buddy-maven-plugin</artifactId>
                 <version>${byte-buddy.plugin.version}</version>
@@ -186,13 +204,16 @@
                                 </includes>
                             </artifactSet>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
                                     <resource>extensions/${extension.name}-${project.version}.jar</resource>
                                     <file>${project.build.directory}/${extension.name}-${project.version}.jar</file>
                                 </transformer>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <manifestEntries>
-                                        <Implementation-Version>${opentelemetry.version}~vaadin-${project.version}</Implementation-Version>
+                                        <Implementation-Version>${opentelemetry.version}~vaadin-${project.version}
+                                        </Implementation-Version>
                                     </manifestEntries>
                                 </transformer>
                             </transformers>
