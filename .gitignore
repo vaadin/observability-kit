@@ -17,3 +17,11 @@ dependency-reduced-pom.xml
 
 build/
 .gradle/
+
+generated/
+node_modules/
+package.json
+package-lock.json
+tsconfig.json
+types.d.ts
+vite.*
