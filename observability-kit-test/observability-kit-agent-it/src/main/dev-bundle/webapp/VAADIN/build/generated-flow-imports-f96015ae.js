@@ -1,0 +1,1 @@
+import"./indexhtml-bcce67ef.js";const d=function(t,n=!1){const e=document.createElement("template");e.innerHTML=t,document.head[n?"insertBefore":"appendChild"](e.content,document.head.firstChild)};export{d as addCssBlock};
