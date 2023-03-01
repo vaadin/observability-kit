@@ -1,16 +1,26 @@
 package com.vaadin.observability.test;
 
 import java.io.File;
+import java.lang.management.ManagementFactory;
 
 import io.github.bonigarcia.wdm.WebDriverManager;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeDriverService;
+import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.net.PortProber;
+import org.slf4j.LoggerFactory;
 
 import com.vaadin.testbench.BrowserTestBase;
+import com.vaadin.testbench.DriverSupplier;
 import com.vaadin.testbench.IPAddress;
 import com.vaadin.testbench.Parameters;
+import com.vaadin.testbench.TestBench;
 
-abstract class AbstractViewIT extends BrowserTestBase {
+abstract class AbstractViewIT extends BrowserTestBase
+        implements DriverSupplier {
 
     static final int SERVER_PORT = Integer.getInteger("serverPort", 8080);
 
@@ -70,4 +80,48 @@ abstract class AbstractViewIT extends BrowserTestBase {
     protected String getDeploymentHostname() {
         return hostName;
     }
+
+    @Override
+    public WebDriver createDriver() {
+        if (!isJavaInDebugMode() && !isHub) {
+            return createHeadlessChromeDriver();
+        }
+        // Let super class create driver
+        return null;
+    }
+
+    WebDriver createHeadlessChromeDriver() {
+        for (int i = 0; i < 3; i++) {
+            try {
+                return tryCreateHeadlessChromeDriver();
+            } catch (Exception e) {
+                LoggerFactory.getLogger(getClass()).warn(
+                        "Unable to create chromedriver on attempt " + i, e);
+            }
+        }
+        throw new RuntimeException(
+                "Gave up trying to create a chromedriver instance");
+    }
+
+    private static WebDriver tryCreateHeadlessChromeDriver() {
+        ChromeOptions headlessOptions = createHeadlessChromeOptions();
+
+        int port = PortProber.findFreePort();
+        ChromeDriverService service = new ChromeDriverService.Builder()
+                .usingPort(port).withSilent(true).build();
+        ChromeDriver chromeDriver = new ChromeDriver(service, headlessOptions);
+        return TestBench.createDriver(chromeDriver);
+    }
+
+    static ChromeOptions createHeadlessChromeOptions() {
+        final ChromeOptions options = new ChromeOptions();
+        options.addArguments("--headless", "--disable-gpu");
+        return options;
+    }
+
+    static boolean isJavaInDebugMode() {
+        return ManagementFactory.getRuntimeMXBean().getInputArguments()
+                .toString().contains("jdwp");
+    }
+
 }
