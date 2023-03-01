@@ -21,6 +21,7 @@ import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.junit.jupiter.MockServerSettings;
 import org.mockserver.model.Body;
 import org.mockserver.model.HttpRequest;
+import org.openqa.selenium.By;
 
 import com.vaadin.flow.component.html.testbench.H1Element;
 import com.vaadin.testbench.BrowserTest;
@@ -47,7 +48,8 @@ public class MainViewIT extends AbstractViewIT {
         this.collector.when(request()).respond(response().withStatusCode(200));
 
         // Wait for the view to be rendered
-        waitUntil(driver -> $(H1Element.class).exists());
+        waitForElementPresent(By.tagName("h1"));
+        //waitUntil(driver -> $(H1Element.class).exists());
     }
 
     @BrowserTest

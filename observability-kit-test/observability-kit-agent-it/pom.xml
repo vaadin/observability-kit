@@ -1,4 +1,5 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -95,7 +96,7 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-    
+
     <build>
         <plugins>
             <plugin>
@@ -138,6 +139,23 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>se.thinkcode.wait</groupId>
+                <artifactId>http</artifactId>
+                <version>1.2.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>wait</goal>
+                        </goals>
+                        <phase>pre-integration-test</phase>
+                        <configuration>
+                            <url>http://localhost:8080/</url>
+                            <timeout>30000</timeout>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <!-- Runs the integration tests (*IT) after the server is started -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -161,6 +179,14 @@
     <profiles>
         <profile>
             <id>production</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.vaadin</groupId>
+                    <artifactId>vaadin-dev-server</artifactId>
+                    <version>${flow.version}</version>
+                    <scope>provided</scope>
+                </dependency>
+            </dependencies>
             <build>
                 <plugins>
                     <plugin>
@@ -169,6 +195,7 @@
                         <executions>
                             <execution>
                                 <goals>
+                                    <goal>prepare-frontend</goal>
                                     <goal>build-frontend</goal>
                                 </goals>
                                 <phase>compile</phase>
