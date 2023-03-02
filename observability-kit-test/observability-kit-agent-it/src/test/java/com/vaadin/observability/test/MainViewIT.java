@@ -18,6 +18,7 @@ import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.junit.jupiter.MockServerSettings;
 import org.mockserver.model.Body;
 import org.mockserver.model.HttpRequest;
+import org.openqa.selenium.By;
 
 import com.vaadin.flow.component.html.testbench.H1Element;
 import com.vaadin.testbench.BrowserTest;
@@ -64,6 +65,17 @@ public class MainViewIT extends AbstractViewIT {
             var metrics = extractMetricsFromRequests(requests);
             assertThat(metrics).extracting(Metric::getName)
                     .contains("vaadin.ui.count");
+        });
+    }
+
+    @BrowserTest
+    public void verifyFrontendTraces() {
+        waitForElementPresent(By.tagName("vaadin-observability-client"));
+        await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
+            var requests = collector.retrieveRecordedRequests(request());
+            var spans = extractSpansFromRequests(requests);
+            assertThat(spans).extracting(Span::getName)
+                    .contains("Client: documentLoad", "Client: documentFetch");
         });
     }
 
