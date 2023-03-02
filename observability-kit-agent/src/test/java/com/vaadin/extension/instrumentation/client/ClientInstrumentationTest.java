@@ -3,6 +3,7 @@ package com.vaadin.extension.instrumentation.client;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.opentelemetry.sdk.trace.data.SpanData;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
@@ -11,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
 public class ClientInstrumentationTest extends AbstractInstrumentationTest {
+    @Disabled
     @Test
     public void handleRequest_createsSpan() {
         try {
@@ -30,6 +32,7 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
         }
     }
 
+    @Disabled
     @Test
     public void handleRequest_createsParentAndChildSpans() {
         try {

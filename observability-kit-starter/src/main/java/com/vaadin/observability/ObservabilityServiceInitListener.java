@@ -1,5 +1,7 @@
 package com.vaadin.observability;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +17,17 @@ public class ObservabilityServiceInitListener
 
     public void serviceInit(ServiceInitEvent serviceInitEvent) {
         getLogger().info("Initializing Observability Kit");
+
+        serviceInitEvent.addIndexHtmlRequestListener((response) -> {
+            Span span = Span.current();
+            SpanContext spanContext = span.getSpanContext();
+            String traceParent =
+                    "00-" + spanContext.getTraceId() + "-" + spanContext.getSpanId() + "-01";
+
+            response.getDocument().head().prependElement("meta")
+                    .attr("name", "traceparent")
+                    .attr("content", traceParent);
+        });
 
         serviceInitEvent.getSource().addUIInitListener(event -> {
             UI ui = event.getUI();
