@@ -21,6 +21,12 @@
     <dependencies>
         <dependency>
             <groupId>com.vaadin</groupId>
+            <artifactId>observability-kit-starter</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.vaadin</groupId>
             <artifactId>flow-server</artifactId>
             <version>${flow.version}</version>
         </dependency>
@@ -121,7 +127,7 @@
                         <id>start-jetty</id>
                         <phase>pre-integration-test</phase>
                         <goals>
-                            <goal>start</goal>
+                            <goal>start-war</goal>
                         </goals>
                         <configuration>
                             <deployMode>FORK</deployMode>
@@ -146,6 +152,13 @@
                         </goals>
                     </execution>
                 </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.slf4j</groupId>
+                        <artifactId>slf4j-simple</artifactId>
+                        <version>2.0.6</version>
+                    </dependency>
+                </dependencies>
             </plugin>
             <!-- Runs the integration tests (*IT) after the server is started -->
             <plugin>
