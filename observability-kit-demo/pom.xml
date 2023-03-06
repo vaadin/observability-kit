@@ -96,11 +96,6 @@
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-dev-server</artifactId>
-            <version>${flow.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.vaadin</groupId>
             <artifactId>vaadin-button-flow</artifactId>
             <version>${flow-components.version}</version>
         </dependency>
@@ -284,12 +279,6 @@
                     <maxAttempts>240</maxAttempts>
                 </configuration>
             </plugin>
-
-            <!--
-                Take care of synchronizing java dependencies and imports in
-                package.json and main.js files.
-                It also creates webpack.config.js if not exists yet.
-            -->
             <plugin>
                 <groupId>com.vaadin</groupId>
                 <artifactId>vaadin-maven-plugin</artifactId>
@@ -310,16 +299,21 @@
 
     <profiles>
         <profile>
-            <!-- Production mode is activated using -Pproduction -->
-            <id>production</id>
+            <id>development</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.vaadin</groupId>
                     <artifactId>vaadin-dev-server</artifactId>
                     <version>${flow.version}</version>
-                    <scope>provided</scope>
                 </dependency>
             </dependencies>
+        </profile>
+        <profile>
+            <!-- Production mode is activated using -Pproduction -->
+            <id>production</id>
             <build>
                 <plugins>
                     <plugin>
@@ -348,25 +342,6 @@
                                 </goals>
                                 <configuration>
                                     <mainClass>com.example.application.Application</mainClass>
-                                    <excludes>
-                                        <!--
-                                        The project does not use the platform dependency but directly adds
-                                        a reference vaadin-dev-server artifact, so it cannot be excluded by the
-                                        production profile.
-                                        Even setting scope to 'provided' will not work, as Spring boot plugin packages
-                                        also provided scope dependencies.
-                                        So we need to instruct the spring boot plugin to explicitly exclude it and its
-                                        transitive dependencies
-                                        -->
-                                        <exclude>
-                                            <groupId>com.vaadin</groupId>
-                                            <artifactId>vaadin-dev-server</artifactId>
-                                        </exclude>
-                                        <exclude>
-                                            <groupId>com.vaadin</groupId>
-                                            <artifactId>open</artifactId>
-                                        </exclude>
-                                    </excludes>
                                 </configuration>
                             </execution>
                         </executions>
