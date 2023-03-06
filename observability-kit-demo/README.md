@@ -1,6 +1,6 @@
-# Observe Appliction
+# Observability KIT demo Application
 
-Observer application is a Vaadin application with Spring Boot from start.vaadin.com
+Observability KIT demo application is a Vaadin application with Spring Boot from start.vaadin.com
 It contains features to test slowness, errors and other functionality for using the
 vaadin observability extension with OpenTelemetry javaAgent.
 
