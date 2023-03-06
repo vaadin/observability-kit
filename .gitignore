@@ -19,8 +19,6 @@ dependency-reduced-pom.xml
 build/
 .gradle/
 
-!**/dev-bundle/webapp/VAADIN/build
-
 generated/
 node_modules/
 package.json
