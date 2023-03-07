@@ -4,7 +4,7 @@ receivers:
       http:
         cors:
           allowed_origins:
-            - http://localhost:8080
+            - http://demo:8080
       grpc:
 
 processors:

@@ -55,6 +55,20 @@ services:
       - "3000:3000"
     networks:
       - o11y
+  demo:
+    image: vaadin/observability-kit-demo
+    environment:
+      - OTEL_JAVAAGENT_CONFIGURATION_FILE=/workspace/agent.properties
+      - OTEL_JAVAAGENT_DEBUG
+      - VAADIN_OFFLINE_KEY
+    volumes:
+      - ./agent.properties:/workspace/agent.properties
+    ports:
+      - "8080:8080"
+    networks:
+      - o11y
+    profiles:
+      - full
 volumes:
   prometheus:
     driver: local
@@ -62,6 +76,5 @@ volumes:
     driver: local
   tempo_data:
     driver: local
-
 networks:
   o11y:
