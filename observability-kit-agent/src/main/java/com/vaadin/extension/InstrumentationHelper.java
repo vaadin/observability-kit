@@ -21,6 +21,8 @@ import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_
 import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_STATUS_CODE;
 import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_TARGET;
 
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.instrumentation.api.instrumenter.ContextCustomizer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -65,6 +67,8 @@ public class InstrumentationHelper {
                     INSTRUMENTATION_NAME, generator)
             .setInstrumentationVersion(INSTRUMENTATION_VERSION)
             .addAttributesExtractor(attrGet)
+            .addContextCustomizer(
+                    (context, instrumentationRequest, attributes) -> context)
             .buildInstrumenter(InstrumentationRequest::getSpanKind);
 
     public static Tracer getTracer() {

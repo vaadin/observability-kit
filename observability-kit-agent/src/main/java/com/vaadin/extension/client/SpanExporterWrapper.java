@@ -1,4 +1,4 @@
-package com.vaadin.extension.instrumentation.client;
+package com.vaadin.extension.client;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -29,7 +29,7 @@ public class SpanExporterWrapper implements SpanExporter {
                     .get("scopeSpans")) {
                 JsonNode scopeNode = scopeSpanNode.get("scope");
                 for (JsonNode spanNode : scopeSpanNode.get("spans")) {
-                    SpanData spanData = new JsonNodeSpanWrapper(
+                    SpanData spanData = new JsonNodeSpanData(
                             resourceNode, scopeNode, spanNode);
                     spans.add(spanData);
                 }

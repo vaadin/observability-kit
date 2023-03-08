@@ -1,4 +1,4 @@
-package com.vaadin.extension.instrumentation.client;
+package com.vaadin.extension.client;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -20,7 +20,7 @@ import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.data.StatusData;
 
-public class JsonNodeSpanWrapper implements SpanData {
+public class JsonNodeSpanData implements SpanData {
     private final SpanContext spanContext;
     private final SpanContext parentSpanContext;
     private final Resource resource;
@@ -54,7 +54,7 @@ public class JsonNodeSpanWrapper implements SpanData {
         return attributesBuilder.build();
     }
 
-    public JsonNodeSpanWrapper(JsonNode resourceNode, JsonNode scopeNode,
+    public JsonNodeSpanData(JsonNode resourceNode, JsonNode scopeNode,
             JsonNode spanNode) {
         this.spanContext = SpanContext.create(spanNode.get("traceId").asText(),
                 spanNode.get("spanId").asText(), TraceFlags.getDefault(),

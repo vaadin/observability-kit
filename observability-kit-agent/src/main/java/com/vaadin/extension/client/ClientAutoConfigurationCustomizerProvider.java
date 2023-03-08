@@ -1,4 +1,4 @@
-package com.vaadin.extension.instrumentation.client;
+package com.vaadin.extension.client;
 
 import java.util.logging.Logger;
 
@@ -6,7 +6,6 @@ import com.google.auto.service.AutoService;
 import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizer;
 import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider;
 import io.opentelemetry.sdk.autoconfigure.spi.ConfigProperties;
-import io.opentelemetry.sdk.trace.SdkTracerProviderBuilder;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
 
 @AutoService(AutoConfigurationCustomizerProvider.class)
@@ -18,8 +17,7 @@ public class ClientAutoConfigurationCustomizerProvider
     @Override
     public void customize(AutoConfigurationCustomizer autoConfiguration) {
         autoConfiguration
-                .addSpanExporterCustomizer(this::configureSdkSpanExporter)
-                .addTracerProviderCustomizer(this::configureSdkTracerProvider);
+                .addSpanExporterCustomizer(this::configureSdkSpanExporter);
     }
 
     private SpanExporter configureSdkSpanExporter(SpanExporter exporter,
@@ -28,10 +26,5 @@ public class ClientAutoConfigurationCustomizerProvider
         SpanExporterWrapper wrapper = SpanExporterWrapper.current();
         wrapper.setWrappedExporter(exporter);
         return wrapper;
-    }
-
-    private SdkTracerProviderBuilder configureSdkTracerProvider(
-            SdkTracerProviderBuilder builder, ConfigProperties config) {
-        return builder;
     }
 }
