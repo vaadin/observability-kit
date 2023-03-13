@@ -1,9 +1,7 @@
 package com.vaadin.observability.test;
 
-import java.io.File;
 import java.lang.management.ManagementFactory;
 
-import io.github.bonigarcia.wdm.WebDriverManager;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.openqa.selenium.WebDriver;
@@ -32,12 +30,6 @@ abstract class AbstractViewIT extends BrowserTestBase
     public static void setupClass() {
         String hubHost = Parameters.getHubHostname();
         isHub = hubHost != null && !hubHost.isEmpty();
-        if (!isHub) {
-            String driver = System.getProperty("webdriver.chrome.driver");
-            if (driver == null || !new File(driver).exists()) {
-                WebDriverManager.chromedriver().setup();
-            }
-        }
         hostName = isHub ? IPAddress.findSiteLocalAddress() : "localhost";
     }
 
