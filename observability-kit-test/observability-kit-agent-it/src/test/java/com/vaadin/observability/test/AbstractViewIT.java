@@ -30,12 +30,6 @@ abstract class AbstractViewIT extends BrowserTestBase
     public static void setupClass() {
         String hubHost = Parameters.getHubHostname();
         isHub = hubHost != null && !hubHost.isEmpty();
-        /*
-         * if (!isHub) { String driver =
-         * System.getProperty("webdriver.chrome.driver"); if (driver == null ||
-         * !new File(driver).exists()) {
-         * WebDriverManager.chromedriver().setup(); } }
-         */
         hostName = isHub ? IPAddress.findSiteLocalAddress() : "localhost";
     }
 
