@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s # Default is every 1 minute.
+
+scrape_configs:
+  - job_name: 'opentelemetry'
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+    static_configs:
+      - targets: ['collector:8090'] # Port is the one configured for the OTel collector prometheus exporter
