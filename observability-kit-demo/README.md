@@ -1,21 +1,7 @@
-# Observability KIT demo Application
+# Observability Kit demo application
 
-Observability KIT demo application is a Vaadin application with Spring Boot from start.vaadin.com
-It contains features to test slowness, errors and other functionality for using the
-vaadin observability extension with OpenTelemetry javaAgent.
-
-
-# Running the application with OTel Java Agent
-
-There are default properties and a shell script to run NewRelic, Dynatrace and Jaeger+prometheus.
-Just add the correct path to the javaAgent into the shell script.
-
-[NOTE]
-NewRelic properties file needs the API key from the saas server.
-+
-Dynatrace properties need the Authorization api key generated on the saas server.
-+
-Jaeger targets default ports for jaeger and prometheus.
+This demo application is a Vaadin application from start.vaadin.com tuned to
+test slowness, errors and other issues that are detected by Observability Kit.
 
 ## Running the application
 
