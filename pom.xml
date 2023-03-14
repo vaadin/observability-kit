@@ -23,6 +23,7 @@
         <module>observability-kit-agent</module>
         <module>observability-kit-starter</module>
         <module>observability-kit-test</module>
+        <module>observability-kit-demo</module>
     </modules>
 
     <properties>
