@@ -1,10 +1,16 @@
 package com.vaadin.extension.instrumentation.client;
 
+import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.api.trace.SpanKind;
@@ -117,24 +123,104 @@ public class ClientInstrumentation implements TypeInstrumentation {
             int status = spanNode.get("status").get("code").asInt();
             span.setStatus(StatusCode.values()[status + 1]);
 
-            for (JsonNode attributeNode : spanNode.get("attributes")) {
-                if (attributeNode.get("value").has("stringValue")) {
-                    span.setAttribute(attributeNode.get("key").asText(),
-                            attributeNode.get("value").get("stringValue")
-                                    .asText());
-                } else if (attributeNode.get("value").has("intValue")) {
-                    span.setAttribute(attributeNode.get("key").asText(),
-                            attributeNode.get("value").get("intValue").asInt());
-                }
-            }
-
+            span.setAllAttributes(extractAttributes(spanNode));
             for (JsonNode eventNode : spanNode.get("events")) {
-                span.addEvent(eventNode.get("name").asText(),
+                Attributes attributes = extractAttributes(eventNode);
+                span.addEvent(eventNode.get("name").asText(), attributes,
                         eventNode.get("timeUnixNano").asLong(),
                         TimeUnit.NANOSECONDS);
             }
 
             return span;
         }
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        private static Attributes extractAttributes(JsonNode node) {
+            if (node.has("attributes")) {
+                AttributesBuilder builder = Attributes.builder();
+                for (JsonNode attributeNode : node.get("attributes")) {
+                    String key = attributeNode.get("key").asText();
+                    JsonNode valueNode = attributeNode.get("value");
+                    Map.Entry<AttributeKey, Object> entry = attributeValue(key,
+                            valueNode);
+                    if (entry != null) {
+                        builder.put(entry.getKey(), entry.getValue());
+                    }
+                }
+                return builder.build();
+            }
+            return Attributes.empty();
+        }
+
+        // https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_otlp_transformer.IAnyValue.html
+        @SuppressWarnings("rawtypes")
+        private static Map.Entry<AttributeKey, Object> attributeValue(
+                String key, JsonNode valueNode) {
+            if (valueNode.has("stringValue")) {
+                return new AbstractMap.SimpleImmutableEntry<>(
+                        AttributeKey.stringKey(key),
+                        valueNode.get("stringValue").asText());
+            } else if (valueNode.has("intValue")) {
+                return new AbstractMap.SimpleImmutableEntry<>(
+                        AttributeKey.longKey(key),
+                        valueNode.get("intValue").asLong());
+            } else if (valueNode.has("boolValue")) {
+                return new AbstractMap.SimpleImmutableEntry<>(
+                        AttributeKey.booleanKey(key),
+                        valueNode.get("boolValue").asBoolean());
+            } else if (valueNode.has("doubleValue")) {
+                return new AbstractMap.SimpleImmutableEntry<>(
+                        AttributeKey.doubleKey(key),
+                        valueNode.get("doubleValue").asDouble());
+            } else if (valueNode.has("arrayValue")) {
+
+                AttributeKey<?> attributeKey = null;
+                List<Object> values = new ArrayList<>();
+                for (JsonNode element : valueNode.get("arrayValue")
+                        .get("values")) {
+                    Map.Entry<AttributeKey, Object> entry = attributeValue(key,
+                            element);
+                    if (entry != null) {
+                        values.add(entry.getValue());
+                        if (attributeKey == null) {
+                            // As per specs, the array MUST be homogeneous,
+                            // i.e., it MUST NOT contain values of different
+                            // types.
+                            attributeKey = entry.getKey();
+                        }
+                    }
+                }
+                if (attributeKey == null) {
+                    // Rejecting empty array, as the type can't be determined
+                    return null;
+                }
+
+                switch (attributeKey.getType()) {
+                case LONG:
+                    attributeKey = AttributeKey.longArrayKey(key);
+                    break;
+                case DOUBLE:
+                    attributeKey = AttributeKey.doubleArrayKey(key);
+                    break;
+                case STRING:
+                    attributeKey = AttributeKey.stringArrayKey(key);
+                    break;
+                case BOOLEAN:
+                    attributeKey = AttributeKey.booleanArrayKey(key);
+                    break;
+                default:
+                    // Arrays can contain only primitive values
+                    attributeKey = null;
+                    break;
+                }
+                if (attributeKey == null) {
+                    return null;
+                }
+                return new AbstractMap.SimpleImmutableEntry<>(attributeKey,
+                        values);
+            }
+            return null;
+        }
+
     }
 }
