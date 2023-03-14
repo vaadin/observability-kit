@@ -31,11 +31,11 @@
                 <property>
                     <name>!release</name>
                 </property>
-            <activation>
-                <modules>
-                    <module>observability-kit-test</module>
-                    <module>observability-kit-demo</module>
-                </modules>
+            </activation>
+            <modules>
+                <module>observability-kit-test</module>
+                <module>observability-kit-demo</module>
+            </modules>
         </profile>
     </profiles>
 
