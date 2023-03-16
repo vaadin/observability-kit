@@ -22,9 +22,22 @@
     <modules>
         <module>observability-kit-agent</module>
         <module>observability-kit-starter</module>
-        <module>observability-kit-test</module>
-        <module>observability-kit-demo</module>
     </modules>
+    
+    <profiles>
+        <profile>
+            <id>test</id>
+            <activation>
+                <property>
+                    <name>!release</name>
+                </property>
+            </activation>
+            <modules>
+                <module>observability-kit-test</module>
+                <module>observability-kit-demo</module>
+            </modules>
+        </profile>
+    </profiles>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -113,7 +126,7 @@
             <dependency>
                 <groupId>com.vaadin</groupId>
                 <artifactId>license-checker</artifactId>
-                <version>1.11.2</version>
+                <version>1.12.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -223,4 +236,5 @@
             </plugin>
         </plugins>
     </build>
+
 </project>
