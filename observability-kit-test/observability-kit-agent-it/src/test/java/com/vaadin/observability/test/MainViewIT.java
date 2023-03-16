@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import com.google.protobuf.InvalidProtocolBufferException;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
 import io.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+import io.opentelemetry.proto.common.v1.KeyValue;
 import io.opentelemetry.proto.metrics.v1.Metric;
 import io.opentelemetry.proto.trace.v1.Span;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,6 +22,7 @@ import org.mockserver.model.HttpRequest;
 import org.openqa.selenium.By;
 
 import com.vaadin.flow.component.html.testbench.H1Element;
+import com.vaadin.observability.ObservabilityHandler;
 import com.vaadin.testbench.BrowserTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -76,6 +78,10 @@ public class MainViewIT extends AbstractViewIT {
             var spans = extractSpansFromRequests(requests);
             assertThat(spans).extracting(Span::getName)
                     .contains("Client: documentLoad", "Client: documentFetch");
+            assertThat(spans)
+                    .filteredOn(span -> span.getKind() == Span.SpanKind.SPAN_KIND_CLIENT)
+                    .allSatisfy(span -> assertThat(span.getAttributesList())
+                            .extracting(KeyValue::getKey).contains("vaadin.front-end.id"));
         });
     }
 
