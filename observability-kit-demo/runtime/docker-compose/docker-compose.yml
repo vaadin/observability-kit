@@ -49,6 +49,7 @@ services:
       - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
       - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
       - ./grafana/vaadin-dashboard.json:/var/lib/grafana/dashboards/vaadin-dashboard.json
+      - ./grafana/vaadin-frontend-dashboard.json:/var/lib/grafana/dashboards/vaadin-frontend-dashboard.json
     environment:
       GF_FEATURE_TOGGLES_ENABLE: "tempoApmTable"
     ports:
