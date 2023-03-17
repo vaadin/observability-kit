@@ -121,7 +121,7 @@ public class ClientInstrumentation implements TypeInstrumentation {
 
             Span span = spanBuilder.startSpan();
             int status = spanNode.get("status").get("code").asInt();
-            span.setStatus(StatusCode.values()[status + 1]);
+            span.setStatus(StatusCode.values()[status]);
 
             span.setAllAttributes(extractAttributes(spanNode));
             for (JsonNode eventNode : spanNode.get("events")) {
