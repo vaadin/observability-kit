@@ -81,7 +81,7 @@ public class MainViewIT extends AbstractViewIT {
             assertThat(spans)
                     .filteredOn(span -> span.getKind() == Span.SpanKind.SPAN_KIND_CLIENT)
                     .allSatisfy(span -> assertThat(span.getAttributesList())
-                            .extracting(KeyValue::getKey).contains("vaadin.front-end.id"));
+                            .extracting(KeyValue::getKey).contains("vaadin.frontend.id"));
         });
     }
 

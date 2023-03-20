@@ -48,7 +48,7 @@ public class ClientInstrumentation implements TypeInstrumentation {
 
     public static class MethodAdvice {
 
-        static final String FRONTEND_ID = "vaadin.front-end.id";
+        static final String FRONTEND_ID = "vaadin.frontend.id";
 
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Argument(0) JsonNode root,
