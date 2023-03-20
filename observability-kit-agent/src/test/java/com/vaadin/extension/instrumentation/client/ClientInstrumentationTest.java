@@ -73,7 +73,7 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
             assertEquals(observabilityClientId,
                     childSpan.getAttributes().get(AttributeKey.stringKey(
                             ClientInstrumentation.MethodAdvice.FRONTEND_ID)),
-                    "Missing or invalid observability client identifier on parent span attributes");
+                    "Missing or invalid observability client identifier on child span attributes");
         } catch (Exception e) {
             fail(e);
         }
