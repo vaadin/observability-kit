@@ -3,6 +3,7 @@ package com.vaadin.extension.instrumentation.client;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -33,10 +34,16 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(jsonString);
 
-            ClientInstrumentation.MethodAdvice.onEnter(root);
+            String observabilityClientId = UUID.randomUUID().toString();
+            ClientInstrumentation.MethodAdvice.onEnter(root,
+                    observabilityClientId);
 
             SpanData span = getExportedSpan(0);
             assertEquals("Client: documentLoad", span.getName());
+            assertEquals(observabilityClientId,
+                    span.getAttributes().get(AttributeKey.stringKey(
+                            ClientInstrumentation.MethodAdvice.FRONTEND_ID)),
+                    "Missing or invalid observability client identifier on span attributes");
         } catch (Exception e) {
             fail(e);
         }
@@ -52,11 +59,21 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(jsonString);
 
-            ClientInstrumentation.MethodAdvice.onEnter(root);
+            String observabilityClientId = UUID.randomUUID().toString();
+            ClientInstrumentation.MethodAdvice.onEnter(root,
+                    observabilityClientId);
 
             SpanData parentSpan = getExportedSpan(1);
             SpanData childSpan = getExportedSpan(0);
             assertEquals(parentSpan.getSpanId(), childSpan.getParentSpanId());
+            assertEquals(observabilityClientId,
+                    parentSpan.getAttributes().get(AttributeKey.stringKey(
+                            ClientInstrumentation.MethodAdvice.FRONTEND_ID)),
+                    "Missing or invalid observability client identifier on parent span attributes");
+            assertEquals(observabilityClientId,
+                    childSpan.getAttributes().get(AttributeKey.stringKey(
+                            ClientInstrumentation.MethodAdvice.FRONTEND_ID)),
+                    "Missing or invalid observability client identifier on child span attributes");
         } catch (Exception e) {
             fail(e);
         }
@@ -70,7 +87,8 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(jsonString);
 
-            ClientInstrumentation.MethodAdvice.onEnter(root);
+            ClientInstrumentation.MethodAdvice.onEnter(root,
+                    "observabilityClientId");
 
             assertEquals(0, getExportedSpanCount());
         } catch (Exception e) {
@@ -134,7 +152,8 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
         try {
             JsonNode root = mapper.readTree(jsonString);
 
-            ClientInstrumentation.MethodAdvice.onEnter(root);
+            ClientInstrumentation.MethodAdvice.onEnter(root,
+                    "observabilityClientId");
 
             SpanData span = getExportedSpan(0);
             Attributes attributes = span.getAttributes();
@@ -146,8 +165,7 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
                     attributes.get(AttributeKey.stringKey("stringAttribute")),
                     "Wrong value for key 'stringAttribute'");
 
-            assertNotNull(
-                    attributes.get(AttributeKey.longKey("intAttribute")),
+            assertNotNull(attributes.get(AttributeKey.longKey("intAttribute")),
                     "Missing attribute with key 'intAttribute'");
             assertEquals(123,
                     attributes.get(AttributeKey.longKey("intAttribute")),
@@ -265,16 +283,19 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
         try {
             JsonNode root = mapper.readTree(jsonString);
 
-            ClientInstrumentation.MethodAdvice.onEnter(root);
+            ClientInstrumentation.MethodAdvice.onEnter(root,
+                    "observabilityClientId");
 
             SpanData span = getExportedSpan(0);
             Attributes attributes = span.getAttributes();
 
             assertNotNull(
-                    attributes.get(AttributeKey.stringArrayKey("stringAttribute")),
+                    attributes.get(
+                            AttributeKey.stringArrayKey("stringAttribute")),
                     "Missing attribute with key 'stringAttribute'");
             assertEquals(List.of("text1", "text2", "text3", "text4"),
-                    attributes.get(AttributeKey.stringArrayKey("stringAttribute")),
+                    attributes.get(
+                            AttributeKey.stringArrayKey("stringAttribute")),
                     "Wrong value for key 'stringAttribute'");
 
             assertNotNull(
@@ -285,17 +306,21 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
                     "Wrong value for key 'intAttribute'");
 
             assertNotNull(
-                    attributes.get(AttributeKey.doubleArrayKey("doubleAttribute")),
+                    attributes.get(
+                            AttributeKey.doubleArrayKey("doubleAttribute")),
                     "Missing attribute with key 'doubleAttribute'");
             assertEquals(List.of(10.1, 20.2, 30.3, 40.4),
-                    attributes.get(AttributeKey.doubleArrayKey("doubleAttribute")),
+                    attributes.get(
+                            AttributeKey.doubleArrayKey("doubleAttribute")),
                     "Wrong value for key 'doubleAttribute'");
 
             assertNotNull(
-                    attributes.get(AttributeKey.booleanArrayKey("booleanAttribute")),
+                    attributes.get(
+                            AttributeKey.booleanArrayKey("booleanAttribute")),
                     "Missing attribute with key 'booleanAttribute'");
             assertEquals(List.of(true, false, true, false),
-                    attributes.get(AttributeKey.booleanArrayKey("booleanAttribute")),
+                    attributes.get(
+                            AttributeKey.booleanArrayKey("booleanAttribute")),
                     "Wrong value for key 'booleanAttribute'");
 
         } catch (Exception e) {
@@ -405,7 +430,8 @@ public class ClientInstrumentationTest extends AbstractInstrumentationTest {
         try {
             JsonNode root = mapper.readTree(jsonString);
 
-            ClientInstrumentation.MethodAdvice.onEnter(root);
+            ClientInstrumentation.MethodAdvice.onEnter(root,
+                    "observabilityClientId");
 
             SpanData span = getExportedSpan(0);
             assertEquals(1, span.getEvents().size(),
