@@ -19,6 +19,7 @@ import {
   LongTaskInstrumentation
 } from "@opentelemetry/instrumentation-long-task";
 import {OTLPTraceExporter} from "@opentelemetry/exporter-trace-otlp-http";
+import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation';
 
 @customElement('vaadin-observability-client')
 export class ObservabilityClient extends LitElement {
@@ -68,7 +69,8 @@ export class ObservabilityClient extends LitElement {
             '/?v-r=o11y',
           ]
         }),
-        new LongTaskInstrumentation()
+        new LongTaskInstrumentation(),
+        new FrontendErrorInstrumentation()
       ],
     });
   }

@@ -75,7 +75,7 @@
             "h": 19,
             "w": 24,
             "x": 0,
-            "y": 9
+            "y": 1
           },
           "id": 8,
           "options": {
@@ -244,7 +244,7 @@
             "h": 9,
             "w": 24,
             "x": 0,
-            "y": 4
+            "y": 3
           },
           "id": 4,
           "options": {
@@ -286,6 +286,88 @@
         "x": 0,
         "y": 3
       },
+      "id": 18,
+      "panels": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 4
+          },
+          "id": 20,
+          "options": {
+            "footer": {
+              "countRows": false,
+              "fields": "",
+              "reducer": [
+                "sum"
+              ],
+              "show": false
+            },
+            "showHeader": true
+          },
+          "pluginVersion": "9.4.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "limit": 20,
+              "query": "{ .component = \"frontend-error\" && status = error && name =~ \"\" }",
+              "queryType": "traceql",
+              "refId": "A"
+            }
+          ],
+          "title": "Frontend Errors",
+          "type": "table"
+        }
+      ],
+      "title": "Frontend Errors",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
       "id": 16,
       "panels": [
         {
@@ -323,7 +405,7 @@
             "h": 16,
             "w": 12,
             "x": 0,
-            "y": 1
+            "y": 20
           },
           "id": 2,
           "options": {
@@ -375,6 +457,6 @@
   "timezone": "",
   "title": "Vaadin Frontend",
   "uid": "fC_0QAaVz",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
