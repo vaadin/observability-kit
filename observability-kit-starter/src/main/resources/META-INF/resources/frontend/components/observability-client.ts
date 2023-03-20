@@ -10,7 +10,8 @@ import {
   DocumentLoadInstrumentation
 } from "@opentelemetry/instrumentation-document-load";
 import {
-  UserInteractionInstrumentation
+  UserInteractionInstrumentation,
+  EventName
 } from "@opentelemetry/instrumentation-user-interaction";
 import {
   XMLHttpRequestInstrumentation
@@ -25,6 +26,16 @@ import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation';
 export class ObservabilityClient extends LitElement {
   provider: WebTracerProvider;
   instanceId?: string;
+
+  traceDocumentLoad?: boolean;
+  traceUserInteraction?: EventName[]
+  traceXmlHTTPRequest?: boolean;
+  ignoreURLs?: string[];
+  ignoreVaadinURLs?: boolean;
+
+  traceLongTask?: boolean;
+  traceErrors?: boolean
+
   unloadInstrumentations? : () => void;
 
   constructor() {
@@ -59,6 +70,52 @@ export class ObservabilityClient extends LitElement {
       contextManager: new StackContextManager(),
     });
 
+    const instrumentations = [];
+    if (this.traceDocumentLoad) {
+      console.log("Setup DocumentLoadInstrumentation");
+      instrumentations.push(new DocumentLoadInstrumentation());
+    }
+    if (this.traceUserInteraction) {
+      console.log("Setup UserInteractionInstrumentation", this.traceUserInteraction);
+      instrumentations.push(new UserInteractionInstrumentation({
+        eventNames: [...this.traceUserInteraction]
+      }));
+    }
+    if (this.traceXmlHTTPRequest) {
+      console.log("Setup XMLHttpRequestInstrumentation", this.ignoreURLs);
+      const ignoredUrls = [];
+      if (this.ignoreVaadinURLs) {
+        ignoredUrls.push(/\/?v-r=.*/);
+        ignoredUrls.push(/\/VAADIN\/.*/);
+      } else {
+        ignoredUrls.push('/?v-r=o11y');
+      }
+      if (this.ignoreURLs) {
+        ignoredUrls.push(...this.ignoreURLs.map((url) => {
+          const match = url.match(/^RE:\/(.*)\/$/);
+          if (match) {
+            return new RegExp(match[1]);
+          }
+          return url;
+        }));
+      }
+      instrumentations.push(new XMLHttpRequestInstrumentation({
+        ignoreUrls: ignoredUrls
+      }));
+    }
+    if (this.traceLongTask) {
+      console.log("Setup LongTaskInstrumentation");
+      instrumentations.push(new LongTaskInstrumentation());
+    }
+    if (this.traceErrors) {
+      console.log("Setup FrontendErrorInstrumentation");
+      instrumentations.push(new FrontendErrorInstrumentation());
+    }
+
+    this.unloadInstrumentations = registerInstrumentations({
+      instrumentations: instrumentations
+    })
+    /*
     //Registering instrumentations
     this.unloadInstrumentations = registerInstrumentations({
       instrumentations: [
@@ -73,6 +130,7 @@ export class ObservabilityClient extends LitElement {
         new FrontendErrorInstrumentation()
       ],
     });
+     */
   }
 
   disconnectedCallback() {

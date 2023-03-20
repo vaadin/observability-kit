@@ -74,8 +74,8 @@ public class ObservabilityServiceInitListenerTest {
         verify(service).addUIInitListener(any());
 
         UI ui = mock(UI.class);
-        ObservabilityClient client1 = new ObservabilityClient();
-        ObservabilityClient client2 = new ObservabilityClient();
+        ObservabilityClient client1 = new ObservabilityClient("X");
+        ObservabilityClient client2 = new ObservabilityClient("Y");
         when(ui.getChildren()).thenReturn(Stream.of(client1, client2));
         VaadinSession session = mock(VaadinSession.class);
         when(ui.getSession()).thenReturn(session);
