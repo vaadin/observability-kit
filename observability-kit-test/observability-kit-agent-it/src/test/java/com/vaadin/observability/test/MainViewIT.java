@@ -22,7 +22,7 @@ import org.mockserver.model.HttpRequest;
 import org.openqa.selenium.By;
 
 import com.vaadin.flow.component.html.testbench.H1Element;
-import com.vaadin.observability.ObservabilityHandler;
+import com.vaadin.flow.component.html.testbench.NativeButtonElement;
 import com.vaadin.testbench.BrowserTest;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,6 +82,18 @@ public class MainViewIT extends AbstractViewIT {
                     .filteredOn(span -> span.getKind() == Span.SpanKind.SPAN_KIND_CLIENT)
                     .allSatisfy(span -> assertThat(span.getAttributesList())
                             .extracting(KeyValue::getKey).contains("vaadin.front-end.id"));
+        });
+    }
+
+    @BrowserTest
+    public void verifyBrowserErrorTraces() {
+        waitForElementPresent(By.tagName("vaadin-observability-client"));
+        $(NativeButtonElement.class).id("clientSideError").click();
+        await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
+            var requests = collector.retrieveRecordedRequests(request());
+            var spans = extractSpansFromRequests(requests);
+            assertThat(spans).extracting(Span::getName).contains(
+                    "Client: windowError", "Client: unhandledRejection");
         });
     }
 

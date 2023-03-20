@@ -6,13 +6,18 @@ export class ProblematicComponent extends LitElement {
 
     render() {
         return html`
-            <button @click="${this._throwError}">Throw error</button>
+            <button @click="${this._throwError}">Raise client error</button>
+            <button @click="${this._unhandleRejection}">Unhandled rejection error</button>
             <button @click="${this._slowTask}">Slow task</button>
         `;
     }
 
     _throwError() {
         throw new Error('A client side error');
+    }
+
+    _unhandleRejection() {
+        Promise.reject(new Error("Promise rejected"));
     }
 
     _slowTask() {

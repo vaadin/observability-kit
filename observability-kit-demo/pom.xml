@@ -362,8 +362,8 @@
                         <artifactId>spring-boot-maven-plugin</artifactId>
                         <configuration>
                             <jvmArguments>
-                                -javaagent:${observability-kit.agent.jar}
-                                -Dotel.javaagent.configuration-file=${agent.config}
+                                -javaagent:"${observability-kit.agent.jar}"
+                                -Dotel.javaagent.configuration-file="${agent.config}"
                                 ${spring-boot.jvmArguments}
                             </jvmArguments>
                         </configuration>
