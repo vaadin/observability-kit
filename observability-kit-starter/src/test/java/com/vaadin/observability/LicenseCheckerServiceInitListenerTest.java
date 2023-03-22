@@ -23,7 +23,7 @@ import com.vaadin.flow.server.VaadinService;
 import com.vaadin.pro.licensechecker.BuildType;
 import com.vaadin.pro.licensechecker.LicenseChecker;
 
-import static com.vaadin.observability.ObservabilityServiceInitListener.loadAllProperties;
+import static com.vaadin.observability.LicenseCheckerServiceInitListener.loadAllProperties;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.text.MatchesPattern.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -53,21 +53,21 @@ class LicenseCheckerServiceInitListenerTest {
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(false);
 
-        final var properties = loadAllProperties(ObservabilityServiceInitListener.PROPERTIES_RESOURCE);
+        final var properties = loadAllProperties(LicenseCheckerServiceInitListener.PROPERTIES_RESOURCE);
 
         final var version = properties.getProperty(
-                ObservabilityServiceInitListener.VERSION_PROPERTY);
+                LicenseCheckerServiceInitListener.VERSION_PROPERTY);
 
         // Assert version is in X.Y format
         assertThat(version, matchesPattern("^\\d\\.\\d.*"));
 
-        final var listener = new ObservabilityServiceInitListener();
+        final var listener = new LicenseCheckerServiceInitListener();
         listener.serviceInit(new ServiceInitEvent(service));
 
         // Verify the license is checked
         BuildType buildType = null;
         licenseChecker.verify(() -> LicenseChecker.checkLicense(
-                ObservabilityServiceInitListener.PRODUCT_NAME, version,
+                LicenseCheckerServiceInitListener.PRODUCT_NAME, version,
                 buildType));
     }
 
@@ -76,7 +76,7 @@ class LicenseCheckerServiceInitListenerTest {
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(true);
 
-        final var listener = new ObservabilityServiceInitListener();
+        final var listener = new LicenseCheckerServiceInitListener();
         listener.serviceInit(new ServiceInitEvent(service));
 
         licenseChecker.verifyNoInteractions();
@@ -85,7 +85,7 @@ class LicenseCheckerServiceInitListenerTest {
     @Test
     public void serviceInit_throwsError_whenPropertiesLoadFails() {
         assertThrows(ExceptionInInitializerError.class, () -> {
-            ObservabilityServiceInitListener.loadAllProperties("non-existent");
+            LicenseCheckerServiceInitListener.loadAllProperties("non-existent");
         });
     }
 }

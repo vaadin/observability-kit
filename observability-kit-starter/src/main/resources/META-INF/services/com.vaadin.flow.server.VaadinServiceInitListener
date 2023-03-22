@@ -1,1 +1,2 @@
 com.vaadin.observability.ObservabilityServiceInitListener
+com.vaadin.observability.LicenseCheckerServiceInitListener
