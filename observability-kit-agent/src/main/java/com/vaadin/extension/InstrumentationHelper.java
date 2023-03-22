@@ -47,8 +47,6 @@ import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.Enumeration;
@@ -77,10 +75,9 @@ public class InstrumentationHelper {
 
     private static final TextMapGetter<HttpServletRequest> REQUEST_GETTER =
             new TextMapGetter<>() {
-                @Nullable
                 @Override
-                public String get(@Nullable HttpServletRequest carrier,
-                        @NotNull String key) {
+                public String get(HttpServletRequest carrier,
+                        String key) {
                     if (carrier == null) {
                         return null;
                     }

@@ -15,8 +15,6 @@ import io.opentelemetry.instrumentation.api.instrumenter.AttributesExtractor;
 
 import java.util.Map;
 
-import jakarta.annotation.Nullable;
-
 public class SpanAttributeGenerator
         implements AttributesExtractor<InstrumentationRequest, Object> {
 
@@ -31,8 +29,8 @@ public class SpanAttributeGenerator
 
     @Override
     public void onEnd(AttributesBuilder attributes, Context context,
-            InstrumentationRequest vaadinRequest, @Nullable Object unused,
-            @Nullable Throwable error) {
+            InstrumentationRequest vaadinRequest, Object unused,
+            Throwable error) {
 
     }
 }

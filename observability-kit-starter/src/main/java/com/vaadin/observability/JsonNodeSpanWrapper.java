@@ -1,3 +1,12 @@
+/*-
+ * Copyright (C) 2022 Vaadin Ltd
+ *
+ * This program is available under Vaadin Commercial License and Service Terms.
+ *
+ *
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
+ */
 package com.vaadin.observability;
 
 import java.util.AbstractMap;
@@ -24,6 +33,8 @@ import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.data.StatusData;
 
 public class JsonNodeSpanWrapper implements SpanData {
+    private static final String FRONTEND_ID = "vaadin.frontend.id";
+
     private final SpanContext spanContext;
     private final SpanContext parentSpanContext;
     private final Resource resource;
@@ -39,9 +50,9 @@ public class JsonNodeSpanWrapper implements SpanData {
     private final StatusData status;
 
     @SuppressWarnings({"rawtypes", "unchecked"})
-    public static Attributes getAttributes(JsonNode node) {
+    public static AttributesBuilder getAttributes(JsonNode node) {
+        AttributesBuilder builder = Attributes.builder();
         if (node.has("attributes")) {
-            AttributesBuilder builder = Attributes.builder();
             for (JsonNode attributeNode : node.get("attributes")) {
                 String key = attributeNode.get("key").asText();
                 JsonNode valueNode = attributeNode.get("value");
@@ -51,9 +62,8 @@ public class JsonNodeSpanWrapper implements SpanData {
                     builder.put(entry.getKey(), entry.getValue());
                 }
             }
-            return builder.build();
         }
-        return Attributes.empty();
+        return builder;
     }
 
     // https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_otlp_transformer.IAnyValue.html
@@ -126,8 +136,8 @@ public class JsonNodeSpanWrapper implements SpanData {
         return null;
     }
 
-    public JsonNodeSpanWrapper(JsonNode resourceNode, JsonNode scopeNode,
-            JsonNode spanNode) {
+    public JsonNodeSpanWrapper(String frontendId, JsonNode resourceNode,
+            JsonNode scopeNode, JsonNode spanNode) {
         this.spanContext = SpanContext.create(spanNode.get("traceId").asText(),
                 spanNode.get("spanId").asText(), TraceFlags.getDefault(),
                 TraceState.getDefault());
@@ -140,21 +150,9 @@ public class JsonNodeSpanWrapper implements SpanData {
                 TraceState.getDefault());
 
         ResourceBuilder resourceBuilder = Resource.builder();
-        for (JsonNode attributeNode : resourceNode.get("attributes")) {
-            String key = attributeNode.get("key").asText();
-            JsonNode valueNode = attributeNode.get("value");
-            if (valueNode.has("stringValue")) {
-                resourceBuilder.put(key,
-                        valueNode.get("stringValue").asText());
-            } else if (valueNode.has("intValue")) {
-                resourceBuilder.put(key,
-                        valueNode.get("intValue").asInt());
-            } else if (valueNode.has("longValue")) {
-                resourceBuilder.put(key,
-                        valueNode.get("longValue").asLong());
-            }
-        }
-        this.resource = resourceBuilder.build();
+        this.resource = resourceBuilder
+                .putAll(getAttributes(resourceNode).build())
+                .build();
 
         this.instrumentationLibraryInfo =
                 InstrumentationLibraryInfo.create(
@@ -170,14 +168,17 @@ public class JsonNodeSpanWrapper implements SpanData {
         this.startEpochNanos = spanNode.get("startTimeUnixNano").asLong();
         this.endEpochNanos = spanNode.get("endTimeUnixNano").asLong();
 
-        this.attributes = getAttributes(spanNode);
+        AttributesBuilder attributesBuilder = getAttributes(spanNode);
+        this.attributes = attributesBuilder
+                .put(FRONTEND_ID, frontendId)
+                .build();
 
         this.events = new ArrayList<>();
         for (JsonNode eventNode : spanNode.get("events")) {
             EventData eventData = EventData.create(
                     eventNode.get("timeUnixNano").asLong(),
                     eventNode.get("name").asText(),
-                    getAttributes(eventNode));
+                    getAttributes(eventNode).build());
             events.add(eventData);
         }
 

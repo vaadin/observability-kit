@@ -1,3 +1,12 @@
+/*-
+ * Copyright (C) 2022 Vaadin Ltd
+ *
+ * This program is available under Vaadin Commercial License and Service Terms.
+ *
+ *
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
+ */
 package com.vaadin.observability;
 
 import java.io.IOException;
@@ -209,8 +218,8 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
                     .get("scopeSpans")) {
                 JsonNode scopeNode = scopeSpanNode.get("scope");
                 for (JsonNode spanNode : scopeSpanNode.get("spans")) {
-                    spans.add(new JsonNodeSpanWrapper(resourceNode, scopeNode,
-                            spanNode));
+                    spans.add(new JsonNodeSpanWrapper(id, resourceNode,
+                            scopeNode, spanNode));
                 }
             }
         }
