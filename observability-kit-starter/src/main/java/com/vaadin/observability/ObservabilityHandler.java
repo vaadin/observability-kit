@@ -1,10 +1,25 @@
 package com.vaadin.observability;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.opentelemetry.exporter.jaeger.JaegerGrpcSpanExporter;
+import io.opentelemetry.exporter.logging.LoggingSpanExporter;
+import io.opentelemetry.exporter.logging.otlp.OtlpJsonLoggingSpanExporter;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporterBuilder;
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporter;
+import io.opentelemetry.exporter.otlp.trace.OtlpGrpcSpanExporterBuilder;
+import io.opentelemetry.javaagent.bootstrap.internal.InstrumentationConfig;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SpanExporter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +53,8 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
             return observabilityHandler;
         }
 
-        ObservabilityHandler newObservabilityHandler = new ObservabilityHandler();
+        ObservabilityHandler newObservabilityHandler =
+                new ObservabilityHandler();
 
         VaadinSession session = ui.getSession();
         session.addRequestHandler(newObservabilityHandler);
@@ -63,6 +79,78 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
             }
         });
         return newObservabilityHandler;
+    }
+
+    private final InstrumentationConfig config;
+    private SpanExporter exporter = null;
+
+    public ObservabilityHandler() {
+        this.config = InstrumentationConfig.get();
+        String exporterType = config.getString("otel.traces.exporter", "otlp");
+        if ("logging".equals(exporterType)) {
+            this.exporter = LoggingSpanExporter.create();
+        } else if ("logging-otlp".equals(exporterType)) {
+            this.exporter = OtlpJsonLoggingSpanExporter.create();
+        } else if ("otlp".equals(exporterType)) {
+
+            String protocol = config.getString(
+                    "otel.exporter.otlp.traces.protocol",
+                    config.getString(
+                            "otel.exporter.otlp.protocol",
+                            "grpc"
+                    ));
+            String endpoint = config.getString(
+                    "otel.exporter.otlp.traces.endpoint",
+                    config.getString(
+                            "otel.exporter.otlp.endpoint",
+                            "http://localhost:4317"
+                    )
+            );
+            if ("http/protobuf".equals(protocol)) {
+                OtlpHttpSpanExporterBuilder builder =
+                        OtlpHttpSpanExporter.builder()
+                                .setEndpoint(endpoint);
+
+                Map<String, String> headers = config.getMap(
+                        "otel.exporter.otlp.trace.headers",
+                        config.getMap(
+                                "otel.exporter.otlp.headers",
+                                Collections.emptyMap()
+                        )
+                );
+                headers.forEach(builder::addHeader);
+
+                this.exporter = builder.build();
+            } else if ("grpc".equals(protocol)) {
+                OtlpGrpcSpanExporterBuilder builder =
+                        OtlpGrpcSpanExporter.builder()
+                                .setEndpoint(endpoint);
+
+                Map<String, String> headers = config.getMap(
+                        "otel.exporter.otlp.trace.headers",
+                        config.getMap(
+                                "otel.exporter.otlp.headers",
+                                Collections.emptyMap()
+                        )
+                );
+                headers.forEach(builder::addHeader);
+
+                this.exporter = builder.build();
+            }
+        } else if ("jaeger".equals(exporterType)) {
+            String endpoint = config.getString(
+                    "otel.exporter.jaeger.endpoint",
+                    "http://localhost:14250"
+            );
+            long timeout = config.getLong(
+                    "otel.exporter.jaeger.timeout",
+                    10000L
+            );
+            this.exporter = JaegerGrpcSpanExporter.builder()
+                    .setEndpoint(endpoint)
+                    .setTimeout(timeout, TimeUnit.MILLISECONDS)
+                    .build();
+        }
     }
 
     @Override
@@ -98,7 +186,7 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
                 return true;
             }
 
-            handleTraces(root);
+            export(root);
 
             response.setStatus(HttpServletResponse.SC_OK);
         } catch (IOException e) {
@@ -109,11 +197,31 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
         return true;
     }
 
+    private void export(JsonNode root) {
+        if (exporter == null) {
+            return;
+        }
+
+        Collection<SpanData> spans = new ArrayList<>();
+        for (JsonNode resourceSpanNode : root.get("resourceSpans")) {
+            JsonNode resourceNode = resourceSpanNode.get("resource");
+            for (JsonNode scopeSpanNode : resourceSpanNode
+                    .get("scopeSpans")) {
+                JsonNode scopeNode = scopeSpanNode.get("scope");
+                for (JsonNode spanNode : scopeSpanNode.get("spans")) {
+                    spans.add(new JsonNodeSpanWrapper(resourceNode, scopeNode,
+                            spanNode));
+                }
+            }
+        }
+        exporter.export(spans);
+    }
+
     public String getId() {
         return id;
     }
 
-    private void handleTraces(JsonNode root) {
-        // Dummy method for the agent to hook onto
+    public String getConfigProperty(String key) {
+        return config.getString(key);
     }
 }

@@ -41,6 +41,10 @@ public class ObservabilityServiceInitListener
 
             ObservabilityClient client = new ObservabilityClient();
             client.getElement().setProperty("instanceId", handler.getId());
+            client.getElement().setProperty("serviceName",
+                    handler.getConfigProperty("otel.service.name"));
+            client.getElement().setProperty("serviceVersion",
+                    handler.getConfigProperty("otel.service.version"));
             ui.add(client);
         });
     }

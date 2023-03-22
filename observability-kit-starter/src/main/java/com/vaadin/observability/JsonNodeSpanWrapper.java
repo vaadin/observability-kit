@@ -1,10 +1,13 @@
-package com.vaadin.extension.client;
+package com.vaadin.observability;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
 import io.opentelemetry.api.trace.SpanContext;
@@ -20,7 +23,7 @@ import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.data.StatusData;
 
-public class JsonNodeSpanData implements SpanData {
+public class JsonNodeSpanWrapper implements SpanData {
     private final SpanContext spanContext;
     private final SpanContext parentSpanContext;
     private final Resource resource;
@@ -35,36 +38,106 @@ public class JsonNodeSpanData implements SpanData {
     private final List<LinkData> links;
     private final StatusData status;
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public static Attributes getAttributes(JsonNode node) {
-        AttributesBuilder attributesBuilder = Attributes.builder();
-        for (JsonNode attributeNode : node.get("attributes")) {
-            String key = attributeNode.get("key").asText();
-            JsonNode valueNode = attributeNode.get("value");
-            if (valueNode.has("stringValue")) {
-                attributesBuilder.put(key,
-                        valueNode.get("stringValue").asText());
-            } else if (valueNode.has("intValue")) {
-                attributesBuilder.put(key,
-                        valueNode.get("intValue").asInt());
-            } else if (valueNode.has("longValue")) {
-                attributesBuilder.put(key,
-                        valueNode.get("longValue").asLong());
+        if (node.has("attributes")) {
+            AttributesBuilder builder = Attributes.builder();
+            for (JsonNode attributeNode : node.get("attributes")) {
+                String key = attributeNode.get("key").asText();
+                JsonNode valueNode = attributeNode.get("value");
+                Map.Entry<AttributeKey, Object> entry = attributeValue(key,
+                        valueNode);
+                if (entry != null) {
+                    builder.put(entry.getKey(), entry.getValue());
+                }
             }
+            return builder.build();
         }
-        return attributesBuilder.build();
+        return Attributes.empty();
     }
 
-    public JsonNodeSpanData(JsonNode resourceNode, JsonNode scopeNode,
+    // https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_otlp_transformer.IAnyValue.html
+    @SuppressWarnings("rawtypes")
+    private static Map.Entry<AttributeKey, Object> attributeValue(
+            String key, JsonNode valueNode) {
+        if (valueNode.has("stringValue")) {
+            return new AbstractMap.SimpleImmutableEntry<>(
+                    AttributeKey.stringKey(key),
+                    valueNode.get("stringValue").asText());
+        } else if (valueNode.has("intValue")) {
+            return new AbstractMap.SimpleImmutableEntry<>(
+                    AttributeKey.longKey(key),
+                    valueNode.get("intValue").asLong());
+        } else if (valueNode.has("boolValue")) {
+            return new AbstractMap.SimpleImmutableEntry<>(
+                    AttributeKey.booleanKey(key),
+                    valueNode.get("boolValue").asBoolean());
+        } else if (valueNode.has("doubleValue")) {
+            return new AbstractMap.SimpleImmutableEntry<>(
+                    AttributeKey.doubleKey(key),
+                    valueNode.get("doubleValue").asDouble());
+        } else if (valueNode.has("arrayValue")) {
+
+            AttributeKey<?> attributeKey = null;
+            List<Object> values = new ArrayList<>();
+            for (JsonNode element : valueNode.get("arrayValue")
+                    .get("values")) {
+                Map.Entry<AttributeKey, Object> entry = attributeValue(key,
+                        element);
+                if (entry != null) {
+                    values.add(entry.getValue());
+                    if (attributeKey == null) {
+                        // As per specs, the array MUST be homogeneous,
+                        // i.e., it MUST NOT contain values of different
+                        // types.
+                        attributeKey = entry.getKey();
+                    }
+                }
+            }
+            if (attributeKey == null) {
+                // Rejecting empty array, as the type can't be determined
+                return null;
+            }
+
+            switch (attributeKey.getType()) {
+            case LONG:
+                attributeKey = AttributeKey.longArrayKey(key);
+                break;
+            case DOUBLE:
+                attributeKey = AttributeKey.doubleArrayKey(key);
+                break;
+            case STRING:
+                attributeKey = AttributeKey.stringArrayKey(key);
+                break;
+            case BOOLEAN:
+                attributeKey = AttributeKey.booleanArrayKey(key);
+                break;
+            default:
+                // Arrays can contain only primitive values
+                attributeKey = null;
+                break;
+            }
+            if (attributeKey == null) {
+                return null;
+            }
+            return new AbstractMap.SimpleImmutableEntry<>(attributeKey,
+                    values);
+        }
+        return null;
+    }
+
+    public JsonNodeSpanWrapper(JsonNode resourceNode, JsonNode scopeNode,
             JsonNode spanNode) {
         this.spanContext = SpanContext.create(spanNode.get("traceId").asText(),
                 spanNode.get("spanId").asText(), TraceFlags.getDefault(),
                 TraceState.getDefault());
 
-        this.parentSpanContext = spanNode.has("parentSpanId") ?
-                SpanContext.create(spanNode.get("traceId").asText(),
-                    spanNode.get("parentSpanId").asText(),
-                    TraceFlags.getDefault(),
-                    TraceState.getDefault()) : null;
+        this.parentSpanContext = SpanContext.create(
+                spanNode.get("traceId").asText(),
+                spanNode.has("parentSpanId") ?
+                        spanNode.get("parentSpanId").asText() : null,
+                TraceFlags.getDefault(),
+                TraceState.getDefault());
 
         ResourceBuilder resourceBuilder = Resource.builder();
         for (JsonNode attributeNode : resourceNode.get("attributes")) {
@@ -92,7 +165,7 @@ public class JsonNodeSpanData implements SpanData {
                 scopeNode.get("name").asText(),
                 scopeNode.get("version").asText(), null);
 
-        this.name = spanNode.get("name").asText();
+        this.name = "Frontend: " + spanNode.get("name").asText();
         this.kind = SpanKind.values()[spanNode.get("kind").asInt() + 1];
         this.startEpochNanos = spanNode.get("startTimeUnixNano").asLong();
         this.endEpochNanos = spanNode.get("endTimeUnixNano").asLong();
@@ -131,7 +204,7 @@ public class JsonNodeSpanData implements SpanData {
 
     @Override
     @Deprecated
-    public io.opentelemetry.sdk.common.InstrumentationLibraryInfo getInstrumentationLibraryInfo() {
+    public InstrumentationLibraryInfo getInstrumentationLibraryInfo() {
         return instrumentationLibraryInfo;
     }
 

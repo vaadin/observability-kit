@@ -21,8 +21,7 @@ import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_
 import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_STATUS_CODE;
 import static io.opentelemetry.semconv.trace.attributes.SemanticAttributes.HTTP_TARGET;
 
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.instrumentation.api.instrumenter.ContextCustomizer;
+import io.opentelemetry.context.propagation.TextMapGetter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -48,12 +47,17 @@ import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
 import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
 import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
+import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public class InstrumentationHelper {
     public static final String INSTRUMENTATION_NAME = "com.vaadin.observability.instrumentation";
@@ -70,6 +74,44 @@ public class InstrumentationHelper {
             .addContextCustomizer(
                     (context, instrumentationRequest, attributes) -> context)
             .buildInstrumenter(InstrumentationRequest::getSpanKind);
+
+    private static final TextMapGetter<HttpServletRequest> REQUEST_GETTER =
+            new TextMapGetter<>() {
+                @Nullable
+                @Override
+                public String get(@Nullable HttpServletRequest carrier,
+                        @NotNull String key) {
+                    if (carrier == null) {
+                        return null;
+                    }
+
+                    Enumeration<String> headerNames = carrier.getHeaderNames();
+                    if (headerNames == null) {
+                        return null;
+                    }
+
+                    while (headerNames.hasMoreElements()) {
+                        String headerName = headerNames.nextElement();
+                        if (headerName.equals(key)) {
+                            return carrier.getHeader(headerName);
+                        }
+                    }
+
+                    return null;
+                }
+
+                @Override
+                public Iterable<String> keys(HttpServletRequest carrier) {
+                    Set<String> set = new HashSet<>();
+                    Enumeration<String> headerNames = carrier.getHeaderNames();
+                    if (headerNames != null) {
+                        while (headerNames.hasMoreElements()) {
+                            set.add(headerNames.nextElement());
+                        }
+                    }
+                    return set;
+                }
+            };
 
     public static Tracer getTracer() {
         return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME,
@@ -165,7 +207,13 @@ public class InstrumentationHelper {
         InstrumentationRequest request = new InstrumentationRequest(
                 rootSpanName, SpanKind.SERVER, spanMap);
 
-        return INSTRUMENTER.start(Context.current(), request);
+        Context context = Context.current();
+        if (servletRequest.getHeader("traceparent") != null) {
+            context = GlobalOpenTelemetry.get().getPropagators()
+                    .getTextMapPropagator().extract(context, servletRequest,
+                            REQUEST_GETTER);
+        }
+        return INSTRUMENTER.start(context, request);
     }
 
     /**

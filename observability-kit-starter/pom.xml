@@ -45,6 +45,11 @@
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-sdk</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.javaagent</groupId>
+            <artifactId>opentelemetry-javaagent-tooling</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
