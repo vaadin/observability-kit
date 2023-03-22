@@ -16,6 +16,7 @@
         <failOnMissingWebXml>false</failOnMissingWebXml>
         <otel.exporter>otlp</otel.exporter>
         <otel.debug>false</otel.debug>
+        <mockserver.logLevel>WARN</mockserver.logLevel>
     </properties>
 
     <dependencies>
@@ -182,6 +183,9 @@
                         <configuration>
                             <trimStackTrace>false</trimStackTrace>
                             <enableAssertions>true</enableAssertions>
+                            <systemPropertyVariables>
+                                <mockserver.logLevel>${mockserver.logLevel}</mockserver.logLevel>
+                            </systemPropertyVariables>
                         </configuration>
                     </plugin>
                 </plugins>
