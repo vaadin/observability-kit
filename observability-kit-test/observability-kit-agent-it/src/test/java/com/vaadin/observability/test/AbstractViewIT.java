@@ -4,6 +4,8 @@ import java.lang.management.ManagementFactory;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -17,6 +19,7 @@ import com.vaadin.testbench.IPAddress;
 import com.vaadin.testbench.Parameters;
 import com.vaadin.testbench.TestBench;
 
+@Execution(ExecutionMode.SAME_THREAD)
 abstract class AbstractViewIT extends BrowserTestBase
         implements DriverSupplier {
 

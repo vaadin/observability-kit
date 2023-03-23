@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -29,87 +30,135 @@ import elemental.json.JsonValue;
 class ObservabilityClient extends Component
         implements ObservabilityClientConfiguration {
 
-    boolean active = true;
+    boolean enabled = true;
 
     public ObservabilityClient(String identifier) {
         getElement().setProperty("instanceId",
                 Objects.requireNonNull(identifier));
         // defaults
-        traceDocumentLoad(true);
-        traceXMLHttpRequests(true);
-        traceLongTask(true);
-        traceErrors(true);
-        traceUserInteraction(true);
+        setDocumentLoadEnabled(true);
+        setXMLHttpRequestEnabled(true);
+        setLongTaskEnabled(true);
+        setFrontendErrorEnabled(true);
+        setUserInteractionEnabled(true);
     }
 
     @Override
-    public void active(boolean active) {
-        this.active = active;
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
 
     @Override
-    public void traceDocumentLoad(boolean active) {
-        getElement().setProperty("traceDocumentLoad", active);
+    public boolean isEnabled() {
+        return enabled;
     }
 
     @Override
-    public void traceUserInteraction(boolean active) {
-        if (active) {
-            getElement().setPropertyList("traceUserInteraction",
-                    Collections.singletonList("click"));
-        } else {
+    public void setDocumentLoadEnabled(boolean enabled) {
+        getElement().setProperty("traceDocumentLoad", enabled);
+    }
+
+    @Override
+    public boolean isDocumentLoadEnabled() {
+        return getElement().getProperty("traceDocumentLoad", false);
+    }
+
+    @Override
+    public void setUserInteractionEnabled(boolean enabled) {
+        if (!enabled) {
             getElement().removeProperty("traceUserInteraction");
+        } else if (!isUserInteractionEnabled()) {
+            setUserInteractionEvents("click");
         }
     }
 
     @Override
-    public void traceUserInteraction(Set<String> events) {
-        getElement().setPropertyList("traceUserInteraction",
-                new ArrayList<>(events));
+    public boolean isUserInteractionEnabled() {
+        return getElement().hasProperty("traceUserInteraction");
     }
 
     @Override
-    public void traceLongTask(boolean active) {
-        getElement().setProperty("traceLongTask", active);
-    }
-
-    @Override
-    public void traceXMLHttpRequests(boolean active) {
-        getElement().setProperty("traceXmlHTTPRequest", active);
-    }
-
-    @Override
-    public void ignoreVaadinUrls(boolean active) {
-        getElement().setProperty("ignoreVaadinURLs", active);
-    }
-
-    @Override
-    public void ignoreUrls(Collection<String> urls) {
-        appendIgnoredUrls(urls);
-    }
-
-    @Override
-    public void ignoreUrlsByPattern(Collection<String> urlRegex) {
-        appendIgnoredUrls(urlRegex.stream().map(re -> "RE:/" + re + "/")
-                .collect(Collectors.toSet()));
-
-    }
-
-    private void appendIgnoredUrls(Collection<String> urls) {
-        Set<String> ignoredUrls = new LinkedHashSet<>();
-        if (getElement().hasProperty("ignoredURLs")) {
-            JsonUtils.stream(
-                    (JsonArray) getElement().getPropertyRaw("ignoredURLs"))
-                    .map(JsonValue::asString).forEach(ignoredUrls::add);
+    public void setUserInteractionEvents(Collection<String> events) {
+        if (events.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "At least one event must be configured for UserInteraction instrumentation");
         }
-        ignoredUrls.addAll(urls);
+        ArrayList<String> copy = new ArrayList<>(events);
+        copy.removeIf(Objects::isNull);
+        getElement().setPropertyList("traceUserInteraction", copy);
+    }
+
+    @Override
+    public Set<String> getUserInteractionEvents() {
+        return JsonUtils.stream(
+                (JsonArray) getElement().getPropertyRaw("traceUserInteraction"))
+                .map(JsonValue::asString).collect(Collectors.toSet());
+    }
+
+    @Override
+    public void setLongTaskEnabled(boolean enabled) {
+        getElement().setProperty("traceLongTask", enabled);
+    }
+
+    @Override
+    public boolean isLongTaskEnabled() {
+        return getElement().getProperty("traceLongTask", false);
+    }
+
+    @Override
+    public void setXMLHttpRequestEnabled(boolean enabled) {
+        getElement().setProperty("traceXmlHTTPRequest", enabled);
+    }
+
+    @Override
+    public boolean isXMLHttpRequestEnabled() {
+        return getElement().getProperty("traceXmlHTTPRequest", false);
+    }
+
+    @Override
+    public void ignoreVaadinURLs(boolean ignore) {
+        getElement().setProperty("ignoreVaadinURLs", ignore);
+    }
+
+    @Override
+    public boolean isVaadinURLsIgnored() {
+        return getElement().getProperty("ignoreVaadinURLs", false);
+    }
+
+    @Override
+    public void setIgnoredURLs(Collection<URLPattern> urls) {
         getElement().setPropertyList("ignoredURLs",
-                new ArrayList<>(ignoredUrls));
+                urls.stream().map(URLPattern::toInternalFormat)
+                        .collect(Collectors.toList()));
     }
 
     @Override
-    public void traceErrors(boolean active) {
-        getElement().setProperty("traceErrors", active);
+    public List<URLPattern> getIgnoredURLs() {
+        if (getElement().hasProperty("ignoredURLs")) {
+            return JsonUtils
+                    .stream((JsonArray) getElement()
+                            .getPropertyRaw("ignoredURLs"))
+                    .map(JsonValue::asString)
+                    .map(URLPattern::fromInternalFormat)
+                    .collect(Collectors.toList());
+        }
+        return Collections.emptyList();
     }
 
+    @Override
+    public void addIgnoredURL(URLPattern url) {
+        List<URLPattern> ignoredUrls = new ArrayList<>(getIgnoredURLs());
+        ignoredUrls.add(url);
+        setIgnoredURLs(ignoredUrls);
+    }
+
+    @Override
+    public void setFrontendErrorEnabled(boolean enabled) {
+        getElement().setProperty("traceErrors", enabled);
+    }
+
+    @Override
+    public boolean isFrontendErrorEnabled() {
+        return getElement().getProperty("traceErrors", false);
+    }
 }

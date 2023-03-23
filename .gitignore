@@ -5,6 +5,7 @@
 **/target
 **/error-screenshots
 **/node_modules
+observability-kit-test/**/frontend/index.html
 
 **/.sts4-cache/*
 .factorypath

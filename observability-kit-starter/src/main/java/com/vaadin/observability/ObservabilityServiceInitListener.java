@@ -32,8 +32,10 @@ public class ObservabilityServiceInitListener
 
             ObservabilityClient client = new ObservabilityClient(
                     handler.getId());
-            configurer.configure(client);
-            if (client.active) {
+            if (configurer != null) {
+                configurer.configure(client);
+            }
+            if (client.isEnabled()) {
                 ui.add(client);
             } else {
                 getLogger().debug(
@@ -48,23 +50,11 @@ public class ObservabilityServiceInitListener
         ObservabilityClientConfigurer configurer = serviceInitEvent.getSource()
                 .getContext().getAttribute(Lookup.class)
                 .lookup(ObservabilityClientConfigurer.class);
-        if (configurer == null) {
-            // TODO: get defaults from ApplicationConfiguration or DeploymentConfiguration
-            configurer = ObservabilityServiceInitListener::defaultInstrumentation;
-            getLogger().info("Using default front-end observability configuration");
-        } else {
-            getLogger().info("Using custom front-end observability configuration");
+        if (configurer != null) {
+            getLogger().info(
+                    "Applying custom front-end observability configuration");
         }
         return configurer;
     }
 
-    private static void defaultInstrumentation(
-            ObservabilityClientConfiguration config) {
-        config.active(true);
-        config.traceDocumentLoad(true);
-        config.traceUserInteraction(true);
-        config.traceXMLHttpRequests(true);
-        config.traceLongTask(true);
-        config.traceErrors(true);
-    }
 }

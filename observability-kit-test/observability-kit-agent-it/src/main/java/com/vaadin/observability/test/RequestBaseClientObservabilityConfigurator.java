@@ -49,30 +49,32 @@ public class RequestBaseClientObservabilityConfigurator
                 .orElse(null);
         boolean observe = Boolean
                 .parseBoolean(parameterExtractor.apply(OBSERVABILITY_ACTIVE));
-        config.active(observe);
+        config.setEnabled(observe);
         if (observe) {
-            config.traceLongTask(Boolean.parseBoolean(
+            config.setLongTaskEnabled(Boolean.parseBoolean(
                     parameterExtractor.apply(INSTRUMENTATION_LONG_TASK)));
-            config.traceDocumentLoad(Boolean.parseBoolean(
+            config.setDocumentLoadEnabled(Boolean.parseBoolean(
                     parameterExtractor.apply(INSTRUMENTATION_DOCUMENT_LOAD)));
-            config.traceErrors(Boolean.parseBoolean(
+            config.setFrontendErrorEnabled(Boolean.parseBoolean(
                     parameterExtractor.apply(INSTRUMENTATION_CLIENT_ERROR)));
-            config.traceXMLHttpRequests(Boolean.parseBoolean(parameterExtractor
-                    .apply(INSTRUMENTATION_XML_HTTP_REQUEST)));
-            config.ignoreVaadinUrls(Boolean.parseBoolean(
+            config.setXMLHttpRequestEnabled(
+                    Boolean.parseBoolean(parameterExtractor
+                            .apply(INSTRUMENTATION_XML_HTTP_REQUEST)));
+            config.ignoreVaadinURLs(Boolean.parseBoolean(
                     parameterExtractor.apply(IGNORE_VAADIN_URLS)));
             if (queryParams.containsKey(INSTRUMENTATION_USER_INTERACTION)) {
-                config.traceUserInteraction(new HashSet<>(
-                        queryParams.get(INSTRUMENTATION_USER_INTERACTION)));
+                config.setUserInteractionEvents(
+                        queryParams.get(INSTRUMENTATION_USER_INTERACTION));
             } else {
-                config.traceUserInteraction(false);
+                config.setUserInteractionEnabled(false);
             }
             if (queryParams.containsKey(IGNORE_URL)) {
-                config.ignoreUrls(new HashSet<>(queryParams.get(IGNORE_URL)));
+                config.addIgnoredURL(
+                        queryParams.get(IGNORE_URL).toArray(String[]::new));
             }
             if (queryParams.containsKey(IGNORE_URL_REGEX)) {
-                config.ignoreUrlsByPattern(
-                        new HashSet<>(queryParams.get(IGNORE_URL_REGEX)));
+                config.addIgnoredURLPattern(queryParams.get(IGNORE_URL_REGEX)
+                        .toArray(String[]::new));
             }
         }
 
