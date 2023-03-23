@@ -29,6 +29,7 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 public class ClientInstrumentation implements TypeInstrumentation {
+
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
         return hasClassesNamed("com.vaadin.observability.ObservabilityHandler");
@@ -46,8 +47,12 @@ public class ClientInstrumentation implements TypeInstrumentation {
     }
 
     public static class MethodAdvice {
+
+        static final String FRONTEND_ID = "vaadin.frontend.id";
+
         @Advice.OnMethodEnter()
-        public static void onEnter(@Advice.Argument(0) JsonNode root) {
+        public static void onEnter(@Advice.Argument(0) JsonNode root,
+                @Advice.FieldValue("id") String observabilityClientId) {
             if (!root.has("resourceSpans")) {
                 return;
             }
@@ -74,7 +79,8 @@ public class ClientInstrumentation implements TypeInstrumentation {
                         String parentSpanId = parentEntry.getKey();
                         JsonNode parentSpanNode = parentEntry.getValue();
 
-                        Span parentSpan = createSpan(tracer, parentSpanNode);
+                        Span parentSpan = createSpan(tracer, parentSpanNode,
+                                observabilityClientId);
                         try (Scope ignored = parentSpan.makeCurrent()) {
                             for (Map.Entry<String, JsonNode> childEntry : childSpanNodes
                                     .entrySet()) {
@@ -83,7 +89,8 @@ public class ClientInstrumentation implements TypeInstrumentation {
                                 if (parentSpanId.equals(childSpanNode
                                         .get("parentSpanId").asText())) {
                                     Span childSpan = createSpan(tracer,
-                                            childSpanNode);
+                                            childSpanNode,
+                                            observabilityClientId);
                                     childSpan.end(
                                             childSpanNode.get("endTimeUnixNano")
                                                     .asLong(),
@@ -102,7 +109,8 @@ public class ClientInstrumentation implements TypeInstrumentation {
                                 .entrySet()) {
                             JsonNode childSpanNode = childEntry.getValue();
 
-                            Span childSpan = createSpan(tracer, childSpanNode);
+                            Span childSpan = createSpan(tracer, childSpanNode,
+                                    observabilityClientId);
                             childSpan.end(childSpanNode.get("endTimeUnixNano")
                                     .asLong(), TimeUnit.NANOSECONDS);
                         }
@@ -111,10 +119,11 @@ public class ClientInstrumentation implements TypeInstrumentation {
             }
         }
 
-        public static Span createSpan(Tracer tracer, JsonNode spanNode) {
+        public static Span createSpan(Tracer tracer, JsonNode spanNode,
+                String observabilityClientId) {
             SpanBuilder spanBuilder = tracer
                     .spanBuilder("Client: " + spanNode.get("name").asText());
-            spanBuilder.setSpanKind(SpanKind.SERVER);
+            spanBuilder.setSpanKind(SpanKind.CLIENT);
             spanBuilder.setStartTimestamp(
                     spanNode.get("startTimeUnixNano").asLong(),
                     TimeUnit.NANOSECONDS);
@@ -124,6 +133,7 @@ public class ClientInstrumentation implements TypeInstrumentation {
             span.setStatus(StatusCode.values()[status]);
 
             span.setAllAttributes(extractAttributes(spanNode));
+            span.setAttribute(FRONTEND_ID, observabilityClientId);
             for (JsonNode eventNode : spanNode.get("events")) {
                 Attributes attributes = extractAttributes(eventNode);
                 span.addEvent(eventNode.get("name").asText(), attributes,
@@ -134,7 +144,7 @@ public class ClientInstrumentation implements TypeInstrumentation {
             return span;
         }
 
-        @SuppressWarnings({"rawtypes", "unchecked"})
+        @SuppressWarnings({ "rawtypes", "unchecked" })
         private static Attributes extractAttributes(JsonNode node) {
             if (node.has("attributes")) {
                 AttributesBuilder builder = Attributes.builder();
