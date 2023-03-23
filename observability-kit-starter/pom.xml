@@ -64,6 +64,9 @@
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>false</filtering>
+                <excludes>
+                    <exclude>observability-kit.properties</exclude>
+                </excludes>
             </resource>
             <resource>
                 <directory>src/main/resources</directory>
