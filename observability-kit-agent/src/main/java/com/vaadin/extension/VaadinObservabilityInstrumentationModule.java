@@ -50,9 +50,6 @@ import java.util.stream.Stream;
 public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
 
-    static {
-    }
-
     public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
     public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-"
             + InstrumentationHelper.INSTRUMENTATION_VERSION;
