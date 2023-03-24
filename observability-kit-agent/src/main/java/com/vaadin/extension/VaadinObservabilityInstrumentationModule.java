@@ -36,8 +36,6 @@ import com.vaadin.extension.instrumentation.server.ErrorHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.server.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinServletInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
-import com.vaadin.pro.licensechecker.BuildType;
-import com.vaadin.pro.licensechecker.LicenseChecker;
 
 import com.google.auto.service.AutoService;
 import io.opentelemetry.javaagent.extension.instrumentation.InstrumentationModule;
@@ -51,12 +49,6 @@ import java.util.stream.Stream;
 @AutoService(InstrumentationModule.class)
 public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
-
-    static {
-        LicenseChecker.checkLicenseFromStaticBlock("vaadin-observability-kit",
-                InstrumentationHelper.INSTRUMENTATION_VERSION,
-                BuildType.PRODUCTION);
-    }
 
     public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
     public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-"
