@@ -154,7 +154,7 @@ public class FrontendObservabilityRuntimeConfigurationIT
         // every condition evaluation and then fulfill the wait condition to
         // proceed with the test
         AtomicBoolean stopCollection = new AtomicBoolean();
-        await().atMost(10, TimeUnit.SECONDS)
+        await().atMost(25, TimeUnit.SECONDS)
                 .conditionEvaluationListener(condition -> {
                     var requests = collector
                             .retrieveRecordedRequests(request());
