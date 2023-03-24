@@ -2,7 +2,7 @@
     // long task
     function _slowTask() {
         console.log("Blocking task started");
-        let counter = 100000000;
+        let counter = 10000000;
         while (counter-- > 0) {
             if (counter % 1000 === 0) {
                 console.log("Blocking Task: still doing something useless...", counter);
