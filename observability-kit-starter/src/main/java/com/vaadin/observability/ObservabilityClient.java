@@ -30,7 +30,7 @@ import elemental.json.JsonValue;
 class ObservabilityClient extends Component
         implements ObservabilityClientConfiguration {
 
-    boolean enabled = true;
+    private boolean enabled = true;
 
     public ObservabilityClient(String identifier) {
         getElement().setProperty("instanceId",

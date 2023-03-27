@@ -1,5 +1,6 @@
 package com.vaadin.observability;
 
+import java.io.Serializable;
 import java.util.ServiceLoader;
 
 import com.vaadin.flow.server.VaadinRequest;
@@ -27,7 +28,7 @@ import com.vaadin.flow.server.VaadinRequest;
  * also provide other ways of discovering listeners.
  */
 @FunctionalInterface
-public interface ObservabilityClientConfigurer {
+public interface ObservabilityClientConfigurer extends Serializable {
     /**
      * Configures front-end observability for a UI instance.
      *
