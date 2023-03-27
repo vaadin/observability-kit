@@ -7,7 +7,7 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package com.vaadin.observability;
+package com.vaadin.extension.instrumentation.client;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -15,7 +15,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
@@ -32,7 +31,7 @@ import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.data.StatusData;
 
-public class JsonNodeSpanWrapper implements SpanData {
+public class ObjectMapSpanData implements SpanData {
     private static final String FRONTEND_ID = "vaadin.frontend.id";
 
     private final SpanContext spanContext;
@@ -49,15 +48,70 @@ public class JsonNodeSpanWrapper implements SpanData {
     private final List<LinkData> links;
     private final StatusData status;
 
+    public ObjectMapSpanData(String frontendId, Map<String, Object> resource,
+            Map<String, Object> scope, Map<String, Object> span) {
+        String traceId = (String) span.get("traceId");
+        String spanId = (String) span.get("spanId");
+        this.spanContext = SpanContext.create(traceId, spanId,
+                TraceFlags.getDefault(), TraceState.getDefault());
+
+        String parentSpanId = (String) span.get("parentSpanId");
+        this.parentSpanContext = SpanContext.create(traceId, parentSpanId,
+                TraceFlags.getDefault(), TraceState.getDefault());
+
+        ResourceBuilder resourceBuilder = Resource.builder();
+        this.resource = resourceBuilder
+                .putAll(getAttributes(resource).build())
+                .build();
+
+        this.instrumentationLibraryInfo =
+                InstrumentationLibraryInfo.create(
+                        (String) scope.get("name"),
+                        (String) scope.get("version"));
+
+        this.instrumentationScopeInfo = InstrumentationScopeInfo.create(
+                (String) scope.get("name"), (String) scope.get("version"),
+                null);
+
+        this.name = "Frontend: " + span.get("name");
+        this.kind = SpanKind.CLIENT;
+        this.startEpochNanos = (long) span.get("startTimeUnixNano");
+        this.endEpochNanos = (long) span.get("endTimeUnixNano");
+
+        AttributesBuilder attributesBuilder = getAttributes(span);
+        this.attributes = attributesBuilder
+                .put(FRONTEND_ID, frontendId)
+                .build();
+
+        this.events = new ArrayList<>();
+        for (Map<String, Object> event :
+                (List<Map<String, Object>>) span.get("events")) {
+            EventData eventData = EventData.create(
+                    (long) event.get("timeUnixNano"),
+                    (String) event.get("name"),
+                    getAttributes(event).build());
+            events.add(eventData);
+        }
+
+        this.links = Collections.emptyList();
+
+        Map<String, Object> status = (Map<String, Object>) span.get("status");
+        this.status = ((int) status.get("code") == 0) ? StatusData.ok() :
+                StatusData.error();
+    }
+
     @SuppressWarnings({"rawtypes", "unchecked"})
-    public static AttributesBuilder getAttributes(JsonNode node) {
+    private static AttributesBuilder getAttributes(Map<String, Object> node) {
         AttributesBuilder builder = Attributes.builder();
-        if (node.has("attributes")) {
-            for (JsonNode attributeNode : node.get("attributes")) {
-                String key = attributeNode.get("key").asText();
-                JsonNode valueNode = attributeNode.get("value");
-                Map.Entry<AttributeKey, Object> entry = attributeValue(key,
-                        valueNode);
+        if (node.containsKey("attributes")) {
+            List<Map<String, Object>> attributes =
+                    (List<Map<String, Object>>) node.get("attributes");
+            for (Map<String, Object> attribute : attributes) {
+                String key = (String) attribute.get("key");
+                Map<String, Object> value =
+                        (Map<String, Object>) attribute.get("value");
+                Map.Entry<AttributeKey, Object> entry =
+                        attributeValue(key, value);
                 if (entry != null) {
                     builder.put(entry.getKey(), entry.getValue());
                 }
@@ -67,33 +121,33 @@ public class JsonNodeSpanWrapper implements SpanData {
     }
 
     // https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_otlp_transformer.IAnyValue.html
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({"rawtypes", "unchecked"})
     private static Map.Entry<AttributeKey, Object> attributeValue(
-            String key, JsonNode valueNode) {
-        if (valueNode.has("stringValue")) {
+            String key, Map<String, Object> value) {
+        if (value.containsKey("stringValue")) {
+            String stringValue = (String) value.get("stringValue");
             return new AbstractMap.SimpleImmutableEntry<>(
-                    AttributeKey.stringKey(key),
-                    valueNode.get("stringValue").asText());
-        } else if (valueNode.has("intValue")) {
+                    AttributeKey.stringKey(key), stringValue);
+        } else if (value.containsKey("intValue")) {
+            Integer intValue = (Integer) value.get("intValue");
+            long longValue = (long) intValue;
             return new AbstractMap.SimpleImmutableEntry<>(
-                    AttributeKey.longKey(key),
-                    valueNode.get("intValue").asLong());
-        } else if (valueNode.has("boolValue")) {
+                    AttributeKey.longKey(key), longValue);
+        } else if (value.containsKey("boolValue")) {
+            Boolean boolValue = (Boolean) value.get("boolValue");
             return new AbstractMap.SimpleImmutableEntry<>(
-                    AttributeKey.booleanKey(key),
-                    valueNode.get("boolValue").asBoolean());
-        } else if (valueNode.has("doubleValue")) {
+                    AttributeKey.booleanKey(key), boolValue);
+        } else if (value.containsKey("doubleValue")) {
+            Double doubleValue = (Double) value.get("doubleValue");
             return new AbstractMap.SimpleImmutableEntry<>(
-                    AttributeKey.doubleKey(key),
-                    valueNode.get("doubleValue").asDouble());
-        } else if (valueNode.has("arrayValue")) {
-
+                    AttributeKey.doubleKey(key), doubleValue);
+        } else if (value.containsKey("arrayValue")) {
             AttributeKey<?> attributeKey = null;
             List<Object> values = new ArrayList<>();
-            for (JsonNode element : valueNode.get("arrayValue")
-                    .get("values")) {
+            for (Map<String, Object> item :
+                    (List<Map<String, Object>>) value.get("arrayValue")) {
                 Map.Entry<AttributeKey, Object> entry = attributeValue(key,
-                        element);
+                        item);
                 if (entry != null) {
                     values.add(entry.getValue());
                     if (attributeKey == null) {
@@ -134,58 +188,6 @@ public class JsonNodeSpanWrapper implements SpanData {
                     values);
         }
         return null;
-    }
-
-    public JsonNodeSpanWrapper(String frontendId, JsonNode resourceNode,
-            JsonNode scopeNode, JsonNode spanNode) {
-        this.spanContext = SpanContext.create(spanNode.get("traceId").asText(),
-                spanNode.get("spanId").asText(), TraceFlags.getDefault(),
-                TraceState.getDefault());
-
-        this.parentSpanContext = SpanContext.create(
-                spanNode.get("traceId").asText(),
-                spanNode.has("parentSpanId") ?
-                        spanNode.get("parentSpanId").asText() : null,
-                TraceFlags.getDefault(),
-                TraceState.getDefault());
-
-        ResourceBuilder resourceBuilder = Resource.builder();
-        this.resource = resourceBuilder
-                .putAll(getAttributes(resourceNode).build())
-                .build();
-
-        this.instrumentationLibraryInfo =
-                InstrumentationLibraryInfo.create(
-                        scopeNode.get("name").asText(),
-                        scopeNode.get("version").asText());
-
-        this.instrumentationScopeInfo = InstrumentationScopeInfo.create(
-                scopeNode.get("name").asText(),
-                scopeNode.get("version").asText(), null);
-
-        this.name = "Frontend: " + spanNode.get("name").asText();
-        this.kind = SpanKind.values()[spanNode.get("kind").asInt() + 1];
-        this.startEpochNanos = spanNode.get("startTimeUnixNano").asLong();
-        this.endEpochNanos = spanNode.get("endTimeUnixNano").asLong();
-
-        AttributesBuilder attributesBuilder = getAttributes(spanNode);
-        this.attributes = attributesBuilder
-                .put(FRONTEND_ID, frontendId)
-                .build();
-
-        this.events = new ArrayList<>();
-        for (JsonNode eventNode : spanNode.get("events")) {
-            EventData eventData = EventData.create(
-                    eventNode.get("timeUnixNano").asLong(),
-                    eventNode.get("name").asText(),
-                    getAttributes(eventNode).build());
-            events.add(eventData);
-        }
-
-        this.links = Collections.emptyList();
-
-        this.status = (spanNode.get("status").get("code").asInt() == 0) ?
-                StatusData.ok() : StatusData.error();
     }
 
     @Override
