@@ -11,6 +11,7 @@ package com.vaadin.extension.instrumentation.client;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -85,7 +86,7 @@ public class ObjectMapSpanData implements SpanData {
 
         this.events = new ArrayList<>();
         for (Map<String, Object> event :
-                (List<Map<String, Object>>) span.get("events")) {
+                (Collection<Map<String, Object>>) span.get("events")) {
             EventData eventData = EventData.create(
                     (long) event.get("timeUnixNano"),
                     (String) event.get("name"),
@@ -104,8 +105,8 @@ public class ObjectMapSpanData implements SpanData {
     private static AttributesBuilder getAttributes(Map<String, Object> node) {
         AttributesBuilder builder = Attributes.builder();
         if (node.containsKey("attributes")) {
-            List<Map<String, Object>> attributes =
-                    (List<Map<String, Object>>) node.get("attributes");
+            Collection<Map<String, Object>> attributes =
+                    (Collection<Map<String, Object>>) node.get("attributes");
             for (Map<String, Object> attribute : attributes) {
                 String key = (String) attribute.get("key");
                 Map<String, Object> value =
@@ -129,10 +130,9 @@ public class ObjectMapSpanData implements SpanData {
             return new AbstractMap.SimpleImmutableEntry<>(
                     AttributeKey.stringKey(key), stringValue);
         } else if (value.containsKey("intValue")) {
-            Integer intValue = (Integer) value.get("intValue");
-            long longValue = (long) intValue;
+            Number numberValue = (Number) value.get("intValue");
             return new AbstractMap.SimpleImmutableEntry<>(
-                    AttributeKey.longKey(key), longValue);
+                    AttributeKey.longKey(key), numberValue.longValue());
         } else if (value.containsKey("boolValue")) {
             Boolean boolValue = (Boolean) value.get("boolValue");
             return new AbstractMap.SimpleImmutableEntry<>(

@@ -29,18 +29,18 @@ public class ObjectMapExporter
             throw new RuntimeException("Malformed span data");
         }
 
-        List<Map<String, Object>> resourceSpans =
-            (List<Map<String, Object>>) objectMap.get("resourceSpans");
+        Collection<Map<String, Object>> resourceSpans =
+            (Collection<Map<String, Object>>) objectMap.get("resourceSpans");
         for (Map<String, Object> resourceSpan : resourceSpans) {
             Map<String, Object> resource =
                     (Map<String, Object>) resourceSpan.get("resource");
-            List<Map<String, Object>> scopeSpans =
-                    (List<Map<String, Object>>) resourceSpan.get("scopeSpans");
+            Collection<Map<String, Object>> scopeSpans =
+                    (Collection<Map<String, Object>>) resourceSpan.get("scopeSpans");
             for (Map<String, Object> scopeSpan : scopeSpans) {
                 Map<String, Object> scope =
                         (Map<String, Object>) scopeSpan.get("scope");
-                List<Map<String, Object>> spans =
-                        (List<Map<String, Object>>) scopeSpan.get("spans");
+                Collection<Map<String, Object>> spans =
+                        (Collection<Map<String, Object>>) scopeSpan.get("spans");
                 for (Map<String, Object> span : spans) {
                     exportSpans.add(new ObjectMapSpanData(id, resource,
                             scope, span));
