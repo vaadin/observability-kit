@@ -14,7 +14,7 @@ import com.vaadin.flow.server.VaadinRequest;
  * to the view happens. At this stage the
  * {@link com.vaadin.flow.server.VaadinService} is fully initialized and the
  * HTTP request is available and can be accessed through the
- * {@link VaadinRequest#getCurrent()} method. Howevere
+ * {@link VaadinRequest#getCurrent()} method.
  *
  * Configurator instances are by default discovered and instantiated using
  * {@link ServiceLoader}. This means that all implementations must have a

@@ -116,12 +116,12 @@ class ObservabilityClient extends Component
     }
 
     @Override
-    public void ignoreVaadinURLs(boolean ignore) {
+    public void setIgnoreVaadinURLs(boolean ignore) {
         getElement().setProperty("ignoreVaadinURLs", ignore);
     }
 
     @Override
-    public boolean isVaadinURLsIgnored() {
+    public boolean isIgnoreVaadinURLs() {
         return getElement().getProperty("ignoreVaadinURLs", false);
     }
 

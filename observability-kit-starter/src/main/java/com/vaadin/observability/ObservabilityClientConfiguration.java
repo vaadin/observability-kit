@@ -187,7 +187,7 @@ public interface ObservabilityClientConfiguration {
      *            {@literal true} to ignore request processed by Vaadin,
      *            {@literal false} to trace them.
      */
-    void ignoreVaadinURLs(boolean ignore);
+    void setIgnoreVaadinURLs(boolean ignore);
 
     /**
      * Gets whether the requests processed by Vaadin are ignored by the
@@ -196,7 +196,7 @@ public interface ObservabilityClientConfiguration {
      * @return {@literal true} if Vaadin requests are ignored, otherwise
      *         {@literal false}.
      */
-    boolean isVaadinURLsIgnored();
+    boolean isIgnoreVaadinURLs();
 
     /**
      * Sets the URL patterns that the {@literal XMLHttpRequest} instrumentation
@@ -281,7 +281,7 @@ public interface ObservabilityClientConfiguration {
      * <pre>
      * /home                  (exact match)
      * /page?id=home          (exact match)
-     * /orders/.*             (regex match)
+     * /orders/\\d+           (regex match)
      * /documents/.*\\.pdf    (regex match)
      * </pre>
      */
@@ -325,6 +325,11 @@ public interface ObservabilityClientConfiguration {
             return exactMatch;
         }
 
+        @Override
+        public String toString() {
+            return (exactMatch ? "exact" : "regex") + "::" + pattern;
+        }
+
         String toInternalFormat() {
             if (exactMatch) {
                 return pattern;
@@ -351,7 +356,7 @@ public interface ObservabilityClientConfiguration {
         static URLPattern fromInternalFormat(String pattern) {
             if (pattern.length() >= 5 && pattern.startsWith("RE:/")
                     && pattern.endsWith("/")) {
-                new URLPattern(pattern.substring(4, pattern.length() - 2),
+                return new URLPattern(pattern.substring(4, pattern.length() - 1),
                         false);
             }
             return new URLPattern(pattern, true);

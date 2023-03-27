@@ -12,7 +12,6 @@
 package com.vaadin.observability.test;
 
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
@@ -60,7 +59,7 @@ public class RequestBaseClientObservabilityConfigurator
             config.setXMLHttpRequestEnabled(
                     Boolean.parseBoolean(parameterExtractor
                             .apply(INSTRUMENTATION_XML_HTTP_REQUEST)));
-            config.ignoreVaadinURLs(Boolean.parseBoolean(
+            config.setIgnoreVaadinURLs(Boolean.parseBoolean(
                     parameterExtractor.apply(IGNORE_VAADIN_URLS)));
             if (queryParams.containsKey(INSTRUMENTATION_USER_INTERACTION)) {
                 config.setUserInteractionEvents(

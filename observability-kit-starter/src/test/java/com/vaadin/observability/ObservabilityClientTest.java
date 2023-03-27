@@ -20,7 +20,8 @@ import java.util.Set;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static com.vaadin.observability.ObservabilityClientConfiguration.url;
+import static com.vaadin.observability.ObservabilityClientConfiguration.urlPattern;
 
 class ObservabilityClientTest {
 
@@ -40,7 +41,7 @@ class ObservabilityClientTest {
                 client.getUserInteractionEvents(), "user interaction events");
         Assertions.assertTrue(client.isXMLHttpRequestEnabled(),
                 "xml http request enabled");
-        Assertions.assertFalse(client.isVaadinURLsIgnored(),
+        Assertions.assertFalse(client.isIgnoreVaadinURLs(),
                 "Vaadin urls ignored");
         Assertions.assertEquals(List.of(), client.getIgnoredURLs(),
                 "ignored urls");
@@ -126,6 +127,77 @@ class ObservabilityClientTest {
         client.setUserInteractionEvents(null, "x", null, "y", null, "z", null);
         Assertions.assertEquals(Set.of("x", "y", "z"),
                 client.getUserInteractionEvents());
+    }
+
+    @Test
+    void ignoreVaadinURLs_explicitlyEnabled_getterReturnsTrue() {
+        client.setIgnoreVaadinURLs(true);
+        Assertions.assertTrue(client.isIgnoreVaadinURLs(),
+                "Expecting ignoreVaadinURLs to be true");
+    }
+
+    @Test
+    void setIgnoredURLs_overridesExisting() {
+        client.setIgnoredURLs(List.of(url("a"), urlPattern("b"), url("c")));
+        Assertions.assertEquals(List.of(url("a"), urlPattern("b"), url("c")),
+                client.getIgnoredURLs());
+
+        client.setIgnoredURLs(
+                List.of(urlPattern("x"), urlPattern("y"), url("z")));
+        Assertions.assertEquals(
+                List.of(urlPattern("x"), urlPattern("y"), url("z")),
+                client.getIgnoredURLs());
+    }
+
+    @Test
+    void setIgnoredURLs_exactMatchStringList() {
+        client.setIgnoredURLs("a", "b", "c");
+        Assertions.assertEquals(List.of(url("a"), url("b"), url("c")),
+                client.getIgnoredURLs());
+    }
+
+    @Test
+    void addIgnoredURL_appendsValueToExistingList() {
+        client.addIgnoredURL(url("a"));
+        Assertions.assertEquals(List.of(url("a")), client.getIgnoredURLs());
+
+        client.addIgnoredURL(urlPattern("b"));
+        Assertions.assertEquals(List.of(url("a"), urlPattern("b")),
+                client.getIgnoredURLs());
+
+        client.addIgnoredURL(url("c"));
+        Assertions.assertEquals(List.of(url("a"), urlPattern("b"), url("c")),
+                client.getIgnoredURLs());
+    }
+
+    @Test
+    void addIgnoredURL_exactMatch_appendsValueToExistingList() {
+        client.addIgnoredURL("a");
+        Assertions.assertEquals(List.of(url("a")), client.getIgnoredURLs());
+
+        client.addIgnoredURL("b", "c");
+        Assertions.assertEquals(List.of(url("a"), url("b"), url("c")),
+                client.getIgnoredURLs());
+
+        client.addIgnoredURL("d");
+        Assertions.assertEquals(List.of(url("a"), url("b"), url("c"), url("d")),
+                client.getIgnoredURLs());
+    }
+
+    @Test
+    void addIgnoredURL_pattern_appendsValueToExistingList() {
+        client.addIgnoredURLPattern("a");
+        Assertions.assertEquals(List.of(urlPattern("a")),
+                client.getIgnoredURLs());
+
+        client.addIgnoredURLPattern("b", "c");
+        Assertions.assertEquals(
+                List.of(urlPattern("a"), urlPattern("b"), urlPattern("c")),
+                client.getIgnoredURLs());
+
+        client.addIgnoredURLPattern("d");
+        Assertions.assertEquals(List.of(urlPattern("a"), urlPattern("b"),
+                urlPattern("c"), urlPattern("d")), client.getIgnoredURLs());
     }
 
 }
