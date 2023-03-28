@@ -41,8 +41,13 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
 
     private final String id = UUID.randomUUID().toString();
 
-    public Function<String, String> config = (key) -> null;
-    public BiConsumer<String, Map<String,Object>> exporter = (id, map) -> {};
+    public transient Function<String, String> config = (key) -> {
+        getLogger().error("Observability agent is not running");
+        return null;
+    };
+    public transient BiConsumer<String, Map<String,Object>> exporter = (id, map) -> {
+        getLogger().error("Observability agent is not running");
+    };
 
     static ObservabilityHandler ensureInstalled(UI ui) {
         ObservabilityHandler observabilityHandler = ComponentUtil.getData(ui,

@@ -40,6 +40,16 @@ public class ClientInstrumentation implements TypeInstrumentation {
 
     @Override
     public void transform(TypeTransformer transformer) {
+        /* Because the agent and starter use different class loaders, the code
+           to construct SpanData instances and export them must reside entirely
+           within either the agent or the starter.
+
+           To achieve this, we inject a consumer into the
+           ObservabilityHandler class. The ObservabilityHandler converts the
+           incoming JSON string into a Map of objects that are only contained
+           within the java.util and java.lang packages. It then sends this to
+           the consumer. This means that there are no class loader issues.
+         */
         transformer.applyTransformer((builder, typeDescription, classLoader,
                 module, protectionDomain) -> {
             try {
@@ -53,11 +63,12 @@ public class ClientInstrumentation implements TypeInstrumentation {
                         ConfigurationDefaults.configProperties.getString(key));
 
                 Field consumerField = helperClazz.getField("consumer");
-                AtomicReference consumerHolder =
-                        (AtomicReference) consumerField.get(null);
+                AtomicReference<BiConsumer<String,
+                        Map<String, Object>>> consumerHolder =
+                        (AtomicReference<BiConsumer<String,
+                                Map<String, Object>>>) consumerField.get(null);
                 consumerHolder.set(new ObjectMapExporter());
             } catch (Exception e) {
-                e.printStackTrace();
                 throw new RuntimeException(e);
             }
             return builder;
