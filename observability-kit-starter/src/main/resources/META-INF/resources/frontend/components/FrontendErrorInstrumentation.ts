@@ -1,4 +1,5 @@
 import {
+    Span,
     SpanKind,
     SpanStatusCode
 } from '@opentelemetry/api';
@@ -7,6 +8,7 @@ import {
     InstrumentationConfig,
 } from '@opentelemetry/instrumentation';
 import { SemanticAttributes } from '@opentelemetry/semantic-conventions';
+import { getElementXPath } from '@opentelemetry/sdk-trace-web';
 
 export class FrontendErrorInstrumentation extends InstrumentationBase {
 
@@ -26,14 +28,14 @@ export class FrontendErrorInstrumentation extends InstrumentationBase {
         const span = this.tracer.startSpan("windowError", {
             kind: SpanKind.CLIENT,
             startTime: event.timeStamp
-        })
-
+        });
         span.setAttribute("component", this.component)
         span.setAttribute(SemanticAttributes.EXCEPTION_TYPE, event.type);
         span.setAttribute(SemanticAttributes.EXCEPTION_MESSAGE, event.message);
         span.setAttribute(SemanticAttributes.HTTP_URL, location.href);
         span.setAttribute(SemanticAttributes.CODE_FILEPATH, event.filename);
         span.setAttribute(SemanticAttributes.CODE_LINENO, event.lineno);
+        this._addTargetAttributes(event, span);
         span.recordException(event.error);
         span.setStatus({ code: SpanStatusCode.ERROR });
         span.end();
@@ -43,13 +45,24 @@ export class FrontendErrorInstrumentation extends InstrumentationBase {
         const span = this.tracer.startSpan("unhandledRejection", {
             kind: SpanKind.CLIENT,
             startTime: event.timeStamp
-        })
+        });
+
         span.setAttribute("component", this.component)
         span.setAttribute(SemanticAttributes.EXCEPTION_TYPE, event.type);
         span.setAttribute(SemanticAttributes.HTTP_URL, location.href);
+        this._addTargetAttributes(event, span);
         span.recordException(event.reason);
         span.setStatus({ code: SpanStatusCode.ERROR });
         span.end();
+    }
+
+    private _addTargetAttributes(event: Event, span: Span) {
+        const eventTarget = event.target as any;
+        if (eventTarget.tagName) {
+            span.setAttribute("target_element", eventTarget.tagName);
+            span.setAttribute("target_xpath", getElementXPath(eventTarget));
+            span.setAttribute("target_src", eventTarget.src);
+        }
     }
 
 
