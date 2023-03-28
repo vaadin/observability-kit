@@ -72,17 +72,14 @@ export class ObservabilityClient extends LitElement {
 
     const instrumentations = [];
     if (this.traceDocumentLoad) {
-      console.log("Setup DocumentLoadInstrumentation");
       instrumentations.push(new DocumentLoadInstrumentation());
     }
     if (this.traceUserInteraction) {
-      console.log("Setup UserInteractionInstrumentation", this.traceUserInteraction);
       instrumentations.push(new UserInteractionInstrumentation({
         eventNames: [...this.traceUserInteraction]
       }));
     }
     if (this.traceXmlHTTPRequest) {
-      console.log("Setup XMLHttpRequestInstrumentation", this.ignoreURLs);
       const ignoredUrls = [];
       if (this.ignoreVaadinURLs) {
         ignoredUrls.push(/\/?v-r=.*/);
@@ -104,33 +101,15 @@ export class ObservabilityClient extends LitElement {
       }));
     }
     if (this.traceLongTask) {
-      console.log("Setup LongTaskInstrumentation");
       instrumentations.push(new LongTaskInstrumentation());
     }
     if (this.traceErrors) {
-      console.log("Setup FrontendErrorInstrumentation");
       instrumentations.push(new FrontendErrorInstrumentation());
     }
 
     this.unloadInstrumentations = registerInstrumentations({
       instrumentations: instrumentations
     })
-    /*
-    //Registering instrumentations
-    this.unloadInstrumentations = registerInstrumentations({
-      instrumentations: [
-        new DocumentLoadInstrumentation(),
-        new UserInteractionInstrumentation(),
-        new XMLHttpRequestInstrumentation({
-          ignoreUrls: [
-            '/?v-r=o11y',
-          ]
-        }),
-        new LongTaskInstrumentation(),
-        new FrontendErrorInstrumentation()
-      ],
-    });
-     */
   }
 
   disconnectedCallback() {
