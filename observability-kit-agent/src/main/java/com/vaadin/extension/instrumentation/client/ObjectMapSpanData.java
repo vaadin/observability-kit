@@ -32,13 +32,13 @@ import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.data.StatusData;
 
+import com.vaadin.extension.Constants;
+
 /**
  * This represents the data for an observability span. It is constructed from a
  * map of objects sent by the Frontend Observability module.
  */
 public class ObjectMapSpanData implements SpanData {
-    private static final String FRONTEND_ID = "vaadin.frontend.id";
-
     private final SpanContext spanContext;
     private final SpanContext parentSpanContext;
     private final Resource resource;
@@ -95,7 +95,7 @@ public class ObjectMapSpanData implements SpanData {
 
         AttributesBuilder attributesBuilder = getAttributes(span);
         this.attributes = attributesBuilder
-                .put(FRONTEND_ID, frontendId)
+                .put(Constants.FRONTEND_ID, frontendId)
                 .build();
 
         this.events = new ArrayList<>();
@@ -159,7 +159,7 @@ public class ObjectMapSpanData implements SpanData {
             AttributeKey<?> attributeKey = null;
             List<Object> values = new ArrayList<>();
             for (Map<String, Object> item :
-                    (List<Map<String, Object>>) value.get("arrayValue")) {
+                    (Collection<Map<String, Object>>) value.get("arrayValue")) {
                 Map.Entry<AttributeKey, Object> entry = attributeValue(key,
                         item);
                 if (entry != null) {

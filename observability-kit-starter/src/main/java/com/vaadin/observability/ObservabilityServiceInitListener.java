@@ -49,8 +49,8 @@ public class ObservabilityServiceInitListener
                     .attr("content", traceParent);
         });
 
-        ObservabilityClientConfigurer configurer = getObservabilityClientConfigurer(
-                serviceInitEvent);
+        ObservabilityClientConfigurer configurer =
+                getObservabilityClientConfigurer(serviceInitEvent);
 
         serviceInitEvent.getSource().addUIInitListener(event -> {
 
@@ -79,7 +79,7 @@ public class ObservabilityServiceInitListener
                         "Observability Client disabled for UI {} in Vaadin Session {}",
                         ui.getUIId(), ui.getSession().getSession().getId());
             }
-
+        });
     }
 
     private static ObservabilityClientConfigurer getObservabilityClientConfigurer(

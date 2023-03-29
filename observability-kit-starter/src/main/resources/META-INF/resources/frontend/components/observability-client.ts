@@ -5,7 +5,10 @@ import {
   StackContextManager,
   WebTracerProvider
 } from "@opentelemetry/sdk-trace-web";
-import {registerInstrumentations} from "@opentelemetry/instrumentation";
+import {
+  InstrumentationBase,
+  registerInstrumentations
+} from "@opentelemetry/instrumentation";
 import {
   DocumentLoadInstrumentation
 } from "@opentelemetry/instrumentation-document-load";
@@ -26,6 +29,7 @@ import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation';
 
 @customElement('vaadin-observability-client')
 export class ObservabilityClient extends LitElement {
+  provider?: WebTracerProvider;
   instanceId?: string;
   serviceName?: string;
   serviceVersion?: string;
@@ -60,14 +64,14 @@ export class ObservabilityClient extends LitElement {
         })
       );
 
-    const provider = new WebTracerProvider({
+    this.provider = new WebTracerProvider({
       resource: resource,
     });
 
     const exporter = new OTLPTraceExporter({
       url: '/?v-r=o11y&id=' + this.instanceId,
     })
-    provider.addSpanProcessor(new BatchSpanProcessor(exporter, {
+    this.provider.addSpanProcessor(new BatchSpanProcessor(exporter, {
       // The maximum queue size. After the size is reached spans are dropped.
       maxQueueSize: 100,
       // The maximum batch size of every export. It must be smaller or equal to maxQueueSize.
@@ -78,12 +82,12 @@ export class ObservabilityClient extends LitElement {
       exportTimeoutMillis: 30000,
     }));
 
-    provider.register({
+    this.provider.register({
       // Changing default contextManager to use StackContextManager
       contextManager: new StackContextManager(),
     });
 
-    const instrumentations = [];
+    const instrumentations:InstrumentationBase[] = [];
     if (this.traceDocumentLoad) {
       instrumentations.push(new DocumentLoadInstrumentation());
     }
@@ -93,7 +97,7 @@ export class ObservabilityClient extends LitElement {
       }));
     }
     if (this.traceXmlHTTPRequest) {
-      const ignoredUrls = [];
+      const ignoredUrls:(string | RegExp)[] = [];
       if (this.ignoreVaadinURLs) {
         ignoredUrls.push(/\/?v-r=.*/);
         ignoredUrls.push(/\/VAADIN\/.*/);
@@ -127,6 +131,10 @@ export class ObservabilityClient extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+
+    if (this.provider) {
+      this.provider.shutdown();
+    }
 
     if (this.unloadInstrumentations) {
       this.unloadInstrumentations();

@@ -69,8 +69,6 @@ public class InstrumentationHelper {
                     INSTRUMENTATION_NAME, generator)
             .setInstrumentationVersion(INSTRUMENTATION_VERSION)
             .addAttributesExtractor(attrGet)
-            .addContextCustomizer(
-                    (context, instrumentationRequest, attributes) -> context)
             .buildInstrumenter(InstrumentationRequest::getSpanKind);
 
     private static final TextMapGetter<HttpServletRequest> REQUEST_GETTER =

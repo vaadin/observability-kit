@@ -11,6 +11,7 @@ package com.vaadin.observability;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.io.Serial;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
@@ -186,15 +187,16 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
      * @throws ClassNotFoundException
      *            if the class of the stream object could not be found
      */
-    public void readObject(ObjectInputStream stream)
+    @Serial
+    private void readObject(ObjectInputStream stream)
             throws IOException, ClassNotFoundException {
         stream.defaultReadObject();
         config = (key) -> {
-            getLogger().error("");
+            getLogger().error("Observability agent is not running");
             return null;
         };
         exporter = (id, map) -> {
-            getLogger().error("");
+            getLogger().error("Observability agent is not running");
         };
     }
 }

@@ -74,13 +74,13 @@ public class ClientInstrumentation implements TypeInstrumentation {
                 Class<?> helperClazz = classLoader.loadClass(
                         ConstructorAdvice.class.getName());
 
-                Field functionField = helperClazz.getField("function");
+                Field functionField = helperClazz.getField("configHolder");
                 AtomicReference<Function<String,String>> functionHolder =
                         (AtomicReference<Function<String,String>>) functionField.get(null);
                 functionHolder.set((key) ->
                         ConfigurationDefaults.configProperties.getString(key));
 
-                Field consumerField = helperClazz.getField("consumer");
+                Field consumerField = helperClazz.getField("exportHolder");
                 AtomicReference<BiConsumer<String,
                         Map<String, Object>>> consumerHolder =
                         (AtomicReference<BiConsumer<String,
@@ -91,7 +91,9 @@ public class ClientInstrumentation implements TypeInstrumentation {
             }
             return builder;
         });
-        transformer.applyAdviceToMethod(isConstructor(),
+        // Apply the advice to both the constructor and the readObject
+        // method, which is called during deserialization.
+        transformer.applyAdviceToMethod(isConstructor().or(named("readObject")),
                 this.getClass().getName() + "$ConstructorAdvice");
     }
 
@@ -102,10 +104,10 @@ public class ClientInstrumentation implements TypeInstrumentation {
      * configuration properties and to export traces, respectively.
      */
     public static class ConstructorAdvice {
-        public static AtomicReference<Function<String,String>> function =
+        public static AtomicReference<Function<String,String>> configHolder =
                 new AtomicReference<>();
         public static AtomicReference<BiConsumer<String,
-                Map<String, Object>>> consumer = new AtomicReference<>();
+                Map<String, Object>>> exportHolder = new AtomicReference<>();
 
         @Advice.OnMethodExit()
         public static void onExit(
@@ -113,8 +115,8 @@ public class ClientInstrumentation implements TypeInstrumentation {
                 Function<String, String> config,
                 @Advice.FieldValue(value = "exporter", readOnly = false)
                 BiConsumer<String, Map<String, Object>> exporter) {
-            config = ConstructorAdvice.function.get();
-            exporter = ConstructorAdvice.consumer.get();
+            config = ConstructorAdvice.configHolder.get();
+            exporter = ConstructorAdvice.exportHolder.get();
         }
     }
 }
