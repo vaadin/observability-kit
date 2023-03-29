@@ -9,6 +9,7 @@
  */
 package com.vaadin.extension.instrumentation.client;
 
+import java.io.ObjectInputStream;
 import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -25,7 +26,9 @@ import com.vaadin.extension.conf.ConfigurationDefaults;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
+import static net.bytebuddy.matcher.ElementMatchers.isPrivate;
 import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
 /**
  * This instrumentation is applied to the ObservabilityHandler constructor.
@@ -93,7 +96,9 @@ public class ClientInstrumentation implements TypeInstrumentation {
         });
         // Apply the advice to both the constructor and the readObject
         // method, which is called during deserialization.
-        transformer.applyAdviceToMethod(isConstructor().or(named("readObject")),
+        transformer.applyAdviceToMethod(isConstructor().or(
+                named("readObject").and(isPrivate())
+                        .and(takesArgument(0, ObjectInputStream.class))),
                 this.getClass().getName() + "$ConstructorAdvice");
     }
 

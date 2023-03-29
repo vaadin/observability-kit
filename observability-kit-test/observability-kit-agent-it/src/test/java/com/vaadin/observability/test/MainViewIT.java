@@ -77,7 +77,7 @@ public class MainViewIT extends AbstractViewIT {
             var requests = collector.retrieveRecordedRequests(request());
             var spans = extractSpansFromRequests(requests);
             assertThat(spans).extracting(Span::getName)
-                    .contains("Client: documentLoad", "Client: documentFetch");
+                    .contains("Frontend: documentLoad", "Frontend: documentFetch");
             assertThat(spans)
                     .filteredOn(span -> span.getKind() == Span.SpanKind.SPAN_KIND_CLIENT)
                     .allSatisfy(span -> assertThat(span.getAttributesList())
@@ -93,7 +93,7 @@ public class MainViewIT extends AbstractViewIT {
             var requests = collector.retrieveRecordedRequests(request());
             var spans = extractSpansFromRequests(requests);
             assertThat(spans).extracting(Span::getName).contains(
-                    "Client: windowError", "Client: unhandledRejection");
+                    "Frontend: windowError", "Frontend: unhandledRejection");
         });
     }
 

@@ -4,6 +4,7 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.opentelemetry.sdk.trace.data.SpanData;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +21,11 @@ public class ObjectMapExporterTest extends AbstractInstrumentationTest {
     public static void setup() {
         ConfigurationDefaults.spanExporter =
                 OpenTelemetryTestTools.getSpanExporter();
+    }
+
+    @AfterAll
+    public static void teardown() {
+        ConfigurationDefaults.spanExporter = null;
     }
 
     @Test
