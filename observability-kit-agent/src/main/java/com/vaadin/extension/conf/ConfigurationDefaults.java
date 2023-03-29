@@ -1,3 +1,12 @@
+/*-
+ * Copyright (C) 2022 Vaadin Ltd
+ *
+ * This program is available under Vaadin Commercial License and Service Terms.
+ *
+ *
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
+ */
 package com.vaadin.extension.conf;
 
 import static java.util.Collections.emptyMap;
@@ -8,6 +17,8 @@ import com.google.auto.service.AutoService;
 import io.opentelemetry.instrumentation.api.internal.ConfigPropertiesUtil;
 import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizer;
 import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider;
+import io.opentelemetry.sdk.autoconfigure.spi.ConfigProperties;
+import io.opentelemetry.sdk.trace.export.SpanExporter;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -47,6 +58,9 @@ public class ConfigurationDefaults
 
     static final String CONFIGURATION_FILE_PROPERTY = "otel.javaagent.configuration-file";
 
+    public static ConfigProperties configProperties;
+    public static SpanExporter spanExporter;
+
     @Override
     public int order() {
         return 1000;
@@ -54,7 +68,16 @@ public class ConfigurationDefaults
 
     @Override
     public void customize(AutoConfigurationCustomizer autoConfiguration) {
-        autoConfiguration.addPropertiesSupplier(this::getDefaultProperties);
+        autoConfiguration
+                .addSpanExporterCustomizer(this::setSpanExporter)
+                .addPropertiesSupplier(this::getDefaultProperties);
+    }
+
+    private SpanExporter setSpanExporter(SpanExporter spanExporter,
+            ConfigProperties configProperties) {
+        ConfigurationDefaults.configProperties = configProperties;
+        ConfigurationDefaults.spanExporter = spanExporter;
+        return spanExporter;
     }
 
     private Map<String, String> getDefaultProperties() {

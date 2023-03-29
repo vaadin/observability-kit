@@ -5,7 +5,10 @@ import {
   StackContextManager,
   WebTracerProvider
 } from "@opentelemetry/sdk-trace-web";
-import {registerInstrumentations} from "@opentelemetry/instrumentation";
+import {
+  InstrumentationBase,
+  registerInstrumentations
+} from "@opentelemetry/instrumentation";
 import {
   DocumentLoadInstrumentation
 } from "@opentelemetry/instrumentation-document-load";
@@ -20,12 +23,16 @@ import {
   LongTaskInstrumentation
 } from "@opentelemetry/instrumentation-long-task";
 import {OTLPTraceExporter} from "@opentelemetry/exporter-trace-otlp-http";
+import {Resource} from "@opentelemetry/resources";
+import {SemanticResourceAttributes} from "@opentelemetry/semantic-conventions";
 import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation';
 
 @customElement('vaadin-observability-client')
 export class ObservabilityClient extends LitElement {
-  provider: WebTracerProvider;
+  provider?: WebTracerProvider;
   instanceId?: string;
+  serviceName?: string;
+  serviceVersion?: string;
 
   traceDocumentLoad?: boolean;
   traceUserInteraction?: EventName[]
@@ -40,8 +47,6 @@ export class ObservabilityClient extends LitElement {
 
   constructor() {
     super();
-
-    this.provider = new WebTracerProvider();
   }
 
   render() {
@@ -50,6 +55,18 @@ export class ObservabilityClient extends LitElement {
 
   protected firstUpdated(_changedProperties: PropertyValues) {
     super.firstUpdated(_changedProperties);
+
+    const resource =
+      Resource.default().merge(
+        new Resource({
+          [SemanticResourceAttributes.SERVICE_NAME]: this.serviceName,
+          [SemanticResourceAttributes.SERVICE_VERSION]: this.serviceVersion,
+        })
+      );
+
+    this.provider = new WebTracerProvider({
+      resource: resource,
+    });
 
     const exporter = new OTLPTraceExporter({
       url: '/?v-r=o11y&id=' + this.instanceId,
@@ -70,7 +87,7 @@ export class ObservabilityClient extends LitElement {
       contextManager: new StackContextManager(),
     });
 
-    const instrumentations = [];
+    const instrumentations:InstrumentationBase[] = [];
     if (this.traceDocumentLoad) {
       instrumentations.push(new DocumentLoadInstrumentation());
     }
@@ -80,7 +97,7 @@ export class ObservabilityClient extends LitElement {
       }));
     }
     if (this.traceXmlHTTPRequest) {
-      const ignoredUrls = [];
+      const ignoredUrls:(string | RegExp)[] = [];
       if (this.ignoreVaadinURLs) {
         ignoredUrls.push(/\/?v-r=.*/);
         ignoredUrls.push(/\/VAADIN\/.*/);
@@ -114,6 +131,10 @@ export class ObservabilityClient extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+
+    if (this.provider) {
+      this.provider.shutdown();
+    }
 
     if (this.unloadInstrumentations) {
       this.unloadInstrumentations();

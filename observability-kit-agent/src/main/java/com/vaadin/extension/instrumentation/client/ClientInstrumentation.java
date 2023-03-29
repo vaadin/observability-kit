@@ -1,236 +1,127 @@
+/*-
+ * Copyright (C) 2022 Vaadin Ltd
+ *
+ * This program is available under Vaadin Commercial License and Service Terms.
+ *
+ *
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
+ */
 package com.vaadin.extension.instrumentation.client;
 
-import java.util.AbstractMap;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import java.io.ObjectInputStream;
+import java.lang.reflect.Field;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.common.AttributesBuilder;
-import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.SpanBuilder;
-import io.opentelemetry.api.trace.SpanKind;
-import io.opentelemetry.api.trace.StatusCode;
-import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.context.Scope;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.extension.conf.ConfigurationDefaults;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
+import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
+import static net.bytebuddy.matcher.ElementMatchers.isPrivate;
 import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
+/**
+ * This instrumentation is applied to the ObservabilityHandler constructor.
+ * Because the agent and starter use different class loaders, the code
+ * to construct SpanData instances and export them must reside entirely
+ * within either the agent or the starter.
+ * To achieve this, this injects a consumer into the ObservabilityHandler
+ * class. The ObservabilityHandler converts the incoming JSON string into
+ * a Map of objects that are only contained within the java.util and
+ * java .lang packages. It then sends this to the consumer. This means that
+ * there are no class loader issues.
+ */
 public class ClientInstrumentation implements TypeInstrumentation {
-
+    /**
+     * Returns an element matcher for the ObservabilityHandler class.
+     *
+     * @return an element matcher
+     */
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
         return hasClassesNamed("com.vaadin.observability.ObservabilityHandler");
     }
 
+    /**
+     * Returns an element matcher for the ObservabilityHandler class.
+     *
+     * @return an element matcher
+     */
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named("com.vaadin.observability.ObservabilityHandler");
     }
 
+    /**
+     * Sets callbacks on the ConstructorAdvice class and applies this class
+     * to the constructor of an ObservabilityHandler instance.
+     *
+     * @param transformer the TypeTransformer
+     */
+    @SuppressWarnings("unchecked")
     @Override
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("handleTraces"),
-                this.getClass().getName() + "$MethodAdvice");
+        transformer.applyTransformer((builder, typeDescription, classLoader,
+                module, protectionDomain) -> {
+            try {
+                Class<?> helperClazz = classLoader.loadClass(
+                        ConstructorAdvice.class.getName());
+
+                Field functionField = helperClazz.getField("configHolder");
+                AtomicReference<Function<String,String>> functionHolder =
+                        (AtomicReference<Function<String,String>>) functionField.get(null);
+                functionHolder.set((key) ->
+                        ConfigurationDefaults.configProperties.getString(key));
+
+                Field consumerField = helperClazz.getField("exportHolder");
+                AtomicReference<BiConsumer<String,
+                        Map<String, Object>>> consumerHolder =
+                        (AtomicReference<BiConsumer<String,
+                                Map<String, Object>>>) consumerField.get(null);
+                consumerHolder.set(new ObjectMapExporter());
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            return builder;
+        });
+        // Apply the advice to both the constructor and the readObject
+        // method, which is called during deserialization.
+        transformer.applyAdviceToMethod(isConstructor().or(
+                named("readObject").and(isPrivate())
+                        .and(takesArgument(0, ObjectInputStream.class))),
+                this.getClass().getName() + "$ConstructorAdvice");
     }
 
-    public static class MethodAdvice {
+    /**
+     * Class representing the code injected into the ObservabilityHandler
+     * constructor. Two callbacks are set on the new instance - a config
+     * function and an exporter consumer. These allow the handler to retrieve
+     * configuration properties and to export traces, respectively.
+     */
+    public static class ConstructorAdvice {
+        public static AtomicReference<Function<String,String>> configHolder =
+                new AtomicReference<>();
+        public static AtomicReference<BiConsumer<String,
+                Map<String, Object>>> exportHolder = new AtomicReference<>();
 
-        static final String FRONTEND_ID = "vaadin.frontend.id";
-
-        @Advice.OnMethodEnter()
-        public static void onEnter(@Advice.Argument(0) JsonNode root,
-                @Advice.FieldValue("id") String observabilityClientId) {
-            if (!root.has("resourceSpans")) {
-                return;
-            }
-
-            Tracer tracer = InstrumentationHelper.getTracer();
-            for (JsonNode resourceSpanNode : root.get("resourceSpans")) {
-                for (JsonNode scopeSpanNode : resourceSpanNode
-                        .get("scopeSpans")) {
-
-                    Map<String, JsonNode> parentSpanNodes = new HashMap<>();
-                    Map<String, JsonNode> childSpanNodes = new HashMap<>();
-                    for (JsonNode spanNode : scopeSpanNode.get("spans")) {
-                        if (spanNode.has("parentSpanId")) {
-                            childSpanNodes.put(spanNode.get("spanId").asText(),
-                                    spanNode);
-                        } else {
-                            parentSpanNodes.put(spanNode.get("spanId").asText(),
-                                    spanNode);
-                        }
-                    }
-
-                    for (Map.Entry<String, JsonNode> parentEntry : parentSpanNodes
-                            .entrySet()) {
-                        String parentSpanId = parentEntry.getKey();
-                        JsonNode parentSpanNode = parentEntry.getValue();
-
-                        Span parentSpan = createSpan(tracer, parentSpanNode,
-                                observabilityClientId);
-                        try (Scope ignored = parentSpan.makeCurrent()) {
-                            for (Map.Entry<String, JsonNode> childEntry : childSpanNodes
-                                    .entrySet()) {
-                                JsonNode childSpanNode = childEntry.getValue();
-
-                                if (parentSpanId.equals(childSpanNode
-                                        .get("parentSpanId").asText())) {
-                                    Span childSpan = createSpan(tracer,
-                                            childSpanNode,
-                                            observabilityClientId);
-                                    childSpan.end(
-                                            childSpanNode.get("endTimeUnixNano")
-                                                    .asLong(),
-                                            TimeUnit.NANOSECONDS);
-                                }
-                            }
-                        }
-
-                        parentSpan.end(
-                                parentSpanNode.get("endTimeUnixNano").asLong(),
-                                TimeUnit.NANOSECONDS);
-                    }
-
-                    if (parentSpanNodes.size() == 0) {
-                        for (Map.Entry<String, JsonNode> childEntry : childSpanNodes
-                                .entrySet()) {
-                            JsonNode childSpanNode = childEntry.getValue();
-
-                            Span childSpan = createSpan(tracer, childSpanNode,
-                                    observabilityClientId);
-                            childSpan.end(childSpanNode.get("endTimeUnixNano")
-                                    .asLong(), TimeUnit.NANOSECONDS);
-                        }
-                    }
-                }
-            }
+        @Advice.OnMethodExit()
+        public static void onExit(
+                @Advice.FieldValue(value = "config", readOnly = false)
+                Function<String, String> config,
+                @Advice.FieldValue(value = "exporter", readOnly = false)
+                BiConsumer<String, Map<String, Object>> exporter) {
+            config = ConstructorAdvice.configHolder.get();
+            exporter = ConstructorAdvice.exportHolder.get();
         }
-
-        public static Span createSpan(Tracer tracer, JsonNode spanNode,
-                String observabilityClientId) {
-            SpanBuilder spanBuilder = tracer
-                    .spanBuilder("Client: " + spanNode.get("name").asText());
-            spanBuilder.setSpanKind(SpanKind.CLIENT);
-            spanBuilder.setStartTimestamp(
-                    spanNode.get("startTimeUnixNano").asLong(),
-                    TimeUnit.NANOSECONDS);
-
-            Span span = spanBuilder.startSpan();
-            int status = spanNode.get("status").get("code").asInt();
-            span.setStatus(StatusCode.values()[status]);
-
-            span.setAllAttributes(extractAttributes(spanNode));
-            span.setAttribute(FRONTEND_ID, observabilityClientId);
-            for (JsonNode eventNode : spanNode.get("events")) {
-                Attributes attributes = extractAttributes(eventNode);
-                span.addEvent(eventNode.get("name").asText(), attributes,
-                        eventNode.get("timeUnixNano").asLong(),
-                        TimeUnit.NANOSECONDS);
-            }
-
-            return span;
-        }
-
-        @SuppressWarnings({ "rawtypes", "unchecked" })
-        private static Attributes extractAttributes(JsonNode node) {
-            if (node.has("attributes")) {
-                AttributesBuilder builder = Attributes.builder();
-                for (JsonNode attributeNode : node.get("attributes")) {
-                    String key = attributeNode.get("key").asText();
-                    JsonNode valueNode = attributeNode.get("value");
-                    Map.Entry<AttributeKey, Object> entry = attributeValue(key,
-                            valueNode);
-                    if (entry != null) {
-                        builder.put(entry.getKey(), entry.getValue());
-                    }
-                }
-                return builder.build();
-            }
-            return Attributes.empty();
-        }
-
-        // https://open-telemetry.github.io/opentelemetry-js/interfaces/_opentelemetry_otlp_transformer.IAnyValue.html
-        @SuppressWarnings("rawtypes")
-        private static Map.Entry<AttributeKey, Object> attributeValue(
-                String key, JsonNode valueNode) {
-            if (valueNode.has("stringValue")) {
-                return new AbstractMap.SimpleImmutableEntry<>(
-                        AttributeKey.stringKey(key),
-                        valueNode.get("stringValue").asText());
-            } else if (valueNode.has("intValue")) {
-                return new AbstractMap.SimpleImmutableEntry<>(
-                        AttributeKey.longKey(key),
-                        valueNode.get("intValue").asLong());
-            } else if (valueNode.has("boolValue")) {
-                return new AbstractMap.SimpleImmutableEntry<>(
-                        AttributeKey.booleanKey(key),
-                        valueNode.get("boolValue").asBoolean());
-            } else if (valueNode.has("doubleValue")) {
-                return new AbstractMap.SimpleImmutableEntry<>(
-                        AttributeKey.doubleKey(key),
-                        valueNode.get("doubleValue").asDouble());
-            } else if (valueNode.has("arrayValue")) {
-
-                AttributeKey<?> attributeKey = null;
-                List<Object> values = new ArrayList<>();
-                for (JsonNode element : valueNode.get("arrayValue")
-                        .get("values")) {
-                    Map.Entry<AttributeKey, Object> entry = attributeValue(key,
-                            element);
-                    if (entry != null) {
-                        values.add(entry.getValue());
-                        if (attributeKey == null) {
-                            // As per specs, the array MUST be homogeneous,
-                            // i.e., it MUST NOT contain values of different
-                            // types.
-                            attributeKey = entry.getKey();
-                        }
-                    }
-                }
-                if (attributeKey == null) {
-                    // Rejecting empty array, as the type can't be determined
-                    return null;
-                }
-
-                switch (attributeKey.getType()) {
-                case LONG:
-                    attributeKey = AttributeKey.longArrayKey(key);
-                    break;
-                case DOUBLE:
-                    attributeKey = AttributeKey.doubleArrayKey(key);
-                    break;
-                case STRING:
-                    attributeKey = AttributeKey.stringArrayKey(key);
-                    break;
-                case BOOLEAN:
-                    attributeKey = AttributeKey.booleanArrayKey(key);
-                    break;
-                default:
-                    // Arrays can contain only primitive values
-                    attributeKey = null;
-                    break;
-                }
-                if (attributeKey == null) {
-                    return null;
-                }
-                return new AbstractMap.SimpleImmutableEntry<>(attributeKey,
-                        values);
-            }
-            return null;
-        }
-
     }
 }
