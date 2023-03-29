@@ -19,8 +19,21 @@ import io.opentelemetry.sdk.trace.data.SpanData;
 
 import com.vaadin.extension.conf.ConfigurationDefaults;
 
+/**
+ * This is a consumer callback that is injected into an ObservabilityHandler
+ * instance. It handles the export of a Frontend Observability trace. This
+ * consists of a resource, representing the span processor, one or more
+ * scopes, representing the instrumentation type, and for each of those, one
+ * or more spans.
+ */
 public class ObjectMapExporter
         implements BiConsumer<String, Map<String, Object>> {
+    /**
+     * Accepts an observability trace and exports the spans found within it.
+     *
+     * @param id the ID of the installed handler
+     * @param objectMap the object map of the observability trace
+     */
     @Override
     public void accept(String id, Map<String, Object> objectMap) {
         Collection<SpanData> exportSpans = new ArrayList<>();

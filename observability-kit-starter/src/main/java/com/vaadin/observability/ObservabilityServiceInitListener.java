@@ -18,12 +18,22 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinServiceInitListener;
 
+/**
+ * This is a service initialization listener that installs the Frontend
+ * Observability module into a Vaadin UI.
+ */
 public class ObservabilityServiceInitListener
         implements VaadinServiceInitListener {
     private static Logger getLogger() {
         return LoggerFactory.getLogger(ObservabilityServiceInitListener.class);
     }
 
+    /**
+     * Adds the current parent trace and span IDs into a meta tag on the page
+     * and ensures that an ObservabilityHandler is installed on the UI.
+     *
+     * @param serviceInitEvent the service initialization event
+     */
     public void serviceInit(ServiceInitEvent serviceInitEvent) {
         getLogger().info("Initializing Observability Kit");
 

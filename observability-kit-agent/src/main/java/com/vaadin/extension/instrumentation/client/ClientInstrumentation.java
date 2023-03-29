@@ -27,29 +27,47 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
+/**
+ * This instrumentation is applied to the ObservabilityHandler constructor.
+ * Because the agent and starter use different class loaders, the code
+ * to construct SpanData instances and export them must reside entirely
+ * within either the agent or the starter.
+ * To achieve this, this injects a consumer into the ObservabilityHandler
+ * class. The ObservabilityHandler converts the incoming JSON string into
+ * a Map of objects that are only contained within the java.util and
+ * java .lang packages. It then sends this to the consumer. This means that
+ * there are no class loader issues.
+ */
 public class ClientInstrumentation implements TypeInstrumentation {
+    /**
+     * Returns an element matcher for the ObservabilityHandler class.
+     *
+     * @return an element matcher
+     */
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
         return hasClassesNamed("com.vaadin.observability.ObservabilityHandler");
     }
 
+    /**
+     * Returns an element matcher for the ObservabilityHandler class.
+     *
+     * @return an element matcher
+     */
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
         return named("com.vaadin.observability.ObservabilityHandler");
     }
 
+    /**
+     * Sets callbacks on the ConstructorAdvice class and applies this class
+     * to the constructor of an ObservabilityHandler instance.
+     *
+     * @param transformer the TypeTransformer
+     */
+    @SuppressWarnings("unchecked")
     @Override
     public void transform(TypeTransformer transformer) {
-        /* Because the agent and starter use different class loaders, the code
-           to construct SpanData instances and export them must reside entirely
-           within either the agent or the starter.
-
-           To achieve this, we inject a consumer into the
-           ObservabilityHandler class. The ObservabilityHandler converts the
-           incoming JSON string into a Map of objects that are only contained
-           within the java.util and java.lang packages. It then sends this to
-           the consumer. This means that there are no class loader issues.
-         */
         transformer.applyTransformer((builder, typeDescription, classLoader,
                 module, protectionDomain) -> {
             try {
@@ -77,6 +95,12 @@ public class ClientInstrumentation implements TypeInstrumentation {
                 this.getClass().getName() + "$ConstructorAdvice");
     }
 
+    /**
+     * Class representing the code injected into the ObservabilityHandler
+     * constructor. Two callbacks are set on the new instance - a config
+     * function and an exporter consumer. These allow the handler to retrieve
+     * configuration properties and to export traces, respectively.
+     */
     public static class ConstructorAdvice {
         public static AtomicReference<Function<String,String>> function =
                 new AtomicReference<>();

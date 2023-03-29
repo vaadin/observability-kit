@@ -32,6 +32,10 @@ import io.opentelemetry.sdk.trace.data.LinkData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.opentelemetry.sdk.trace.data.StatusData;
 
+/**
+ * This represents the data for an observability span. It is constructed from a
+ * map of objects sent by the Frontend Observability module.
+ */
 public class ObjectMapSpanData implements SpanData {
     private static final String FRONTEND_ID = "vaadin.frontend.id";
 
@@ -49,6 +53,16 @@ public class ObjectMapSpanData implements SpanData {
     private final List<LinkData> links;
     private final StatusData status;
 
+    /**
+     * This takes the ID of the installed handler and three object maps
+     * representing the resource, scope and span of the observability trace.
+     *
+     * @param frontendId The ID of the observability handler
+     * @param resource The resource object map
+     * @param scope The scope object map
+     * @param span The span object map
+     */
+    @SuppressWarnings("unchecked")
     public ObjectMapSpanData(String frontendId, Map<String, Object> resource,
             Map<String, Object> scope, Map<String, Object> span) {
         String traceId = (String) span.get("traceId");

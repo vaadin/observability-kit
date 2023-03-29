@@ -10,6 +10,7 @@
 package com.vaadin.observability;
 
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiConsumer;
@@ -28,6 +29,10 @@ import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.shared.ApplicationConstants;
 
+/**
+ * This class handles Observability messages, which consist of JSON
+ * representations of Frontend Observability traces.
+ */
 public class ObservabilityHandler extends SynchronizedRequestHandler {
     private static Logger getLogger() {
         return LoggerFactory.getLogger(ObservabilityHandler.class);
@@ -41,14 +46,20 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
 
     private final String id = UUID.randomUUID().toString();
 
-    public transient Function<String, String> config = (key) -> {
+    transient Function<String, String> config = (key) -> {
         getLogger().error("Observability agent is not running");
         return null;
     };
-    public transient BiConsumer<String, Map<String,Object>> exporter = (id, map) -> {
+    transient BiConsumer<String, Map<String,Object>> exporter = (id, map) -> {
         getLogger().error("Observability agent is not running");
     };
 
+    /**
+     * Installs an Observability handler onto the provided UI.
+     *
+     * @param ui the UI that the handler should be installed on
+     * @return the installed ObservabilityHandler
+     */
     static ObservabilityHandler ensureInstalled(UI ui) {
         ObservabilityHandler observabilityHandler = ComponentUtil.getData(ui,
                 ObservabilityHandler.class);
@@ -85,9 +96,13 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
         return newObservabilityHandler;
     }
 
-    public ObservabilityHandler() {
-    }
-
+    /**
+     * Returns whether the provided request conforms to a Frontend
+     * Observability message and that the associated ID matches the handler ID.
+     *
+     * @param request the Vaadin request
+     * @return true if the request can be handled
+     */
     @Override
     protected boolean canHandleRequest(VaadinRequest request) {
         if (!PATH.equals(request.getPathInfo())) {
@@ -99,6 +114,17 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
         return REQUEST_TYPE.equals(requestType) && id.equals(instanceId);
     }
 
+    /**
+     * Handles a Frontend Observability message within a request. The
+     * incoming JSON string is mapped to a hierarchical map of native Java
+     * objects and sent to a callback injected by the Observability agent.
+     *
+     * @param session the Vaadin session
+     * @param request the Vaadin request
+     * @param response the Vaadin response
+     * @return true if the request has been handled and should not be
+     * processed further.
+     */
     @Override
     public boolean synchronizedHandleRequest(VaadinSession session,
             VaadinRequest request, VaadinResponse response) {
@@ -129,11 +155,46 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
         return true;
     }
 
+    /**
+     * Returns the unique ID for the installed handler.
+     *
+     * @return the unique handler ID
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Gets the string value of the provided configuration key name from a
+     * callback injected by the Observability agent.
+     *
+     * @param key
+     *            the configuration key name
+     * @return the string value of the key
+     */
     public String getConfigProperty(String key) {
         return config.apply(key);
+    }
+
+    /**
+     * Override default deserialization logic to account for transient fields.
+     *
+     * @param stream
+     *            the object to read
+     * @throws IOException
+     *            if an IO error occured
+     * @throws ClassNotFoundException
+     *            if the class of the stream object could not be found
+     */
+    public void readObject(ObjectInputStream stream)
+            throws IOException, ClassNotFoundException {
+        stream.defaultReadObject();
+        config = (key) -> {
+            getLogger().error("");
+            return null;
+        };
+        exporter = (id, map) -> {
+            getLogger().error("");
+        };
     }
 }
