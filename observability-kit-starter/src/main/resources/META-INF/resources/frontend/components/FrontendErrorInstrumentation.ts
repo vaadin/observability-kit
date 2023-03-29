@@ -62,6 +62,8 @@ export class FrontendErrorInstrumentation extends InstrumentationBase {
             span.setAttribute("target_element", eventTarget.tagName);
             span.setAttribute("target_xpath", getElementXPath(eventTarget));
             span.setAttribute("target_src", eventTarget.src);
+            span.setAttribute("target_href", eventTarget.href);
+            span.setAttribute("target_data", eventTarget.data);
         }
     }
 
