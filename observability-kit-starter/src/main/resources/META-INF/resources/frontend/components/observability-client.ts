@@ -10,7 +10,8 @@ import {
   DocumentLoadInstrumentation
 } from "@opentelemetry/instrumentation-document-load";
 import {
-  UserInteractionInstrumentation
+  UserInteractionInstrumentation,
+  EventName
 } from "@opentelemetry/instrumentation-user-interaction";
 import {
   XMLHttpRequestInstrumentation
@@ -21,12 +22,23 @@ import {
 import {OTLPTraceExporter} from "@opentelemetry/exporter-trace-otlp-http";
 import {Resource} from "@opentelemetry/resources";
 import {SemanticResourceAttributes} from "@opentelemetry/semantic-conventions";
+import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation';
 
 @customElement('vaadin-observability-client')
 export class ObservabilityClient extends LitElement {
   instanceId?: string;
   serviceName?: string;
   serviceVersion?: string;
+
+  traceDocumentLoad?: boolean;
+  traceUserInteraction?: EventName[]
+  traceXmlHTTPRequest?: boolean;
+  ignoreURLs?: string[];
+  ignoreVaadinURLs?: boolean;
+
+  traceLongTask?: boolean;
+  traceErrors?: boolean
+
   unloadInstrumentations? : () => void;
 
   constructor() {
@@ -71,22 +83,49 @@ export class ObservabilityClient extends LitElement {
       contextManager: new StackContextManager(),
     });
 
-    //Registering instrumentations
+    const instrumentations = [];
+    if (this.traceDocumentLoad) {
+      instrumentations.push(new DocumentLoadInstrumentation());
+    }
+    if (this.traceUserInteraction) {
+      instrumentations.push(new UserInteractionInstrumentation({
+        eventNames: [...this.traceUserInteraction]
+      }));
+    }
+    if (this.traceXmlHTTPRequest) {
+      const ignoredUrls = [];
+      if (this.ignoreVaadinURLs) {
+        ignoredUrls.push(/\/?v-r=.*/);
+        ignoredUrls.push(/\/VAADIN\/.*/);
+      } else {
+        ignoredUrls.push('/?v-r=o11y');
+      }
+      if (this.ignoreURLs) {
+        ignoredUrls.push(...this.ignoreURLs.map((url) => {
+          const match = url.match(/^RE:\/(.*)\/$/);
+          if (match) {
+            return new RegExp(match[1]);
+          }
+          return url;
+        }));
+      }
+      instrumentations.push(new XMLHttpRequestInstrumentation({
+        ignoreUrls: ignoredUrls
+      }));
+    }
+    if (this.traceLongTask) {
+      instrumentations.push(new LongTaskInstrumentation());
+    }
+    if (this.traceErrors) {
+      instrumentations.push(new FrontendErrorInstrumentation());
+    }
+
     this.unloadInstrumentations = registerInstrumentations({
-      instrumentations: [
-        new DocumentLoadInstrumentation(),
-        new UserInteractionInstrumentation(),
-        new XMLHttpRequestInstrumentation({
-          ignoreUrls: [
-            '/?v-r=o11y',
-          ]
-        }),
-        new LongTaskInstrumentation()
-      ],
-    });
+      instrumentations: instrumentations
+    })
   }
 
-  public disconnectedCallback() {
+  disconnectedCallback() {
     super.disconnectedCallback();
 
     if (this.unloadInstrumentations) {

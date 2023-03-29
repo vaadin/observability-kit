@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.di.Lookup;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinServiceInitListener;
 
@@ -48,9 +49,12 @@ public class ObservabilityServiceInitListener
                     .attr("content", traceParent);
         });
 
-        serviceInitEvent.getSource().addUIInitListener(event -> {
-            UI ui = event.getUI();
+        ObservabilityClientConfigurer configurer = getObservabilityClientConfigurer(
+                serviceInitEvent);
 
+        serviceInitEvent.getSource().addUIInitListener(event -> {
+
+            UI ui = event.getUI();
             ObservabilityHandler handler = ObservabilityHandler
                     .ensureInstalled(ui);
 
@@ -58,13 +62,36 @@ public class ObservabilityServiceInitListener
                     .filter(child -> (child instanceof ObservabilityClient))
                     .forEach(ui::remove);
 
-            ObservabilityClient client = new ObservabilityClient();
-            client.getElement().setProperty("instanceId", handler.getId());
-            client.getElement().setProperty("serviceName",
-                    handler.getConfigProperty("otel.service.name"));
-            client.getElement().setProperty("serviceVersion",
-                    handler.getConfigProperty("otel.service.version"));
-            ui.add(client);
-        });
+            ObservabilityClient client = new ObservabilityClient(
+                    handler.getId());
+            if (configurer != null) {
+                configurer.configure(client);
+            }
+            if (client.isEnabled()) {
+                client.getElement().setProperty("instanceId", handler.getId());
+                client.getElement().setProperty("serviceName",
+                        handler.getConfigProperty("otel.service.name"));
+                client.getElement().setProperty("serviceVersion",
+                        handler.getConfigProperty("otel.service.version"));
+                ui.add(client);
+            } else {
+                getLogger().debug(
+                        "Observability Client disabled for UI {} in Vaadin Session {}",
+                        ui.getUIId(), ui.getSession().getSession().getId());
+            }
+
     }
+
+    private static ObservabilityClientConfigurer getObservabilityClientConfigurer(
+            ServiceInitEvent serviceInitEvent) {
+        ObservabilityClientConfigurer configurer = serviceInitEvent.getSource()
+                .getContext().getAttribute(Lookup.class)
+                .lookup(ObservabilityClientConfigurer.class);
+        if (configurer != null) {
+            getLogger().info(
+                    "Applying custom front-end observability configuration");
+        }
+        return configurer;
+    }
+
 }

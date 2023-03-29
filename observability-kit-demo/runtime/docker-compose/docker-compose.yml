@@ -1,0 +1,81 @@
+version: "3.8"
+
+services:
+  tempo:
+    image: grafana/tempo:latest
+    command: [ "-config.file=/etc/tempo.yaml" ]
+    volumes:
+      - tempo_data:/tmp/tempo
+      - ./tempo/tempo.yaml:/etc/tempo.yaml
+    ports:
+      - "3200"  # tempo
+      - "4317"  # otlp grpc
+      - "4318"  # otlp http
+    networks:
+      - o11y
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - o11y
+  collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8090"
+    volumes:
+      - ./collector/collector.yaml:/etc/otelcol-contrib/config.yaml
+    networks:
+      - o11y
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--enable-feature=remote-write-receiver"
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - o11y
+  grafana:
+    image: grafana/grafana-enterprise
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./grafana/vaadin-dashboard.json:/var/lib/grafana/dashboards/vaadin-dashboard.json
+      - ./grafana/vaadin-frontend-dashboard.json:/var/lib/grafana/dashboards/vaadin-frontend-dashboard.json
+    environment:
+      GF_FEATURE_TOGGLES_ENABLE: "tempoApmTable"
+    ports:
+      - "3000:3000"
+    networks:
+      - o11y
+  demo:
+    image: vaadin/observability-kit-demo
+    environment:
+      - OTEL_JAVAAGENT_CONFIGURATION_FILE=/workspace/agent.properties
+      - OTEL_JAVAAGENT_DEBUG
+      - VAADIN_OFFLINE_KEY
+    volumes:
+      - ./agent.properties:/workspace/agent.properties
+    ports:
+      - "8080:8080"
+    networks:
+      - o11y
+    profiles:
+      - full
+volumes:
+  prometheus:
+    driver: local
+  grafana_data:
+    driver: local
+  tempo_data:
+    driver: local
+networks:
+  o11y:

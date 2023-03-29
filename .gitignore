@@ -5,11 +5,13 @@
 **/target
 **/error-screenshots
 **/node_modules
+observability-kit-test/**/frontend/index.html
 
 **/.sts4-cache/*
 .factorypath
 
 *pom.xml.versionsBackup
+dependency-reduced-pom.xml
 
 *.DS_Store
 .idea/
@@ -17,3 +19,11 @@
 
 build/
 .gradle/
+
+generated/
+node_modules/
+package.json
+package-lock.json
+tsconfig.json
+types.d.ts
+vite.*
