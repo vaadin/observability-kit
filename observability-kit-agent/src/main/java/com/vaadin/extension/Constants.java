@@ -22,4 +22,5 @@ public class Constants {
     public static final String FLOW_VERSION = "vaadin.flow.version";
 
     public static final String REQUEST_LOCATION_PARAMETER = "location";
+    public static final String FRONTEND_ID = "vaadin.frontend.id";
 }

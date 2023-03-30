@@ -132,8 +132,6 @@ public class VaadinObservabilityInstrumentationModule
     }
 
     private Stream<TypeInstrumentation> clientInstrumentation() {
-        // @formatter:off
         return Stream.of(new ClientInstrumentation());
-        // @formatter:on
     }
 }

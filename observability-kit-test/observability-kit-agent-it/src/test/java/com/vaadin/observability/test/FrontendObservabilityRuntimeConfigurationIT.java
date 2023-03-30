@@ -25,7 +25,6 @@ import org.mockserver.junit.jupiter.MockServerExtension;
 import org.mockserver.junit.jupiter.MockServerSettings;
 import org.mockserver.model.Body;
 import org.mockserver.model.HttpRequest;
-import org.openqa.selenium.json.JsonOutput;
 
 import com.vaadin.flow.component.html.testbench.H1Element;
 import com.vaadin.flow.component.html.testbench.NativeButtonElement;
@@ -73,10 +72,10 @@ public class FrontendObservabilityRuntimeConfigurationIT
         assertObservabilityClientExist();
         $(NativeButtonElement.class).id("clientSideError").click();
         assertTracesExported("defaultConfiguration_allInstrumentationsActive",
-                Set.of("Client: documentLoad", "Client: documentFetch",
-                        "Client: resourceFetch", "Client: click",
-                        "Client: longtask", "Client: windowError",
-                        "Client: unhandledRejection"),
+                Set.of("Frontend: documentLoad", "Frontend: documentFetch",
+                        "Frontend: resourceFetch", "Frontend: click",
+                        "Frontend: longtask", "Frontend: windowError",
+                        "Frontend: unhandledRejection"),
                 Set.of());
 
     }
@@ -98,10 +97,10 @@ public class FrontendObservabilityRuntimeConfigurationIT
         $(NativeButtonElement.class).id("clientSideError").click();
         assertTracesExported(
                 "customConfiguration_documentLoad_onlyActiveInstrumentationTraces",
-                Set.of("Client: documentLoad", "Client: documentFetch",
-                        "Client: resourceFetch"),
-                Set.of("Client: click", "Client: longtask",
-                        "Client: windowError", "Client: unhandledRejection"));
+                Set.of("Frontend: documentLoad", "Frontend: documentFetch",
+                        "Frontend: resourceFetch"),
+                Set.of("Frontend: click", "Frontend: longtask",
+                        "Frontend: windowError", "Frontend: unhandledRejection"));
     }
 
     @BrowserTest
@@ -114,10 +113,10 @@ public class FrontendObservabilityRuntimeConfigurationIT
         $(NativeButtonElement.class).id("clientSideError").click();
         assertTracesExported(
                 "customConfiguration_documentLoad_onlyActiveInstrumentationTraces",
-                Set.of("Client: longtask"),
-                Set.of("Client: documentLoad", "Client: documentFetch",
-                        "Client: resourceFetch", "Client: click",
-                        "Client: windowError", "Client: unhandledRejection"));
+                Set.of("Frontend: longtask"),
+                Set.of("Frontend: documentLoad", "Frontend: documentFetch",
+                        "Frontend: resourceFetch", "Frontend: click",
+                        "Frontend: windowError", "Frontend: unhandledRejection"));
     }
 
     private void assertObservabilityClientExist() {
