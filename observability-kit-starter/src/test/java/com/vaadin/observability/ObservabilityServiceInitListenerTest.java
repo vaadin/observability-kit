@@ -1,6 +1,12 @@
 package com.vaadin.observability;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Assertions;
@@ -19,6 +25,7 @@ import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.WrappedSession;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -75,7 +82,8 @@ public class ObservabilityServiceInitListenerTest {
 
         service.fireUIInitListeners(ui);
 
-        verify(ui.getSession()).addRequestHandler(any(ObservabilityHandler.class));
+        verify(ui.getSession())
+                .addRequestHandler(any(ObservabilityHandler.class));
         verify(ui).add(any(ObservabilityClient.class));
     }
 
@@ -92,13 +100,14 @@ public class ObservabilityServiceInitListenerTest {
 
         service.fireUIInitListeners(ui);
 
-        verify(ui.getSession()).addRequestHandler(any(ObservabilityHandler.class));
+        verify(ui.getSession())
+                .addRequestHandler(any(ObservabilityHandler.class));
         verify(ui, times(2)).remove(any(ObservabilityClient.class));
         verify(ui).add(any(ObservabilityClient.class));
     }
 
     @Test
-    void observabilityClientConfigurer_configurationApplied() {
+    void customObservabilityClientConfigurer_configurationApplied() {
         ObservabilityClientConfigurer configurer = config -> {
             config.setDocumentLoadEnabled(false);
             config.setFrontendErrorEnabled(false);
@@ -120,6 +129,8 @@ public class ObservabilityServiceInitListenerTest {
         ObservabilityClient client = captor.getValue();
         Assertions.assertTrue(client.isEnabled(),
                 "Expecting client to be enabled");
+        Assertions.assertTrue(client.isLongTaskEnabled(),
+                "Expecting long task to be enabled");
         Assertions.assertFalse(client.isDocumentLoadEnabled(),
                 "Expecting document load to be disabled");
         Assertions.assertFalse(client.isFrontendErrorEnabled(),
@@ -127,12 +138,11 @@ public class ObservabilityServiceInitListenerTest {
         Assertions.assertFalse(client.isXMLHttpRequestEnabled(),
                 "Expecting xml http request to be disabled");
         Assertions.assertEquals(Set.of("mousedown", "play"),
-                client.getUserInteractionEvents(),
-                "User Interaction Events");
+                client.getUserInteractionEvents(), "User Interaction Events");
     }
 
     @Test
-    void observabilityClientConfigurer_disableObservability_clientNotAdded() {
+    void customObservabilityClientConfigurer_disabledObservability_clientNotAdded() {
         ObservabilityClientConfigurer configurer = config -> config
                 .setEnabled(false);
         when(lookup.lookup(ObservabilityClientConfigurer.class))
@@ -144,6 +154,99 @@ public class ObservabilityServiceInitListenerTest {
         service.fireUIInitListeners(ui);
 
         verify(ui, never()).add(any(ObservabilityClient.class));
+    }
+
+    @Test
+    void observabilityClientConfiguration_agentConfiguration_settingsApplied() {
+        ObservabilityServiceInitListener listener = new ObservabilityServiceInitListener();
+        listener.serviceInit(serviceInitEvent);
+
+        assertAgentConfigurationApplied(flagSetter -> {
+            flagSetter.accept("enabled", true);
+            flagSetter.accept("document-load", true);
+            flagSetter.accept("user-interaction", true);
+            flagSetter.accept("xml-http-request", true);
+            flagSetter.accept("long-task", true);
+            flagSetter.accept("frontend-error", true);
+        });
+
+        assertAgentConfigurationApplied(flagSetter -> {
+            flagSetter.accept("enabled", true);
+            flagSetter.accept("document-load", false);
+            flagSetter.accept("user-interaction", true);
+            flagSetter.accept("xml-http-request", false);
+            flagSetter.accept("long-task", true);
+            flagSetter.accept("frontend-error", true);
+        });
+    }
+
+    @Test
+    void observabilityClientConfiguration_enabledByAgentConfiguration_allInstrumentationEnabled() {
+        ObservabilityServiceInitListener listener = new ObservabilityServiceInitListener();
+        listener.serviceInit(serviceInitEvent);
+
+        assertAgentConfigurationApplied(
+                flagSetter -> flagSetter.accept("enabled", true));
+    }
+
+    @Test
+    void observabilityClientConfiguration_allInstrumentationDisabledInAgentConfiguration_clientDisabled() {
+        ObservabilityServiceInitListener listener = new ObservabilityServiceInitListener();
+        listener.serviceInit(serviceInitEvent);
+
+        mockAgentConfiguration(flagSetter -> {
+            flagSetter.accept("enabled", true);
+            flagSetter.accept("document-load", false);
+            flagSetter.accept("user-interaction", false);
+            flagSetter.accept("xml-http-request", false);
+            flagSetter.accept("long-task", false);
+            flagSetter.accept("frontend-error", false);
+        });
+
+        service.fireUIInitListeners(ui);
+
+        verify(ui, never()).add(any(ObservabilityClient.class));
+    }
+
+    private Function<String, Optional<Boolean>> mockAgentConfiguration(
+            Consumer<BiConsumer<String, Boolean>> flagSetter) {
+        Map<String, String> agentConfiguration = new HashMap<>();
+        flagSetter.accept((key, value) -> agentConfiguration.put(
+                ObservabilityServiceInitListener.CONFIG_PROPERTY_PREFIX + key,
+                Boolean.toString(value)));
+        ObservabilityHandler handler = ObservabilityHandler.ensureInstalled(ui);
+        handler.config = agentConfiguration::get;
+
+        return key -> Optional.ofNullable(agentConfiguration.get(
+                ObservabilityServiceInitListener.CONFIG_PROPERTY_PREFIX + key))
+                .map(Boolean::parseBoolean);
+    }
+
+    private void assertAgentConfigurationApplied(
+            Consumer<BiConsumer<String, Boolean>> flagSetter) {
+        Function<String, Boolean> flagEnabled = mockAgentConfiguration(
+                flagSetter).andThen(opt -> opt.orElse(true));
+
+        service.fireUIInitListeners(ui);
+
+        ArgumentCaptor<ObservabilityClient> captor = ArgumentCaptor
+                .forClass(ObservabilityClient.class);
+        verify(ui, atLeastOnce()).add(captor.capture());
+
+        ObservabilityClient client = captor.getValue();
+
+        Assertions.assertTrue(client.isEnabled(),
+                "Expecting client to be enabled");
+        Assertions.assertEquals(flagEnabled.apply("document-load"),
+                client.isDocumentLoadEnabled(), "Document Load");
+        Assertions.assertEquals(flagEnabled.apply("user-interaction"),
+                client.isUserInteractionEnabled(), "User Interaction");
+        Assertions.assertEquals(flagEnabled.apply("xml-http-request"),
+                client.isXMLHttpRequestEnabled(), "XML HTTP Request");
+        Assertions.assertEquals(flagEnabled.apply("long-task"),
+                client.isLongTaskEnabled(), "Long Task");
+        Assertions.assertEquals(flagEnabled.apply("frontend-error"),
+                client.isFrontendErrorEnabled(), "Frontend Error");
     }
 
 }

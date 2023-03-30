@@ -25,6 +25,9 @@ import com.vaadin.flow.server.VaadinServiceInitListener;
  */
 public class ObservabilityServiceInitListener
         implements VaadinServiceInitListener {
+
+    static final String CONFIG_PROPERTY_PREFIX = "otel.instrumentation.vaadin.frontend.";
+
     private static Logger getLogger() {
         return LoggerFactory.getLogger(ObservabilityServiceInitListener.class);
     }
@@ -66,6 +69,8 @@ public class ObservabilityServiceInitListener
                     handler.getId());
             if (configurer != null) {
                 configurer.configure(client);
+            } else {
+                applyDefaultConfiguration(handler, client);
             }
             if (client.isEnabled()) {
                 client.getElement().setProperty("instanceId", handler.getId());
@@ -80,6 +85,42 @@ public class ObservabilityServiceInitListener
                         ui.getUIId(), ui.getSession().getSession().getId());
             }
         });
+    }
+
+
+
+    private static void applyDefaultConfiguration(ObservabilityHandler handler,
+            ObservabilityClient client) {
+        if (isConfigurationFlagEnabled(handler, "enabled", true)) {
+            client.setDocumentLoadEnabled(
+                    isConfigurationFlagEnabled(handler, "document-load", true));
+            client.setUserInteractionEnabled(
+                    isConfigurationFlagEnabled(handler, "user-interaction", true));
+            client.setXMLHttpRequestEnabled(
+                    isConfigurationFlagEnabled(handler, "xml-http-request", true));
+            client.setLongTaskEnabled(
+                    isConfigurationFlagEnabled(handler, "long-task", true));
+            client.setFrontendErrorEnabled(
+                    isConfigurationFlagEnabled(handler, "frontend-error", true));
+            // ObservabilityClient should not be added if all instrumentation
+            // are disabled
+            client.setEnabled(client.isDocumentLoadEnabled()
+                    || client.isUserInteractionEnabled()
+                    || client.isXMLHttpRequestEnabled()
+                    || client.isLongTaskEnabled()
+                    || client.isFrontendErrorEnabled());
+        } else {
+            client.setEnabled(false);
+        }
+    }
+
+    private static boolean isConfigurationFlagEnabled(ObservabilityHandler handler,
+                                                      String key, boolean defaultValue) {
+        String value = handler.getConfigProperty(CONFIG_PROPERTY_PREFIX + key);
+        if (value != null) {
+            return Boolean.parseBoolean(value);
+        }
+        return defaultValue;
     }
 
     private static ObservabilityClientConfigurer getObservabilityClientConfigurer(
