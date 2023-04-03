@@ -30,7 +30,6 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.RouteConfiguration;
-import com.vaadin.flow.server.HandlerHelper;
 import com.vaadin.flow.server.Version;
 import com.vaadin.flow.shared.ApplicationConstants;
 
@@ -382,8 +381,8 @@ public class InstrumentationHelper {
     }
 
     public static boolean isRequestType(HttpServletRequest servletRequest,
-            HandlerHelper.RequestType requestType) {
-        return requestType.getIdentifier().equals(servletRequest
-                .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER));
+            String requestType) {
+        return requestType.equals(servletRequest.getParameter
+                (ApplicationConstants.REQUEST_TYPE_PARAMETER));
     }
 }

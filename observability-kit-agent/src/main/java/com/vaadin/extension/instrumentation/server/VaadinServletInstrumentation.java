@@ -13,10 +13,10 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
+import com.vaadin.extension.Constants;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.conf.TraceLevel;
-import com.vaadin.flow.server.HandlerHelper;
 
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -65,8 +65,12 @@ public class VaadinServletInstrumentation implements TypeInstrumentation {
                 @Advice.Local("rootSpanCreated") boolean rootSpanCreated) {
             rootSpanCreated = false;
             if (InstrumentationHelper.isRequestType(servletRequest,
-                    HandlerHelper.RequestType.HEARTBEAT)
-                    && !Configuration.isEnabled(TraceLevel.MAXIMUM)) {
+                    Constants.REQUEST_TYPE_HEARTBEAT) &&
+                            !Configuration.isEnabled(TraceLevel.MAXIMUM)) {
+                return;
+            }
+            if (InstrumentationHelper.isRequestType(servletRequest,
+                    Constants.REQUEST_TYPE_OBSERVABILITY)) {
                 return;
             }
             // Create a server root span if it doesn't exist yet. This can be

@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import com.vaadin.extension.HttpStatusCode;
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
-import com.vaadin.flow.server.HandlerHelper;
 import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.common.AttributeKey;
@@ -119,8 +118,7 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     public void heartbeatRequest_byDefaultNoSpan() {
         Mockito.when(servletRequest
                 .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER))
-                .thenReturn(
-                        HandlerHelper.RequestType.HEARTBEAT.getIdentifier());
+                .thenReturn(REQUEST_TYPE_HEARTBEAT);
 
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
                 null, false);
@@ -135,8 +133,7 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
     public void heartbeatRequest_maxTrace_spanCreated() {
         Mockito.when(servletRequest
                 .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER))
-                .thenReturn(
-                        HandlerHelper.RequestType.HEARTBEAT.getIdentifier());
+                .thenReturn(REQUEST_TYPE_HEARTBEAT);
         configureTraceLevel(TraceLevel.MAXIMUM);
 
         VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
@@ -146,6 +143,21 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
 
         assertEquals(1, getExportedSpanCount(),
                 "Maximum trace should generate heartbeat");
+    }
+
+    @Test
+    public void observabilityRequest_noSpanCreated() {
+        Mockito.when(servletRequest
+                        .getParameter(ApplicationConstants.REQUEST_TYPE_PARAMETER))
+                .thenReturn(REQUEST_TYPE_OBSERVABILITY);
+
+        VaadinServletInstrumentation.MethodAdvice.onEnter(servletRequest, null,
+                null, false);
+        VaadinServletInstrumentation.MethodAdvice.onExit(null, servletResponse,
+                currentContext(), currentContext().makeCurrent(), false);
+
+        assertEquals(0, getExportedSpanCount(),
+                "No span should be made for observability");
     }
 
     @Test

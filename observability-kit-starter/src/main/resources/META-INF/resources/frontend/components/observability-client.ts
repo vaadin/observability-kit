@@ -37,7 +37,7 @@ export class ObservabilityClient extends LitElement {
   traceDocumentLoad?: boolean;
   traceUserInteraction?: EventName[]
   traceXmlHTTPRequest?: boolean;
-  ignoreURLs?: string[];
+  ignoredURLs?: string[];
   ignoreVaadinURLs?: boolean;
 
   traceLongTask?: boolean;
@@ -102,10 +102,11 @@ export class ObservabilityClient extends LitElement {
         ignoredUrls.push(/\/?v-r=.*/);
         ignoredUrls.push(/\/VAADIN\/.*/);
       } else {
-        ignoredUrls.push('/?v-r=o11y');
+        ignoredUrls.push(/v-r=heartbeat/);
+        ignoredUrls.push(/v-r=o11y/);
       }
-      if (this.ignoreURLs) {
-        ignoredUrls.push(...this.ignoreURLs.map((url) => {
+      if (this.ignoredURLs) {
+        ignoredUrls.push(...this.ignoredURLs.map((url) => {
           const match = url.match(/^RE:\/(.*)\/$/);
           if (match) {
             return new RegExp(match[1]);
