@@ -12,9 +12,13 @@ package com.vaadin.extension.instrumentation.communication;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
+import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
+import com.vaadin.extension.Constants;
 import com.vaadin.extension.InstrumentationHelper;
+import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.communication.SessionRequestHandler;
+import com.vaadin.flow.shared.ApplicationConstants;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
@@ -44,7 +48,9 @@ public class SessionRequestHandlerInstrumentation
 
     @Override
     public void transform(TypeTransformer transformer) {
-        transformer.applyAdviceToMethod(named("handleRequest"),
+        transformer.applyAdviceToMethod(named("handleRequest")
+                        .and(takesArgument(1,
+                                named("com.vaadin.flow.server.VaadinRequest"))),
                 this.getClass().getName() + "$HandleRequestAdvice");
     }
 
@@ -52,10 +58,17 @@ public class SessionRequestHandlerInstrumentation
     public static class HandleRequestAdvice {
         @Advice.OnMethodEnter()
         public static void onEnter(
+                @Advice.Argument(1) VaadinRequest vaadinRequest,
                 @Advice.This SessionRequestHandler sessionRequestHandler,
                 @Advice.Origin("#m") String methodName,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
+            if (Constants.REQUEST_TYPE_OBSERVABILITY.equals(
+                    vaadinRequest.getParameter(
+                            ApplicationConstants.REQUEST_TYPE_PARAMETER))) {
+                return;
+            }
+
             String spanName = sessionRequestHandler.getClass().getSimpleName()
                     + "." + methodName;
             span = InstrumentationHelper.startSpan(spanName);
@@ -69,7 +82,9 @@ public class SessionRequestHandlerInstrumentation
                 @Advice.Return boolean handled,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
-            InstrumentationHelper.endSpan(span, throwable, scope);
+            if (span != null) {
+                InstrumentationHelper.endSpan(span, throwable, scope);
+            }
         }
     }
 }
