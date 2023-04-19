@@ -31,6 +31,11 @@
             <version>${flow.version}</version>
         </dependency>
         <dependency>
+            <groupId>dev.hilla</groupId>
+            <artifactId>hilla</artifactId>
+            <version>${hilla.version}</version>
+        </dependency>
+        <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>license-checker</artifactId>
         </dependency>

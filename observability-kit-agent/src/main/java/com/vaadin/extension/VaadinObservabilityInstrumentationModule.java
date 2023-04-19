@@ -13,6 +13,7 @@ import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.
 
 import com.vaadin.extension.instrumentation.AbstractNavigationStateRendererInstrumentation;
 import com.vaadin.extension.instrumentation.client.ClientInstrumentation;
+import com.vaadin.extension.instrumentation.client.HillaClientInstrumentation;
 import com.vaadin.extension.instrumentation.communication.HeartbeatHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.JavaScriptBootstrapHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.communication.PwaHandlerInstrumentation;
@@ -132,6 +133,7 @@ public class VaadinObservabilityInstrumentationModule
     }
 
     private Stream<TypeInstrumentation> clientInstrumentation() {
-        return Stream.of(new ClientInstrumentation());
+        return Stream.of(new ClientInstrumentation(),
+                new HillaClientInstrumentation());
     }
 }
