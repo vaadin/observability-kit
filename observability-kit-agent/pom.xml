@@ -14,7 +14,7 @@
     <properties>
         <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
         <google.auto-service.version>1.0</google.auto-service.version>
-        <byte-buddy.plugin.version>1.13.0</byte-buddy.plugin.version>
+        <byte-buddy.version>1.14.4</byte-buddy.version>
     </properties>
 
     <dependencies>
@@ -46,6 +46,12 @@
             <artifactId>auto-service</artifactId>
             <version>${google.auto-service.version}</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+            <version>${byte-buddy.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.opentelemetry.instrumentation</groupId>
@@ -101,7 +107,7 @@
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-inline</artifactId>
-            <version>4.7.0</version>
+            <version>${mockito.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -151,7 +157,7 @@
             <plugin>
                 <groupId>net.bytebuddy</groupId>
                 <artifactId>byte-buddy-maven-plugin</artifactId>
-                <version>${byte-buddy.plugin.version}</version>
+                <version>${byte-buddy.version}</version>
                 <dependencies>
                     <dependency>
                         <groupId>io.opentelemetry.javaagent</groupId>
