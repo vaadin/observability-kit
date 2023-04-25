@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
 @AnonymousAllowed
 public class ObservabilityEndpoint {
     private static Logger getLogger() {
-        return LoggerFactory.getLogger(ObservabilityHandler.class);
+        return LoggerFactory.getLogger(ObservabilityEndpoint.class);
     }
 
     String id = null;

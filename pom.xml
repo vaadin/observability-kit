@@ -22,6 +22,7 @@
     <modules>
         <module>observability-kit-agent</module>
         <module>observability-kit-starter</module>
+        <module>observability-kit-starter-hilla</module>
     </modules>
 
     <profiles>
