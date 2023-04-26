@@ -1,0 +1,14 @@
+{
+  "extends": [
+    "vaadin/typescript-requiring-type-checking",
+    "vaadin/imports-typescript",
+    "vaadin/lit",
+    "vaadin/prettier"
+  ],
+  "rules": {
+    "class-methods-use-this": "off",
+    "import/no-unassigned-import": "off",
+    "import/no-cycle": "off",
+    "@typescript-eslint/unbound-method": "off"
+  }
+}
