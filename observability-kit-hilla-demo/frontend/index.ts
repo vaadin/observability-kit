@@ -5,7 +5,7 @@ import { appName, location, setLocation } from './stores/location-store.js';
 
 addEventListener('vaadin-router-location-changed', ({ detail: { location: loc } }) => {
   setLocation(loc);
-  const { title } = location.get();
+  const { title } = location.value;
   document.title = title ? `${title} | ${appName}` : appName;
 });
 
