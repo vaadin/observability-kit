@@ -33,6 +33,7 @@
   },
   "include": [
     "frontend/**/*",
+    ".lintstagedrc.mjs",
     "types.d.ts",
     "vite.config.ts"
   ],
