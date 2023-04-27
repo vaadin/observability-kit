@@ -1,22 +1,22 @@
 import { login as serverLogin, logout as serverLogout } from '@hilla/frontend';
+import { effect, signal } from '@preact/signals-core';
 import { Router } from '@vaadin/router';
-import { action, atom, onSet } from 'nanostores';
 
-export const auth = atom(true);
+export const auth = signal(true);
 
-export const login = action(auth, 'login', async (store, username: string, password: string) => {
+export async function login(username: string, password: string): Promise<void> {
   const result = await serverLogin(username, password);
   if (!result.error) {
-    store.set(true);
+    auth.value = true;
   } else {
     throw new Error(result.errorMessage ?? 'Login failed');
   }
-});
+}
 
-export const logout = action(auth, 'logout', async (store) => {
+export async function logout(): Promise<void> {
   await serverLogout();
-  store.set(false);
-});
+  auth.value = false;
+}
 
 const REDIRECT_PATH_KEY = 'login-redirect-path';
 
@@ -24,8 +24,8 @@ export function memorizeRedirectPath(path: string): void {
   sessionStorage.setItem(REDIRECT_PATH_KEY, path);
 }
 
-onSet(auth, ({ newValue: loggedIn }) => {
-  if (loggedIn) {
+effect(() => {
+  if (auth.value) {
     Router.go(sessionStorage.getItem(REDIRECT_PATH_KEY) ?? '/');
   } else if (location.pathname !== '/login') {
     memorizeRedirectPath(location.pathname);

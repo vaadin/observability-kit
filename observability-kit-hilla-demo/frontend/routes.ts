@@ -38,7 +38,7 @@ export const views = [
 export const routes = [
   {
     async action(context, commands) {
-      if (!auth.get()) {
+      if (!auth.value) {
         memorizeRedirectPath(context.pathname);
         return commands.redirect('/login');
       }

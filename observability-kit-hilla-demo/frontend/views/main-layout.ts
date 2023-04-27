@@ -1,5 +1,4 @@
 import '@vaadin-component-factory/vcf-nav';
-import { StoreController } from '@nanostores/lit';
 import { AppLayout } from '@vaadin/app-layout';
 import '@vaadin/app-layout/vaadin-drawer-toggle';
 import '@vaadin/avatar';
@@ -15,6 +14,7 @@ import { router } from '../index.js';
 import { views } from '../routes.js';
 import { appName, location } from '../stores/location-store.js';
 import { Layout } from './view.js';
+import SignalController from 'Frontend/stores/signal-controller.js';
 
 interface RouteInfo {
   path: string;
@@ -24,12 +24,12 @@ interface RouteInfo {
 
 @customElement('main-layout')
 export default class MainLayout extends Layout {
-  readonly #location = new StoreController(this, location);
+  readonly #location = new SignalController(this, location);
 
   override connectedCallback(): void {
     super.connectedCallback();
     this.classList.add('block', 'h-full');
-    location.listen(AppLayout.dispatchCloseOverlayDrawerEvent);
+    location.subscribe(AppLayout.dispatchCloseOverlayDrawerEvent);
   }
 
   protected override render(): TemplateResult {
