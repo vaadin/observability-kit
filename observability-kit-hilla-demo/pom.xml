@@ -6,7 +6,7 @@
     <!-- Project from https://start.vaadin.com/ -->
     <groupId>com.example.application</groupId>
     <artifactId>observability-kit-hilla-demo</artifactId>
-    <name>observability-kit-hilla-demo</name>
+    <name>Observability Kit demo application for Hilla</name>
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 

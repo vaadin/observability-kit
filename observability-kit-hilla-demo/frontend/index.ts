@@ -10,5 +10,4 @@ addEventListener('vaadin-router-location-changed', ({ detail: { location: loc } 
 });
 
 export const router = new Router(document.querySelector('#outlet'));
-
 await router.setRoutes(routes);

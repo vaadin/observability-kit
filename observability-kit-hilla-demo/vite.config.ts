@@ -7,6 +7,8 @@ const customConfig: UserConfigFn = async (env) => {
   cfg.plugins = cfg.plugins?.filter((plugin) =>
     plugin && 'name' in plugin ? plugin.name !== 'vite-plugin-checker' : plugin,
   );
+
+  console.log(cfg.plugins);
   return cfg;
 };
 
