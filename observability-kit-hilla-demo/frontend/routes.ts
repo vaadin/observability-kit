@@ -1,62 +1,74 @@
-import type { Route } from '@vaadin/router';
+import type { Route, Router } from '@vaadin/router';
 import './views/helloworld/hello-world-view.js';
 import './views/main-layout.js';
 import './views/login-view.ts';
-import { auth, login, logout, memorizeRedirectPath } from 'Frontend/stores/login-store.js';
+import { user, login, logout, doesUserHaveRole } from 'Frontend/stores/login-store.js';
 
 export type ViewRoute = Route & {
-  title?: string;
-  icon?: string;
   children?: ViewRoute[];
+  icon?: string;
+  title?: string;
+  requiresRole?: string;
+  showInMenu?(): boolean;
 };
+
+export function hasAccess(route: ViewRoute): boolean {
+  return !route.requiresRole || doesUserHaveRole(route.requiresRole);
+}
+
+function checkAuthentication(this: ViewRoute, context: Router.Context, commands: Router.Commands) {
+  if (!hasAccess(this)) {
+    return commands.redirect('/login');
+  }
+
+  return undefined;
+}
 
 export const views = [
   // Place routes below (more info https://hilla.dev/docs/routing)
   {
+    action: checkAuthentication,
     component: 'hello-world-view',
-    icon: '',
-    path: '',
-    title: '',
-  },
-  {
-    component: 'hello-world-view',
-    icon: 'globe-solid',
     path: 'hello',
     title: 'Hello World',
   },
   {
-    async action() {
-      await import('./views/about/about-view.js');
-    },
-    component: 'about-view',
-    icon: 'file',
-    path: 'about',
-    title: 'About',
+    action: checkAuthentication,
+    component: 'image-list-view',
+    path: 'image-list',
+    title: 'Image List',
+  },
+  {
+    action: checkAuthentication,
+    component: 'address-form-view',
+    path: 'address-form',
+    requiresRole: 'ROLE_USER',
+    title: 'Address Form',
   },
 ] satisfies readonly ViewRoute[];
 
 export const routes = [
   {
-    async action(context, commands) {
-      if (!auth.value) {
-        memorizeRedirectPath(context.pathname);
-        return commands.redirect('/login');
-      }
+    children: [
+      {
+        action(context, commands) {
+          if (user.value && context.pathname === '/login') {
+            return commands.redirect('/');
+          }
 
-      return undefined;
-    },
-    children: views,
+          return undefined;
+        },
+        component: 'login-view',
+        path: 'login',
+      },
+      ...views,
+    ],
     component: 'main-layout',
     path: '',
   },
   {
-    component: 'login-view',
-    path: 'login',
-  },
-  {
     async action(_, commands) {
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
-      logout();
+      await logout();
       return commands.redirect('/login');
     },
     path: 'logout',
