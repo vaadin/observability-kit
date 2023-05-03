@@ -73,13 +73,23 @@ public class VaadinObservabilityInstrumentationModule
                 && className.startsWith("com.vaadin.extension");
     }
 
+    private boolean classExists(String className) {
+        try {
+            Class.forName(className, false, ClassLoader.getSystemClassLoader());
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
     @Override
     public List<TypeInstrumentation> typeInstrumentations() {
         // TypeInstrumentation for this instrumentation module
         return Stream
                 .of(instrumentation(), rpcHandlerInstrumentation(),
                         requestHandlerInstrumentation(), dataInstrumentation(),
-                        serverInstrumentation(), clientInstrumentation())
+                        serverInstrumentation(), clientInstrumentation(),
+                        hillaInstrumentation())
                 .flatMap(i -> i).collect(Collectors.toList());
     }
 
@@ -117,9 +127,13 @@ public class VaadinObservabilityInstrumentationModule
 
     private Stream<TypeInstrumentation> dataInstrumentation() {
         // @formatter:off
-        return Stream.of(new ComponentRendererInstrumentation(),
-                new DataCommunicatorInstrumentation(),
-                new HierarchicalDataProviderInstrumentation());
+        if (classExists("com.vaadin.flow.data.provider.DataCommunicator")) {
+            return Stream.of(new ComponentRendererInstrumentation(),
+                    new DataCommunicatorInstrumentation(),
+                    new HierarchicalDataProviderInstrumentation());
+        } else {
+            return Stream.empty();
+        }
         // @formatter:on
     }
 
@@ -135,5 +149,14 @@ public class VaadinObservabilityInstrumentationModule
     private Stream<TypeInstrumentation> clientInstrumentation() {
         return Stream.of(new ClientInstrumentation(),
                 new HillaClientInstrumentation());
+    }
+
+    private Stream<TypeInstrumentation> hillaInstrumentation() {
+        if (classExists("dev.hilla.Endpoint")) {
+            // Stub for Hilla-specific instrumentations
+            return Stream.empty();
+        } else {
+            return Stream.empty();
+        }
     }
 }
