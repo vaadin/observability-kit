@@ -5,7 +5,7 @@ import { Layout } from 'Frontend/views/view.js';
 
 @customElement('auth-button')
 export default class AuthButton extends Layout {
-  static override styles = styles;
+  static override readonly styles = styles;
 
   @property()
   to: string = '#';
