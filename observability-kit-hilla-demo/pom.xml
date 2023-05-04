@@ -19,6 +19,7 @@
     <properties>
         <java.version>17</java.version>
         <selenium.version>4.8.3</selenium.version>
+        <exampledata.version>6.2.0</exampledata.version>
     </properties>
 
     <repositories>
@@ -94,6 +95,11 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-oauth2-resource-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.vaadin</groupId>
+            <artifactId>exampledata</artifactId>
+            <version>${exampledata.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>

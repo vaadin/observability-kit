@@ -2,6 +2,7 @@ import type { Route, Router } from '@vaadin/router';
 import './views/helloworld/hello-world-view.js';
 import './views/main-layout.js';
 import './views/login-view.ts';
+import './views/image-list/image-list-view.js';
 import { user, login, logout, doesUserHaveRole } from 'Frontend/stores/login-store.js';
 
 export type ViewRoute = Route & {
@@ -54,6 +55,10 @@ export const routes = [
         action(context, commands) {
           if (user.value && context.pathname === '/login') {
             return commands.redirect('/');
+          }
+
+          if (!hasAccess(context.route as ViewRoute)) {
+            return commands.redirect('/login');
           }
 
           return undefined;
