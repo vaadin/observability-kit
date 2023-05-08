@@ -7,7 +7,6 @@
     <groupId>com.example.application</groupId>
     <artifactId>observability-kit-hilla-demo</artifactId>
     <name>Observability Kit demo application for Hilla</name>
-    <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <parent>
@@ -20,6 +19,12 @@
         <java.version>17</java.version>
         <selenium.version>4.8.3</selenium.version>
         <exampledata.version>6.2.0</exampledata.version>
+        <spring-boot.jvmArguments>-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=5379 -Xmx1024M
+        </spring-boot.jvmArguments>
+        <agent.config>${project.basedir}/agent.properties</agent.config>
+        <observability-kit.agent.jar>
+            ${project.basedir}/../observability-kit-agent/target/observability-kit-agent-${project.version}.jar
+        </observability-kit.agent.jar>
     </properties>
 
     <repositories>
@@ -135,6 +140,13 @@
                 <groupId>dev.hilla</groupId>
                 <artifactId>engine-maven-plugin</artifactId>
                 <version>${hilla.version}</version>
+                <configuration>
+                    <parser>
+                        <packages>
+                            <package>com.vaadin.observability</package>
+                        </packages>
+                    </parser>
+                </configuration>
             </plugin>
         </plugins>
     </build>
@@ -156,6 +168,27 @@
                     </exclusions>
                 </dependency>
             </dependencies>
+        </profile>
+
+        <profile>
+            <id>observe</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                        <configuration>
+                            <jvmArguments>
+                                -javaagent:"${observability-kit.agent.jar}"
+                                -Dotel.javaagent.configuration-file="${agent.config}"
+                                -Dotel.javaagent.debug=true
+                                -Dio.opentelemetry.javaagent.slf4j.simpleLogger.logFile=export.log
+                                ${spring-boot.jvmArguments}
+                            </jvmArguments>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
 
         <profile>
