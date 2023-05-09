@@ -36,6 +36,7 @@
             <modules>
                 <module>observability-kit-test</module>
                 <module>observability-kit-demo</module>
+                <module>observability-kit-demo-hilla</module>
             </modules>
         </profile>
     </profiles>
@@ -93,6 +94,9 @@
         <pluginRepository>
             <id>vaadin-prereleases</id>
             <url>https://maven.vaadin.com/vaadin-prereleases/</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
         </pluginRepository>
     </pluginRepositories>
 
