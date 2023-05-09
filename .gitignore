@@ -22,10 +22,8 @@ build/
 
 generated/
 node_modules/
-package.json
-package-lock.json
-tsconfig.json
-types.d.ts
-vite.*
-
-!observability-kit-demo-hilla/**/*
+/observability-kit-demo/package.json
+/observability-kit-demo/package-lock.json
+/observability-kit-demo/tsconfig.json
+/observability-kit-demo/types.d.ts
+/observability-kit-demo/vite.*
