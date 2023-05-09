@@ -36,7 +36,7 @@
             <modules>
                 <module>observability-kit-test</module>
                 <module>observability-kit-demo</module>
-                <module>observability-kit-hilla-demo</module>
+                <module>observability-kit-demo-hilla</module>
             </modules>
         </profile>
     </profiles>
