@@ -28,4 +28,4 @@ tsconfig.json
 types.d.ts
 vite.*
 
-!observability-kit-hilla-demo/**/*
+!observability-kit-demo-hilla/**/*
