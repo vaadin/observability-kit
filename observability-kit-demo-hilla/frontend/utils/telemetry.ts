@@ -3,7 +3,7 @@ import { registerInstrumentations } from '@opentelemetry/instrumentation';
 import { DocumentLoadInstrumentation } from '@opentelemetry/instrumentation-document-load';
 import { SimpleSpanProcessor, WebTracerProvider } from '@opentelemetry/sdk-trace-web';
 import { ObservabilityEndpoint } from 'Frontend/generated/endpoints.js';
-import HillaEndpointExporter from 'Frontend/utils/HillaEndpointExporter.js';
+import { HillaEndpointExporter } from 'Frontend/generated/jar-resources/components/HillaEndpointExporter.js';
 
 export default function initTelemetry(): void {
   const provider = new WebTracerProvider();
