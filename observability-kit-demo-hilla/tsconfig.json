@@ -1,0 +1,12 @@
+{
+  "_version": "9",
+  "extends": ["../tsconfig.json"],
+  "include": [
+    "frontend/**/*",
+    "types.d.ts"
+  ],
+  "exclude": [
+    "frontend/generated/jar-resources/**",
+    "**/node_modules/**"
+  ]
+}
