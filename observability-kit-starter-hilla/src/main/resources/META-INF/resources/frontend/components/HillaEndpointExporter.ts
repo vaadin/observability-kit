@@ -13,7 +13,7 @@ import {
 export class HillaEndpointExporter
   extends OTLPExporterBrowserBase<ReadableSpan, IExportTraceServiceRequest>
   implements SpanExporter {
-  protected _endpoint: (string) => void;
+  protected _endpoint: (json: string) => void;
 
   constructor(config: HillaEndpointExporterConfig) {
     super(config);
@@ -53,5 +53,5 @@ export class HillaEndpointExporter
 }
 
 export interface HillaEndpointExporterConfig extends OTLPExporterConfigBase {
-  endpoint: (string) => void;
+  endpoint: (json: string) => void;
 }

@@ -1,0 +1,44 @@
+{
+  "name": "@vaadin/observability-kit-monorepo",
+  "private": true,
+  "description": "Observability Kit monorepo",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=16.19.0",
+    "npm": ">=9"
+  },
+  "workspaces": [
+    "observability-kit-demo-hilla"
+  ],
+  "scripts": {
+    "check": "concurrently npm:lint npm:typecheck",
+    "bootstrap": "lerna bootstrap",
+    "build": "lerna run build",
+    "lint": "lerna run lint --parallel",
+    "postinstall": "npm run bootstrap",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "typecheck": "lerna run typecheck --parallel"
+  },
+  "repository": {
+    "type": "git",
+    "url": "github.com/vaadin/hilla"
+  },
+  "author": "Vaadin Ltd",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^18.15.3",
+    "concurrently": "^7.6.0",
+    "eslint": "^8.38.0",
+    "eslint-config-vaadin": "^1.0.0-alpha.12",
+    "lerna": "^6.5.1",
+    "lint-staged": "^13.2.0",
+    "micromatch": "^4.0.5",
+    "nx": "^15.8.6",
+    "prettier": "^2.8.4",
+    "simple-git-hooks": "^2.8.1",
+    "sinon": "^15.0.2",
+    "typescript": "^5.0.2",
+    "vite": "^4.2.0"
+  }
+}
