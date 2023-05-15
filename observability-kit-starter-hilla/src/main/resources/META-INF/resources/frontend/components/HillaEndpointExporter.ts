@@ -1,19 +1,13 @@
-import {diag} from "@opentelemetry/api";
-import {ReadableSpan, SpanExporter} from "@opentelemetry/sdk-trace-base";
-import {
-  OTLPExporterBrowserBase,
-  OTLPExporterError,
-  OTLPExporterConfigBase
-} from '@opentelemetry/otlp-exporter-base';
-import {
-  createExportTraceServiceRequest,
-  IExportTraceServiceRequest
-} from "@opentelemetry/otlp-transformer";
+import { diag } from '@opentelemetry/api';
+import { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
+import { OTLPExporterBrowserBase, OTLPExporterError, OTLPExporterConfigBase } from '@opentelemetry/otlp-exporter-base';
+import { createExportTraceServiceRequest, IExportTraceServiceRequest } from '@opentelemetry/otlp-transformer';
 
 export class HillaEndpointExporter
   extends OTLPExporterBrowserBase<ReadableSpan, IExportTraceServiceRequest>
-  implements SpanExporter {
-  protected _endpoint: (json: string) => void;
+  implements SpanExporter
+{
+  protected _endpoint: (jsonString: string) => Promise<void>;
 
   constructor(config: HillaEndpointExporterConfig) {
     super(config);
@@ -35,10 +29,9 @@ export class HillaEndpointExporter
       const serviceRequest = this.convert(spans);
       const jsonString = JSON.stringify(serviceRequest);
 
-      this._endpoint(jsonString);
-      onSuccess();
-    } catch (e: OTLPExporterError) {
-      onError(e);
+      this._endpoint(jsonString).then(onSuccess).catch(onError);
+    } catch (e: unknown) {
+      onError(e as OTLPExporterError);
     }
   }
 
@@ -46,12 +39,10 @@ export class HillaEndpointExporter
   // however it is based on a URL endpoint, hence the getDefaultUrl function
   // needs to be defined even though it is not used in practice.
   getDefaultUrl(config: OTLPExporterConfigBase): string {
-    return typeof config.url === 'string'
-      ? config.url
-      : "";
+    return typeof config.url === 'string' ? config.url : '';
   }
 }
 
 export interface HillaEndpointExporterConfig extends OTLPExporterConfigBase {
-  endpoint: (json: string) => void;
+  endpoint: (jsonString: string) => Promise<void>;
 }

@@ -8,17 +8,15 @@
     "node": ">=16.19.0",
     "npm": ">=9"
   },
-  "workspaces": [
-    "observability-kit-demo-hilla"
-  ],
   "scripts": {
     "check": "concurrently npm:lint npm:typecheck",
     "bootstrap": "lerna bootstrap",
     "build": "lerna run build",
     "lint": "lerna run lint --parallel",
-    "postinstall": "npm run bootstrap",
+    "postinstall": "npm run bootstrap && npm run fix:hilla-packages",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "typecheck": "lerna run typecheck --parallel"
+    "typecheck": "lerna run typecheck --parallel",
+    "fix:hilla-packages": "tsx scripts/fix-hilla-packages.ts"
   },
   "repository": {
     "type": "git",
@@ -38,6 +36,7 @@
     "prettier": "^2.8.4",
     "simple-git-hooks": "^2.8.1",
     "sinon": "^15.0.2",
+    "tsx": "^3.12.7",
     "typescript": "^5.0.2",
     "vite": "^4.2.0"
   }

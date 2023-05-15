@@ -9,9 +9,8 @@
  */
 package com.vaadin.extension.instrumentation.client;
 
-import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
@@ -19,6 +18,8 @@ import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
@@ -35,39 +36,20 @@ public class HillaClientInstrumentation implements TypeInstrumentation {
         return named("com.vaadin.observability.ObservabilityEndpoint");
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public void transform(TypeTransformer transformer) {
-        transformer.applyTransformer((builder, typeDescription, classLoader,
-                module, protectionDomain) -> {
-            try {
-                Class<?> helperClazz = classLoader.loadClass(
-                        ConstructorAdvice.class.getName());
-
-                Field exportField = helperClazz.getField("exportHolder");
-                AtomicReference<BiConsumer<String,
-                        Map<String, Object>>> exportHolder =
-                        (AtomicReference<BiConsumer<String,
-                                Map<String, Object>>>) exportField.get(null);
-                exportHolder.set(new ObjectMapExporter());
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-            return builder;
-        });
         transformer.applyAdviceToMethod(isConstructor(),
-                this.getClass().getName() + "$ConstructorAdvice");
+            this.getClass().getName() + "$ConstructorAdvice");
     }
 
     public static class ConstructorAdvice {
-        public static AtomicReference<BiConsumer<String,
-                Map<String, Object>>> exportHolder = new AtomicReference<>();
-
         @Advice.OnMethodExit()
         public static void onExit(
-                @Advice.FieldValue(value = "exporter", readOnly = false)
-                BiConsumer<String, Map<String, Object>> exporter) {
-            exporter = ClientInstrumentation.ConstructorAdvice.exportHolder.get();
+            @Advice.FieldValue(value = "exporter", readOnly = false)
+            BiConsumer<String, Map<String, Object>> exporter
+        ) throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+            exporter = (BiConsumer<String, Map<String, Object>>) Class.forName(
+                "com.vaadin.extension.instrumentation.client.ObjectMapExporter").getDeclaredConstructor().newInstance();
         }
     }
 }

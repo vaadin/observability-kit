@@ -143,6 +143,8 @@
                 <configuration>
                     <parser>
                         <packages>
+                            <package>com.example.application.hilla.endpoints.helloworld</package>
+                            <package>com.example.application.hilla.endpoints.user</package>
                             <package>com.vaadin.observability</package>
                         </packages>
                     </parser>
