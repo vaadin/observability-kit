@@ -1,4 +1,4 @@
-package com.vaadin.extension.instrumentation.client;
+package com.vaadin.extension.instrumentation.hilla;
 
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers;
@@ -13,26 +13,27 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 
-public class HillaClientInstrumentationTest extends AbstractTypeInstrumentationTest {
-    private static final String patchedClassName = "com.vaadin.observability.ObservabilityEndpoint";
-    private HillaClientInstrumentation instrumentation;
+public class PushMethodHandlerInstrumentationTest extends AbstractTypeInstrumentationTest {
+    private static final String patchedClassName = "dev.hilla.push.PushMessageHandler";
+    private static final String patchedMethodName = "handleBrowserSubscribe";
+    private PushMessageHandlerInstrumentation instrumentation;
 
     @BeforeEach
     public void setUp() {
-        instrumentation = new HillaClientInstrumentation();
+        instrumentation = new PushMessageHandlerInstrumentation();
     }
 
     @Test
     public void should_ApplyAdviceClass_When_TransformMethodCalled() {
         var typeTransformer = mock(TypeTransformer.class);
         instrumentation.transform(typeTransformer);
-        verify(typeTransformer).applyAdviceToMethod(ArgumentMatchers.eq(ElementMatchers.isConstructor()),
-            ArgumentMatchers.eq(HillaClientInstrumentation.ConstructorAdvice.class.getName()));
+        verify(typeTransformer).applyAdviceToMethod(ArgumentMatchers.eq(ElementMatchers.named(patchedMethodName)),
+            ArgumentMatchers.eq(PushMessageHandlerInstrumentation.SubscribeAdvice.class.getName()));
     }
 
     @Test
     public void should_CheckAdviceClass() {
-        checkAdviceClass(HillaClientInstrumentation.ConstructorAdvice.class);
+        checkAdviceClass(PushMessageHandlerInstrumentation.SubscribeAdvice.class);
     }
 
     @Test
