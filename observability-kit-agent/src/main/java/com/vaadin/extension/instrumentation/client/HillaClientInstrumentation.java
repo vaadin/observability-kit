@@ -9,7 +9,6 @@
  */
 package com.vaadin.extension.instrumentation.client;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -18,8 +17,6 @@ import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
@@ -46,10 +43,13 @@ public class HillaClientInstrumentation implements TypeInstrumentation {
         @Advice.OnMethodExit()
         public static void onExit(
             @Advice.FieldValue(value = "exporter", readOnly = false)
-            BiConsumer<String, Map<String, Object>> exporter
-        ) throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
-            exporter = (BiConsumer<String, Map<String, Object>>) Class.forName(
-                "com.vaadin.extension.instrumentation.client.ObjectMapExporter").getDeclaredConstructor().newInstance();
+            BiConsumer<String, Map<String, Object>> exporter) {
+            try {
+                exporter = (BiConsumer<String, Map<String, Object>>) Class.forName(
+                    "com.vaadin.extension.instrumentation.client.ObjectMapExporter").getDeclaredConstructor().newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 }
