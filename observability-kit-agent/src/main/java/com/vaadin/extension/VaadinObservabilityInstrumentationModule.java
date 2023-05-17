@@ -33,6 +33,9 @@ import com.vaadin.extension.instrumentation.communication.rpc.ReturnChannelHandl
 import com.vaadin.extension.instrumentation.data.DataCommunicatorInstrumentation;
 import com.vaadin.extension.instrumentation.data.HierarchicalDataProviderInstrumentation;
 import com.vaadin.extension.instrumentation.data.renderer.ComponentRendererInstrumentation;
+import com.vaadin.extension.instrumentation.hilla.EndpointInvokerInstrumentation;
+import com.vaadin.extension.instrumentation.hilla.EndpointRegistryInstrumentation;
+import com.vaadin.extension.instrumentation.hilla.PushMessageHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.server.ErrorHandlerInstrumentation;
 import com.vaadin.extension.instrumentation.server.StaticFileServerInstrumentation;
 import com.vaadin.extension.instrumentation.server.VaadinServletInstrumentation;
@@ -50,7 +53,6 @@ import java.util.stream.Stream;
 @AutoService(InstrumentationModule.class)
 public class VaadinObservabilityInstrumentationModule
         extends InstrumentationModule {
-
     public static final String INSTRUMENTATION_NAME = "vaadin-observability-kit";
     public static final String EXTENDED_NAME = "opentelemetry-vaadin-observability-instrumentation-extension-"
             + InstrumentationHelper.INSTRUMENTATION_VERSION;
@@ -153,8 +155,9 @@ public class VaadinObservabilityInstrumentationModule
 
     private Stream<TypeInstrumentation> hillaInstrumentation() {
         if (classExists("dev.hilla.Endpoint")) {
-            // Stub for Hilla-specific instrumentations
-            return Stream.empty();
+            return Stream.of(new PushMessageHandlerInstrumentation(),
+                    new EndpointInvokerInstrumentation(),
+                    new EndpointRegistryInstrumentation());
         } else {
             return Stream.empty();
         }
