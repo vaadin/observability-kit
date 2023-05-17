@@ -2,6 +2,9 @@
 import { Router } from '@vaadin/router';
 import { routes } from './routes.js';
 import { appName, location, setLocation } from './stores/location-store.js';
+import initTelemetry from 'Frontend/utils/telemetry.js';
+
+initTelemetry();
 
 addEventListener('vaadin-router-location-changed', ({ detail: { location: loc } }) => {
   setLocation(loc);

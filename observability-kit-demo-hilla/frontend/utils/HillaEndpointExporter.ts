@@ -1,13 +1,19 @@
 import { diag } from '@opentelemetry/api';
-import { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
-import { OTLPExporterBrowserBase, OTLPExporterError, OTLPExporterConfigBase } from '@opentelemetry/otlp-exporter-base';
-import { createExportTraceServiceRequest, IExportTraceServiceRequest } from '@opentelemetry/otlp-transformer';
+import {
+  OTLPExporterBrowserBase,
+  OTLPExporterError,
+  type OTLPExporterConfigBase,
+} from '@opentelemetry/otlp-exporter-base';
+import { createExportTraceServiceRequest, type IExportTraceServiceRequest } from '@opentelemetry/otlp-transformer';
+import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 
-export class HillaEndpointExporter
+type TelemetryEndpointMethod = (json: string) => Promise<void>;
+
+export default class HillaEndpointExporter
   extends OTLPExporterBrowserBase<ReadableSpan, IExportTraceServiceRequest>
   implements SpanExporter
 {
-  protected _endpoint: (jsonString: string) => Promise<void>;
+  protected _endpoint: TelemetryEndpointMethod;
 
   constructor(config: HillaEndpointExporterConfig) {
     super(config);
@@ -18,7 +24,11 @@ export class HillaEndpointExporter
     return createExportTraceServiceRequest(spans, true);
   }
 
-  send(spans: ReadableSpan[], onSuccess: () => void, onError: (error: OTLPExporterError) => void): void {
+  override async send(
+    spans: ReadableSpan[],
+    onSuccess: () => void,
+    onError: (error: OTLPExporterError) => void,
+  ): Promise<void> {
     if (this._shutdownOnce.isCalled) {
       diag.debug('Shutdown already started. Cannot send objects');
       return;
@@ -29,9 +39,14 @@ export class HillaEndpointExporter
       const serviceRequest = this.convert(spans);
       const jsonString = JSON.stringify(serviceRequest);
 
-      this._endpoint(jsonString).then(onSuccess).catch(onError);
+      await this._endpoint(jsonString);
+      onSuccess();
     } catch (e: unknown) {
-      onError(e as OTLPExporterError);
+      if (e instanceof OTLPExporterError) {
+        onError(e);
+      } else {
+        throw e;
+      }
     }
   }
 
@@ -43,6 +58,7 @@ export class HillaEndpointExporter
   }
 }
 
-export interface HillaEndpointExporterConfig extends OTLPExporterConfigBase {
-  endpoint: (jsonString: string) => Promise<void>;
-}
+export type HillaEndpointExporterConfig = OTLPExporterConfigBase &
+  Readonly<{
+    endpoint: TelemetryEndpointMethod;
+  }>;

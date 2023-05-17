@@ -4,7 +4,6 @@
 // You might want to change the configurations to fit your preferences
 // For more information about the configurations, please refer to http://www.typescriptlang.org/docs/handbook/tsconfig-json.html
 {
-
   "compilerOptions": {
     "sourceMap": true,
     "jsx": "react-jsx",
@@ -31,10 +30,6 @@
       "Frontend/*": ["*"]
     }
   },
-  "include": [
-    ".lintstagedrc.mjs"
-  ],
-  "exclude": [
-    "**/node_modules/**/*"
-  ]
+  "include": ["scripts", ".lintstagedrc.mjs"],
+  "exclude": ["**/node_modules/**/*"]
 }

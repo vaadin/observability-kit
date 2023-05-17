@@ -20,3 +20,4 @@ drivers/
 error-screenshots/
 webpack.generated.js
 config/secrets
+**/*.log
