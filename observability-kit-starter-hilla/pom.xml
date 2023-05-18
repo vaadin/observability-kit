@@ -9,6 +9,7 @@
         <version>2.1-SNAPSHOT</version>
     </parent>
 
+    <groupId>dev.hilla</groupId>
     <artifactId>observability-kit-starter-hilla</artifactId>
 
     <properties>
