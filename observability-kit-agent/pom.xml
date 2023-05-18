@@ -43,7 +43,7 @@
         </dependency>
         <dependency>
             <groupId>dev.hilla</groupId>
-            <artifactId>hilla</artifactId>
+            <artifactId>endpoint</artifactId>
             <version>${hilla.version}</version>
             <scope>provided</scope>
         </dependency>
