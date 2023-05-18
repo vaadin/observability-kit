@@ -22,7 +22,6 @@
     <modules>
         <module>observability-kit-agent</module>
         <module>observability-kit-starter</module>
-        <module>observability-kit-starter-hilla</module>
     </modules>
 
     <profiles>
@@ -37,6 +36,17 @@
                 <module>observability-kit-test</module>
                 <module>observability-kit-demo</module>
                 <module>observability-kit-demo-hilla</module>
+            </modules>
+        </profile>
+        <profile>
+            <id>hilla</id>
+            <activation>
+                <property>
+                    <name>!skipHilla</name>
+                </property>
+            </activation>
+            <modules>
+                <module>observability-kit-starter-hilla</module>
             </modules>
         </profile>
     </profiles>

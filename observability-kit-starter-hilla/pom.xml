@@ -9,7 +9,8 @@
         <version>2.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>observability-kit-starter-hilla</artifactId>
+    <groupId>dev.hilla</groupId>
+    <artifactId>observability-kit-starter</artifactId>
 
     <properties>
         <cvdl.name>hilla-observability-kit</cvdl.name>
@@ -26,7 +27,7 @@
         </dependency>
         <dependency>
             <groupId>dev.hilla</groupId>
-            <artifactId>hilla</artifactId>
+            <artifactId>endpoint</artifactId>
             <version>${hilla.version}</version>
         </dependency>
         <dependency>
