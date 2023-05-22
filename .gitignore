@@ -27,3 +27,8 @@ node_modules/
 /observability-kit-demo/tsconfig.json
 /observability-kit-demo/types.d.ts
 /observability-kit-demo/vite.*
+
+/ts/*/*.d.ts.map
+/ts/*/*.d.ts
+/ts/*/*.js.map
+/ts/*/*.js

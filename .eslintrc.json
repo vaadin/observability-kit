@@ -6,9 +6,10 @@
     "vaadin/prettier"
   ],
   "rules": {
+    "@typescript-eslint/unbound-method": "off",
     "class-methods-use-this": "off",
-    "import/no-unassigned-import": "off",
     "import/no-cycle": "off",
-    "@typescript-eslint/unbound-method": "off"
+    "import/no-unassigned-import": "off",
+    "import/prefer-default-export": "off"
   }
 }

@@ -10,34 +10,42 @@
   },
   "scripts": {
     "check": "concurrently npm:lint npm:typecheck",
-    "bootstrap": "lerna bootstrap",
-    "build": "lerna run build",
-    "lint": "lerna run lint --parallel",
-    "postinstall": "npm run bootstrap && npm run fix:hilla-packages",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "typecheck": "lerna run typecheck --parallel",
-    "fix:hilla-packages": "tsx scripts/fix-hilla-packages.ts"
+    "typecheck": "npm run typecheck --workspaces"
   },
   "repository": {
     "type": "git",
-    "url": "github.com/vaadin/hilla"
+    "url": "github.com/vaadin/observability-kit"
   },
+  "workspaces": [
+    "ts/*"
+  ],
   "author": "Vaadin Ltd",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@esm-bundle/chai": "^4.3.4-fix.0",
+    "@types/mocha": "^10.0.1",
     "@types/node": "^18.15.3",
     "concurrently": "^7.6.0",
+    "esbuild": "^0.17.19",
     "eslint": "^8.38.0",
     "eslint-config-vaadin": "^1.0.0-alpha.12",
-    "lerna": "^6.5.1",
+    "karma": "^6.4.2",
+    "karma-chrome-launcher": "^3.2.0",
+    "karma-coverage": "^2.2.0",
+    "karma-mocha": "^2.0.1",
+    "karma-vite": "^1.0.4",
     "lint-staged": "^13.2.0",
     "micromatch": "^4.0.5",
-    "nx": "^15.8.6",
+    "mocha": "^10.2.0",
     "prettier": "^2.8.4",
     "simple-git-hooks": "^2.8.1",
     "sinon": "^15.0.2",
     "tsx": "^3.12.7",
+    "type-fest": "^3.11.0",
     "typescript": "^5.0.2",
-    "vite": "^4.2.0"
+    "vite": "^4.3.8"
   }
 }

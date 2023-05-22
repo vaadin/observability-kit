@@ -1,7 +1,0 @@
-{
-  "packages": ["observability-kit-demo-hilla"],
-  "npmClient": "npm",
-  "useWorkspaces": true,
-  "useNx": true,
-  "version": "2.1.0-alpha0"
-}
