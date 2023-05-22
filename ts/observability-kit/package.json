@@ -1,5 +1,5 @@
 {
-  "name": "@hilla/observability-kit-frontend",
+  "name": "@hilla/observability-kit",
   "version": "0.2.0",
   "type": "module",
   "description": "Observability Kit frontend",
@@ -8,7 +8,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "github.com/vaadin/observability-kit/ts/observability-kit-frontend"
+    "url": "github.com/vaadin/observability-kit/ts/observability-kit"
   },
   "files": [
     "*.{d.ts.map,d.ts,js.map,js}"
