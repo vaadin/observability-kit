@@ -31,6 +31,10 @@
             <version>${hilla.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.vaadin</groupId>
+            <artifactId>license-checker</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>

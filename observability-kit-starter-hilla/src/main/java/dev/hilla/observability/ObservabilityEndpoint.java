@@ -7,7 +7,7 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package com.vaadin.observability;
+package dev.hilla.observability;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
