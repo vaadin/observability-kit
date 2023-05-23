@@ -10,7 +10,6 @@
 package com.vaadin.extension.instrumentation.client;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
-import static net.bytebuddy.matcher.ElementMatchers.isTypeInitializer;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import java.util.Map;
@@ -21,7 +20,6 @@ import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
-import net.bytebuddy.implementation.StubMethod;
 import net.bytebuddy.matcher.ElementMatcher;
 
 public class HillaClientInstrumentation implements TypeInstrumentation {
@@ -43,26 +41,25 @@ public class HillaClientInstrumentation implements TypeInstrumentation {
             try {
                 var cls = classLoader
                         .loadClass(ExportMethodAdvice.class.getName());
-
                 var field = cls.getDeclaredField("holder");
                 var ref = (AtomicReference<BiConsumer<String, Map<String, Object>>>) field
                         .get(null);
                 ref.set(new ObjectMapExporter());
-
-                return builder.invokable(isTypeInitializer())
-                        .intercept(Advice.to(ExportMethodAdvice.class)
-                                .wrap(StubMethod.INSTANCE));
+                return builder;
             } catch (Throwable e) {
                 throw new RuntimeException(e);
             }
         });
+
+        transformer.applyAdviceToMethod(named("export"),
+                this.getClass().getName() + "$ExportMethodAdvice");
     }
 
     public static class ExportMethodAdvice {
         public static AtomicReference<BiConsumer<String, Map<String, Object>>> holder = new AtomicReference<>();
 
-        @Advice.OnMethodExit()
-        public static void onExit(
+        @Advice.OnMethodEnter()
+        public static void onEnter(
                 @Advice.FieldValue(value = "exporter", readOnly = false) BiConsumer<String, Map<String, Object>> exporter) {
             exporter = holder.get();
         }

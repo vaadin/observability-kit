@@ -26,7 +26,7 @@ import dev.hilla.exception.EndpointException;
 @Endpoint
 @AnonymousAllowed
 public class ObservabilityEndpoint {
-    private static BiConsumer<String, Map<String, Object>> exporter = (id,
+    private BiConsumer<String, Map<String, Object>> exporter = (id,
             map) -> getLogger().error("Observability agent is not running");
 
     private static Logger getLogger() {
