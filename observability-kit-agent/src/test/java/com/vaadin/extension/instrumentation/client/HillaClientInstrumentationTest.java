@@ -5,7 +5,6 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 
@@ -26,19 +25,17 @@ public class HillaClientInstrumentationTest
     }
 
     @Test
-    @Disabled
     public void should_ApplyAdviceClass_When_TransformMethodCalled() {
         var typeTransformer = mock(TypeTransformer.class);
         instrumentation.transform(typeTransformer);
         verify(typeTransformer).applyAdviceToMethod(
-                ArgumentMatchers.eq(ElementMatchers.isTypeInitializer()),
+                ArgumentMatchers.eq(ElementMatchers.named("export")),
                 ArgumentMatchers
                         .eq(HillaClientInstrumentation.ExportMethodAdvice.class
                                 .getName()));
     }
 
     @Test
-    @Disabled
     public void should_CheckAdviceClass() {
         checkAdviceClass(HillaClientInstrumentation.ExportMethodAdvice.class);
     }
