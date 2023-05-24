@@ -10,6 +10,7 @@
 package com.vaadin.extension.instrumentation.client;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
+import static net.bytebuddy.matcher.ElementMatchers.isTypeInitializer;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import java.util.Map;
@@ -29,11 +30,6 @@ public class HillaClientInstrumentation implements TypeInstrumentation {
     }
 
     @Override
-    public ElementMatcher<TypeDescription> typeMatcher() {
-        return named("dev.hilla.observability.ObservabilityEndpoint");
-    }
-
-    @Override
     public void transform(TypeTransformer transformer) {
         transformer.applyTransformer((builder, typeDescription, classLoader,
                 module, protectionDomain) -> {
@@ -44,21 +40,27 @@ public class HillaClientInstrumentation implements TypeInstrumentation {
                 var ref = (AtomicReference<BiConsumer<String, Map<String, Object>>>) field
                         .get(null);
                 ref.set(new ObjectMapExporter());
+
                 return builder;
             } catch (Throwable e) {
                 throw new RuntimeException(e);
             }
         });
 
-        transformer.applyAdviceToMethod(named("export"),
-                this.getClass().getName() + "$ExportMethodAdvice");
+        transformer.applyAdviceToMethod(isTypeInitializer(),
+                getClass().getName() + "$ExportMethodAdvice");
+    }
+
+    @Override
+    public ElementMatcher<TypeDescription> typeMatcher() {
+        return named("dev.hilla.observability.ObservabilityEndpoint");
     }
 
     public static class ExportMethodAdvice {
         public static AtomicReference<BiConsumer<String, Map<String, Object>>> holder = new AtomicReference<>();
 
-        @Advice.OnMethodEnter()
-        public static void onEnter(
+        @Advice.OnMethodExit
+        public static void onExit(
                 @Advice.FieldValue(value = "exporter", readOnly = false) BiConsumer<String, Map<String, Object>> exporter) {
             exporter = holder.get();
         }
