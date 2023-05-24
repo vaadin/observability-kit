@@ -1,4 +1,4 @@
-package com.vaadin.observability;
+package dev.hilla.observability;
 
 import dev.hilla.exception.EndpointException;
 import org.junit.jupiter.api.Test;

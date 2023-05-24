@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <!-- Project from https://start.vaadin.com/ -->
-    <groupId>com.example.application</groupId>
+    <groupId>dev.hilla</groupId>
     <artifactId>observability-kit-demo-hilla</artifactId>
     <name>Observability Kit demo application for Hilla</name>
     <packaging>jar</packaging>
@@ -145,7 +145,7 @@
                         <packages>
                             <package>com.example.application.hilla.endpoints.helloworld</package>
                             <package>com.example.application.hilla.endpoints.user</package>
-                            <package>com.vaadin.observability</package>
+                            <package>dev.hilla.observability</package>
                         </packages>
                     </parser>
                 </configuration>

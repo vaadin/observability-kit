@@ -10,7 +10,7 @@
     </parent>
 
     <groupId>dev.hilla</groupId>
-    <artifactId>observability-kit-starter-hilla</artifactId>
+    <artifactId>observability-kit-starter</artifactId>
 
     <properties>
         <cvdl.name>hilla-observability-kit</cvdl.name>

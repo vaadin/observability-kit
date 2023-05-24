@@ -7,7 +7,7 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package com.vaadin.observability;
+package dev.hilla.observability;
 
 import java.io.IOException;
 import java.util.Map;
@@ -26,7 +26,7 @@ import dev.hilla.exception.EndpointException;
 @Endpoint
 @AnonymousAllowed
 public class ObservabilityEndpoint {
-    private BiConsumer<String, Map<String, Object>> exporter = (id,
+    private static BiConsumer<String, Map<String, Object>> exporter = (id,
             map) -> getLogger().error("Observability agent is not running");
 
     private static Logger getLogger() {

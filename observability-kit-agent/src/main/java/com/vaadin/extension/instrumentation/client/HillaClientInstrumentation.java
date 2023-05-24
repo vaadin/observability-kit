@@ -25,13 +25,12 @@ import net.bytebuddy.matcher.ElementMatcher;
 public class HillaClientInstrumentation implements TypeInstrumentation {
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
-        return hasClassesNamed(
-                "com.vaadin.observability.ObservabilityEndpoint");
+        return hasClassesNamed("dev.hilla.observability.ObservabilityEndpoint");
     }
 
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named("com.vaadin.observability.ObservabilityEndpoint");
+        return named("dev.hilla.observability.ObservabilityEndpoint");
     }
 
     @Override
