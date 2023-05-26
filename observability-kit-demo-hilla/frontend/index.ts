@@ -1,10 +1,18 @@
-/* eslint-disable import/prefer-default-export */
 import { Router } from '@vaadin/router';
+import { ObservabilityEndpoint } from 'Frontend/generated/endpoints.js';
 import { routes } from './routes.js';
 import { appName, location, setLocation } from './stores/location-store.js';
-import initTelemetry from 'Frontend/utils/telemetry.js';
+import { initTelemetry } from 'Frontend/utils/telemetry.js';
 
-initTelemetry();
+initTelemetry(ObservabilityEndpoint.export, {
+  serviceName: 'hilla',
+  serviceVersion: '0.1.0',
+  traceDocumentLoad: true,
+  traceLongTask: true,
+  traceErrors: true,
+  traceUserInteraction: ['click', 'input', 'blur'],
+  traceXmlHTTPRequest: true,
+});
 
 addEventListener('vaadin-router-location-changed', ({ detail: { location: loc } }) => {
   setLocation(loc);

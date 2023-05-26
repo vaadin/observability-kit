@@ -9,15 +9,15 @@ import type { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
 
 type TelemetryEndpointMethod = (json: string) => Promise<void>;
 
-export default class HillaEndpointExporter
+export class HillaEndpointExporter
   extends OTLPExporterBrowserBase<ReadableSpan, IExportTraceServiceRequest>
   implements SpanExporter
 {
-  protected _endpoint: TelemetryEndpointMethod;
+  protected _method: TelemetryEndpointMethod;
 
   constructor(config: HillaEndpointExporterConfig) {
     super(config);
-    this._endpoint = config.endpoint;
+    this._method = config.method;
   }
 
   convert(spans: ReadableSpan[]): IExportTraceServiceRequest {
@@ -39,7 +39,7 @@ export default class HillaEndpointExporter
       const serviceRequest = this.convert(spans);
       const jsonString = JSON.stringify(serviceRequest);
 
-      await this._endpoint(jsonString);
+      await this._method(jsonString);
       onSuccess();
     } catch (e: unknown) {
       if (e instanceof OTLPExporterError) {
@@ -60,5 +60,5 @@ export default class HillaEndpointExporter
 
 export type HillaEndpointExporterConfig = OTLPExporterConfigBase &
   Readonly<{
-    endpoint: TelemetryEndpointMethod;
+    method: TelemetryEndpointMethod;
   }>;
