@@ -1,5 +1,5 @@
 {
-  "name": "@hilla/observability-kit",
+  "name": "@hilla/observability-kit-client",
   "version": "0.1.0",
   "type": "module",
   "description": "Observability Kit frontend",
