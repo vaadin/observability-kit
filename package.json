@@ -9,11 +9,11 @@
     "npm": ">=9"
   },
   "scripts": {
-    "check": "concurrently npm:lint npm:typecheck",
-    "build": "npm run build --workspaces",
-    "lint": "npm run lint --workspaces",
+    "check": "nx run-many -t lint,typecheck --all",
+    "build": "nx run-many -t build --all",
+    "lint": "nx run-many -t lint --all",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "typecheck": "npm run typecheck --workspaces"
+    "typecheck": "nx run-many -t typecheck --all"
   },
   "repository": {
     "type": "git",
