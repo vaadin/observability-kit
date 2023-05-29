@@ -16,7 +16,7 @@ import net.bytebuddy.matcher.ElementMatchers;
 
 public class HillaClientInstrumentationTest
         extends AbstractTypeInstrumentationTest {
-    private static final String patchedClassName = "com.vaadin.observability.ObservabilityEndpoint";
+    private static final String targetClassName = "dev.hilla.observability.ObservabilityEndpoint";
     private HillaClientInstrumentation instrumentation;
 
     @BeforeEach
@@ -29,7 +29,7 @@ public class HillaClientInstrumentationTest
         var typeTransformer = mock(TypeTransformer.class);
         instrumentation.transform(typeTransformer);
         verify(typeTransformer).applyAdviceToMethod(
-                ArgumentMatchers.eq(ElementMatchers.named("export")),
+                ArgumentMatchers.eq(ElementMatchers.isTypeInitializer()),
                 ArgumentMatchers
                         .eq(HillaClientInstrumentation.ExportMethodAdvice.class
                                 .getName()));
@@ -46,7 +46,7 @@ public class HillaClientInstrumentationTest
                 AgentElementMatchers.class)) {
             instrumentation.classLoaderOptimization();
             agentElementMatchers.verify(() -> AgentElementMatchers
-                    .hasClassesNamed(ArgumentMatchers.eq(patchedClassName)));
+                    .hasClassesNamed(ArgumentMatchers.eq(targetClassName)));
         }
     }
 
@@ -55,7 +55,7 @@ public class HillaClientInstrumentationTest
         try (var elementMatchers = mockStatic(ElementMatchers.class)) {
             instrumentation.typeMatcher();
             elementMatchers.verify(() -> ElementMatchers
-                    .named(ArgumentMatchers.eq(patchedClassName)));
+                    .named(ArgumentMatchers.eq(targetClassName)));
         }
     }
 }
