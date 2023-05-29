@@ -1,6 +1,7 @@
 package dev.hilla.observability;
 
 import dev.hilla.exception.EndpointException;
+import dev.hilla.observability.ObservabilityEndpoint;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
