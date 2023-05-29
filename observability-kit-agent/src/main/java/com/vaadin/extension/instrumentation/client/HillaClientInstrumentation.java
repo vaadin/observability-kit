@@ -24,9 +24,11 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 public class HillaClientInstrumentation implements TypeInstrumentation {
+    private static final String targetClassName = "dev.hilla.observability.ObservabilityEndpoint";
+
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
-        return hasClassesNamed("dev.hilla.observability.ObservabilityEndpoint");
+        return hasClassesNamed(targetClassName);
     }
 
     @Override
@@ -53,7 +55,7 @@ public class HillaClientInstrumentation implements TypeInstrumentation {
 
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named("dev.hilla.observability.ObservabilityEndpoint");
+        return named(targetClassName);
     }
 
     public static class ExportMethodAdvice {
