@@ -28,6 +28,9 @@
       "default": "./index.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@opentelemetry/api": "^1.4.1",
     "@opentelemetry/context-zone": "^1.13.0",
