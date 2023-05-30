@@ -8,7 +8,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "github.com/vaadin/observability-kit/ts/observability-kit"
+    "url": "github.com/vaadin/observability-kit/packages/ts/observability-kit-client"
   },
   "files": [
     "*.{d.ts.map,d.ts,js.map,js}"
