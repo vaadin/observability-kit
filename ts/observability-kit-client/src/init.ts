@@ -29,7 +29,7 @@ export type Dispose = () => void;
 const VAADIN_URLS = [/\/?v-r=.*/u, /\/VAADIN\/.*/u];
 const DEFAULT_URLS = [/v-r=heartbeat/u, /v-r=o11y/u];
 
-export function initTelemetry(
+export function init(
   method: EndpointMethod,
   {
     ignoredURLs,

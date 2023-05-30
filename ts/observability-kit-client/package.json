@@ -1,0 +1,49 @@
+{
+  "name": "@hilla/observability-kit-client",
+  "version": "2.1-alpha.0",
+  "type": "module",
+  "description": "Observability Kit frontend",
+  "main": "index.js",
+  "author": "Vaadin Ltd",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "github.com/vaadin/observability-kit/ts/observability-kit"
+  },
+  "files": [
+    "*.{d.ts.map,d.ts,js.map,js}"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "lint": "eslint src/**/*.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./index.js": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.4.1",
+    "@opentelemetry/context-zone": "^1.13.0",
+    "@opentelemetry/instrumentation": "^0.39.1",
+    "@opentelemetry/instrumentation-document-load": "^0.32.2",
+    "@opentelemetry/instrumentation-long-task": "^0.32.4",
+    "@opentelemetry/instrumentation-user-interaction": "^0.32.3",
+    "@opentelemetry/instrumentation-xml-http-request": "^0.39.1",
+    "@opentelemetry/otlp-exporter-base": "^0.39.1",
+    "@opentelemetry/otlp-transformer": "^0.39.1",
+    "@opentelemetry/resources": "^1.13.0",
+    "@opentelemetry/sdk-trace-base": "^1.13.0",
+    "@opentelemetry/sdk-trace-web": "^1.13.0",
+    "@opentelemetry/semantic-conventions": "^1.13.0"
+  },
+  "devDependencies": {
+    "karma": "^6.4.2"
+  }
+}
