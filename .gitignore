@@ -28,7 +28,7 @@ node_modules/
 /observability-kit-demo/types.d.ts
 /observability-kit-demo/vite.*
 
-/ts/*/*.d.ts.map
-/ts/*/*.d.ts
-/ts/*/*.js.map
-/ts/*/*.js
+/packages/ts/*/*.d.ts.map
+/packages/ts/*/*.d.ts
+/packages/ts/*/*.js.map
+/packages/ts/*/*.js

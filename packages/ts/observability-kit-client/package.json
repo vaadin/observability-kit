@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "clean": "git clean -Xf .",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit"
   },

@@ -20,8 +20,8 @@
     </licenses>
 
     <modules>
-        <module>observability-kit-agent</module>
-        <module>observability-kit-starter</module>
+        <module>packages/java/observability-kit-agent</module>
+        <module>packages/java/observability-kit-starter</module>
     </modules>
 
     <profiles>
@@ -33,9 +33,9 @@
                 </property>
             </activation>
             <modules>
-                <module>observability-kit-test</module>
-                <module>observability-kit-demo</module>
-                <module>observability-kit-demo-hilla</module>
+                <module>packages/java/observability-kit-test</module>
+                <module>packages/java/observability-kit-demo</module>
+                <module>packages/java/observability-kit-demo-hilla</module>
             </modules>
         </profile>
         <profile>
@@ -46,7 +46,7 @@
                 </property>
             </activation>
             <modules>
-                <module>observability-kit-starter-hilla</module>
+                <module>packages/java/observability-kit-starter-hilla</module>
             </modules>
         </profile>
     </profiles>

@@ -1,6 +1,6 @@
 {
   "workspaceLayout": {
-    "libsDir": "ts"
+    "libsDir": "packages/ts"
   },
   "targetDefaults": {
     "build": {

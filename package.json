@@ -9,8 +9,9 @@
     "npm": ">=9"
   },
   "scripts": {
-    "check": "nx run-many -t lint,typecheck --all",
     "build": "nx run-many -t build --all",
+    "check": "nx run-many -t lint,typecheck --all",
+    "clean": "nx run-many -t clean --all",
     "lint": "nx run-many -t lint --all",
     "test": "echo \"Error: no test specified\" && exit 1",
     "typecheck": "nx run-many -t typecheck --all"
@@ -20,7 +21,7 @@
     "url": "github.com/vaadin/observability-kit"
   },
   "workspaces": [
-    "ts/*"
+    "packages/ts/*"
   ],
   "author": "Vaadin Ltd",
   "license": "Apache-2.0",
