@@ -1,6 +1,6 @@
 {
   "name": "@hilla/observability-kit-client",
-  "version": "2.1.0-beta3",
+  "version": "2.1.0-rc1",
   "type": "module",
   "description": "Observability Kit frontend",
   "main": "index.js",
