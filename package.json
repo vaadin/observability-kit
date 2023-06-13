@@ -2,7 +2,7 @@
   "name": "@vaadin/observability-kit-monorepo",
   "private": true,
   "description": "Observability Kit monorepo",
-  "main": "index.js",
+  "main": "",
   "type": "module",
   "engines": {
     "node": ">=16.19.0",
@@ -13,6 +13,7 @@
     "build": "nx run-many -t build --all",
     "lint": "nx run-many -t lint --all",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "prepare": "npm run build",
     "typecheck": "nx run-many -t typecheck --all"
   },
   "repository": {
@@ -32,6 +33,7 @@
     "esbuild": "^0.17.19",
     "eslint": "^8.38.0",
     "eslint-config-vaadin": "^1.0.0-alpha.12",
+    "glob": "^10.2.7",
     "karma": "^6.4.2",
     "karma-chrome-launcher": "^3.2.0",
     "karma-coverage": "^2.2.0",

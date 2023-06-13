@@ -5,7 +5,7 @@ import { SemanticAttributes } from '@opentelemetry/semantic-conventions';
 
 export class FrontendErrorInstrumentation extends InstrumentationBase {
   readonly component: string = 'frontend-error';
-  moduleName = this.component;
+  moduleName: string;
   readonly version: string = '1';
   #listenerControllers = new Map<keyof WindowEventMap, AbortController>();
 
@@ -13,6 +13,8 @@ export class FrontendErrorInstrumentation extends InstrumentationBase {
     // Avoid issue when `enable` is called in the super constructor and fails
     // because of private methods
     super('@vaadin/frontend-error-instrumentation', '2.1-SNAPSHOT', { enabled: false });
+    this.moduleName = this.component;
+
     if (config.enabled) {
       this.enable();
     }

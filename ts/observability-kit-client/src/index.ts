@@ -1,6 +1,8 @@
 export * from './HillaEndpointExporter.js';
 export * from './init.js';
 
+declare const __VERSION__: string;
+
 declare global {
   interface VaadinRegistration {
     is: string;
@@ -20,5 +22,5 @@ window.Vaadin ??= {};
 window.Vaadin.registrations ??= [];
 window.Vaadin.registrations.push({
   is: '@hilla/observability-kit-client',
-  version: /* updated-by-script */ '2.1-alpha.0',
+  version: __VERSION__,
 });

@@ -14,8 +14,11 @@
     "*.{d.ts.map,d.ts,js.map,js}"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "concurrently npm:build:code npm:build:dts",
+    "build:code": "tsx ../../scripts/build.ts",
+    "build:dts": "tsc -p tsconfig.build.json",
     "lint": "eslint src/**/*.ts",
+    "postversion": "npm run build",
     "typecheck": "tsc --noEmit"
   },
   "exports": {
