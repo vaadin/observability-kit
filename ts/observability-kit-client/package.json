@@ -19,6 +19,7 @@
     "build:dts": "tsc -p tsconfig.build.json",
     "lint": "eslint src/**/*.ts",
     "postversion": "npm run build",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit"
   },
   "exports": {
