@@ -20,7 +20,7 @@ export type TelemetryInitializationOptions = Readonly<{
   traceDocumentLoad?: boolean;
   traceErrors?: boolean;
   traceLongTask?: boolean;
-  traceUserInteraction?: readonly EventName[];
+  traceUserInteraction?: readonly EventName[] | null;
   traceXmlHTTPRequest?: boolean;
 }>;
 
@@ -34,13 +34,13 @@ export function init(
   {
     ignoredURLs,
     ignoreVaadinURLs,
-    serviceName,
+    serviceName = 'hilla',
     serviceVersion,
-    traceDocumentLoad,
-    traceErrors,
-    traceLongTask,
-    traceUserInteraction,
-    traceXmlHTTPRequest,
+    traceDocumentLoad = true,
+    traceErrors = true,
+    traceLongTask = true,
+    traceUserInteraction = ['click'],
+    traceXmlHTTPRequest = true,
   }: TelemetryInitializationOptions = {},
 ): Dispose {
   const resource = Resource.default().merge(
@@ -77,16 +77,19 @@ export function init(
   });
 
   const instrumentations: InstrumentationBase[] = [];
+
   if (traceDocumentLoad) {
     instrumentations.push(new DocumentLoadInstrumentation());
   }
-  if (traceUserInteraction) {
+
+  if (traceUserInteraction && traceUserInteraction.length > 0) {
     instrumentations.push(
       new UserInteractionInstrumentation({
         eventNames: traceUserInteraction as EventName[],
       }),
     );
   }
+
   if (traceXmlHTTPRequest) {
     const ignoredUrls: Array<RegExp | string> = ignoreVaadinURLs ? VAADIN_URLS : DEFAULT_URLS;
     if (ignoredURLs) {
@@ -100,15 +103,18 @@ export function init(
         }),
       );
     }
+
     instrumentations.push(
       new XMLHttpRequestInstrumentation({
         ignoreUrls: ignoredUrls,
       }),
     );
   }
+
   if (traceLongTask) {
     instrumentations.push(new LongTaskInstrumentation());
   }
+
   if (traceErrors) {
     instrumentations.push(new FrontendErrorInstrumentation());
   }
