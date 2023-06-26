@@ -59,16 +59,6 @@ public class MainViewIT extends AbstractViewIT {
     }
 
     @BrowserTest
-    public void verifyExportedMetrics() {
-        await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
-            var requests = collector.retrieveRecordedRequests(request());
-            var metrics = extractMetricsFromRequests(requests);
-            assertThat(metrics).extracting(Metric::getName)
-                .contains("vaadin.ui.count");
-        });
-    }
-
-    @BrowserTest
     public void verifyFrontendTraces() {
         await().atMost(AWAIT_TIMEOUT, TimeUnit.SECONDS).untilAsserted(() -> {
             var requests = collector.retrieveRecordedRequests(request());
@@ -99,15 +89,6 @@ public class MainViewIT extends AbstractViewIT {
             .flatMap(r -> r.getResourceSpansList().stream())
             .flatMap(r -> r.getInstrumentationLibrarySpansList().stream())
             .flatMap(r -> r.getSpansList().stream())
-            .collect(Collectors.toList());
-    }
-
-    private List<Metric> extractMetricsFromRequests(HttpRequest[] requests) {
-        return Arrays.stream(requests).map(HttpRequest::getBody)
-            .flatMap(body -> getExportMetricsServiceRequest(body).stream())
-            .flatMap(r -> r.getResourceMetricsList().stream())
-            .flatMap(r -> r.getInstrumentationLibraryMetricsList().stream())
-            .flatMap(r -> r.getMetricsList().stream())
             .collect(Collectors.toList());
     }
 

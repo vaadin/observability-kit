@@ -71,10 +71,12 @@
             <artifactId>line-awesome</artifactId>
             <version>1.1.0</version>
         </dependency>
+
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-simple</artifactId>
             <version>2.0.6</version>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
@@ -129,6 +131,7 @@
             <plugin>
                 <groupId>dev.hilla</groupId>
                 <artifactId>hilla-maven-plugin</artifactId>
+                <version>2.1.0</version>
                 <executions>
                     <execution>
                         <id>default</id>

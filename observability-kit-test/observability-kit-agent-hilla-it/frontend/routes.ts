@@ -7,16 +7,6 @@ export type ViewRoute = Route & {
   title?: string;
 };
 
-export const views: ViewRoute[] = [
-  // Place routes below (more info https://hilla.dev/docs/routing)
-  {
-    path: '',
-    component: 'main-view',
-    icon: '',
-    title: '',
-  }
-];
-
 export const routes = [
   {
     path: '',

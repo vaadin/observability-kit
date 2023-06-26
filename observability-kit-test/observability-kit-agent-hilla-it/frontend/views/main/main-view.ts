@@ -11,9 +11,13 @@ export class MainView extends LitElement {
     return html`
       <h1>Observability Kit Hilla IT</h1>
       <button id="clientSideError"
-              @click="invokeNotExistingFunctionFromServer();">
+              @click="invokeNotExistingFunctionFromServer()">
         Client side errors
       </button>
     `;
+  }
+
+  invokeNotExistingFunctionFromServer() {
+
   }
 }

@@ -138,8 +138,8 @@
 
             <plugin>
                 <groupId>dev.hilla</groupId>
-                <artifactId>engine-maven-plugin</artifactId>
-                <version>${hilla.version}</version>
+                <artifactId>hilla-maven-plugin</artifactId>
+                <version>2.1.0</version>
                 <configuration>
                     <parser>
                         <packages>
