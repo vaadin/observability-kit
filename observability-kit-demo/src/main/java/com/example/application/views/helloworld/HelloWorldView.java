@@ -3,6 +3,9 @@ package com.example.application.views.helloworld;
 import java.util.Random;
 
 import com.example.application.views.MainLayout;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
 import com.vaadin.flow.component.Key;
@@ -24,6 +27,7 @@ public class HelloWorldView extends HorizontalLayout {
     private final TextField name;
     private final Button sayHello;
     private final Button longTask;
+    private final Button spanExample;
 
     public HelloWorldView() {
         name = new TextField("Your name");
@@ -42,10 +46,16 @@ public class HelloWorldView extends HorizontalLayout {
             Notification.show("Job completed for " + name.getValue());
         });
 
-        setMargin(true);
-        setVerticalComponentAlignment(Alignment.END, name, sayHello, longTask);
+        spanExample = new Button("Custom span example");
+        spanExample.addClickListener(e -> {
+            spanExample(e.getClientX(), e.getClientY());
+        });
 
-        add(name, sayHello, longTask);
+        setMargin(true);
+        setVerticalComponentAlignment(Alignment.END, name, sayHello, longTask,
+            spanExample);
+
+        add(name, sayHello, longTask, spanExample);
     }
 
     @WithSpan
@@ -57,4 +67,16 @@ public class HelloWorldView extends HorizontalLayout {
         }
     }
 
+    private void spanExample(int clientX, int clientY) {
+        Tracer tracer = GlobalOpenTelemetry.getTracer(
+            "observability-kit-demo",
+            "1.0");
+        final Span span = tracer.spanBuilder("Span Example").startSpan();
+        try {
+            span.setAttribute("client.x", clientX);
+            span.setAttribute("client.y", clientY);
+        } finally {
+            span.end();
+        }
+    }
 }
