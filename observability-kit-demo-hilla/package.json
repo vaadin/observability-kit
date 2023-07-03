@@ -117,12 +117,13 @@
     "strip-css-comments": "5.0.0",
     "transform-ast": "2.4.4",
     "typescript": "^5.0.4",
-    "vite": "4.3.8",
+    "vite": "4.3.9",
     "vite-plugin-checker": "0.5.5",
     "web-types-lit": "^0.1.0",
-    "workbox-build": "6.5.4",
-    "workbox-core": "6.5.4",
-    "workbox-precaching": "6.5.4"
+    "workbox-build": "7.0.0",
+    "workbox-core": "7.0.0",
+    "workbox-precaching": "7.0.0",
+    "@vitejs/plugin-react": "4.0.0"
   },
   "overrides": {
     "@vaadin/bundles": "$@vaadin/bundles",
@@ -320,11 +321,12 @@
       "strip-css-comments": "5.0.0",
       "transform-ast": "2.4.4",
       "typescript": "5.0.4",
-      "vite": "4.3.8",
+      "vite": "4.3.9",
       "vite-plugin-checker": "0.5.5",
-      "workbox-build": "6.5.4",
-      "workbox-core": "6.5.4",
-      "workbox-precaching": "6.5.4"
+      "workbox-build": "7.0.0",
+      "workbox-core": "7.0.0",
+      "workbox-precaching": "7.0.0",
+      "@vitejs/plugin-react": "4.0.0"
     },
     "hash": "beeb2a8758072c62895aa635d8d2dd1b634a25c4c51063c05b7e4165beab35db"
   }

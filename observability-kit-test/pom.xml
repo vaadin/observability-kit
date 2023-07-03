@@ -9,5 +9,6 @@
     <packaging>pom</packaging>
     <modules>
         <module>observability-kit-agent-it</module>
+        <module>observability-kit-agent-hilla-it</module>
     </modules>
 </project>
