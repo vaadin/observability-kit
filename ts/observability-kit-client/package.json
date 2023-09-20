@@ -1,6 +1,6 @@
 {
   "name": "@hilla/observability-kit-client",
-  "version": "2.1-alpha.0",
+  "version": "2.1.1",
   "type": "module",
   "description": "Observability Kit frontend",
   "main": "index.js",
@@ -14,8 +14,12 @@
     "*.{d.ts.map,d.ts,js.map,js}"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "concurrently npm:build:code npm:build:dts",
+    "build:code": "tsx ../../scripts/build.ts",
+    "build:dts": "tsc -p tsconfig.build.json",
     "lint": "eslint src/**/*.ts",
+    "postversion": "npm run build",
+    "prepare": "npm run build",
     "typecheck": "tsc --noEmit"
   },
   "exports": {
@@ -27,6 +31,9 @@
       "types": "./index.d.ts",
       "default": "./index.js"
     }
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.4.1",

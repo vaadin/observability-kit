@@ -32,3 +32,4 @@ node_modules/
 /ts/*/*.d.ts
 /ts/*/*.js.map
 /ts/*/*.js
+/ts/*/*.tgz

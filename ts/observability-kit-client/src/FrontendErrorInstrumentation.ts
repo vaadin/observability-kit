@@ -3,16 +3,20 @@ import { InstrumentationBase, type InstrumentationConfig } from '@opentelemetry/
 import { getElementXPath } from '@opentelemetry/sdk-trace-web';
 import { SemanticAttributes } from '@opentelemetry/semantic-conventions';
 
+declare const __VERSION__: string;
+
 export class FrontendErrorInstrumentation extends InstrumentationBase {
   readonly component: string = 'frontend-error';
-  moduleName = this.component;
+  moduleName: string;
   readonly version: string = '1';
   #listenerControllers = new Map<keyof WindowEventMap, AbortController>();
 
   constructor(config: InstrumentationConfig = { enabled: true }) {
     // Avoid issue when `enable` is called in the super constructor and fails
     // because of private methods
-    super('@vaadin/frontend-error-instrumentation', '2.1-SNAPSHOT', { enabled: false });
+    super('@vaadin/frontend-error-instrumentation', __VERSION__, { enabled: false });
+    this.moduleName = this.component;
+
     if (config.enabled) {
       this.enable();
     }
