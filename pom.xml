@@ -54,7 +54,7 @@
     <properties>
         <flow.version>24.2-SNAPSHOT</flow.version>
         <hilla.version>2.2-SNAPSHOT</hilla.version>
-        <vaadin.license.checker.version>1.12.0</vaadin.license.checker.version>
+        <vaadin.license.checker.version>1.12.3</vaadin.license.checker.version>
 
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
