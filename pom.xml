@@ -66,7 +66,7 @@
         <jetty.version>11.0.13</jetty.version>
         <junit.version>5.9.2</junit.version>
         <mockito.version>5.2.0</mockito.version>
-        <testbench.version>9.0.2</testbench.version>
+        <testbench.version>9.1.0.beta2</testbench.version>
         <maven.jar.version>3.3.0</maven.jar.version>
         <maven.war.version>3.3.2</maven.war.version>
         <maven.shade.version>3.4.1</maven.shade.version>
