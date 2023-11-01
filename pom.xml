@@ -137,13 +137,6 @@
             </dependency>
             <dependency>
                 <groupId>com.vaadin</groupId>
-                <artifactId>vaadin-testbench-bom</artifactId>
-                <version>${testbench.version}</version>
-                <scope>import</scope>
-                <type>pom</type>
-            </dependency>
-            <dependency>
-                <groupId>com.vaadin</groupId>
                 <artifactId>license-checker</artifactId>
                 <version>${vaadin.license.checker.version}</version>
             </dependency>
