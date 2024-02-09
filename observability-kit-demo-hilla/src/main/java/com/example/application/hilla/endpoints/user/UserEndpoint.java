@@ -9,7 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 
 import com.vaadin.flow.server.auth.AnonymousAllowed;
 import com.vaadin.flow.spring.security.AuthenticationContext;
-import dev.hilla.Endpoint;
+import com.vaadin.hilla.Endpoint;
 
 @Endpoint
 @AnonymousAllowed

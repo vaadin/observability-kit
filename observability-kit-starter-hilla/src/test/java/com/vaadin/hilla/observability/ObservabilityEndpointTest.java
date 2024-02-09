@@ -1,8 +1,17 @@
-package dev.hilla.observability;
+/*-
+ * Copyright (C) 2024 Vaadin Ltd
+ *
+ * This program is available under Vaadin Commercial License and Service Terms.
+ *
+ *
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
+ */
+package com.vaadin.hilla.observability;
 
-import dev.hilla.exception.EndpointException;
-import dev.hilla.observability.ObservabilityEndpoint;
 import org.junit.jupiter.api.Test;
+
+import com.vaadin.hilla.exception.EndpointException;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
