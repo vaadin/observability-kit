@@ -1,5 +1,5 @@
 /*-
- * Copyright (C) 2022 Vaadin Ltd
+ * Copyright (C) 2024 Vaadin Ltd
  *
  * This program is available under Vaadin Commercial License and Service Terms.
  *
@@ -7,21 +7,19 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package dev.hilla.observability;
+package com.vaadin.hilla.observability;
 
 import java.io.IOException;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import com.vaadin.flow.server.auth.AnonymousAllowed;
-
-import dev.hilla.Endpoint;
-import dev.hilla.exception.EndpointException;
+import com.vaadin.hilla.Endpoint;
+import com.vaadin.hilla.exception.EndpointException;
 
 @Endpoint
 @AnonymousAllowed
