@@ -24,7 +24,7 @@ import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 public class HillaClientInstrumentation implements TypeInstrumentation {
-    private static final String targetClassName = "dev.hilla.observability.ObservabilityEndpoint";
+    private static final String targetClassName = "com.vaadin.hilla.observability.ObservabilityEndpoint";
 
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {

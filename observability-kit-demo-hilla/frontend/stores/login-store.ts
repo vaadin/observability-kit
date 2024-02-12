@@ -1,4 +1,4 @@
-import { login as serverLogin, logout as serverLogout } from '@hilla/frontend';
+import { login as serverLogin, logout as serverLogout } from '@vaadin/hilla-core';
 import { effect, signal } from '@preact/signals-core';
 import { Router } from '@vaadin/router';
 import { UserEndpoint } from 'Frontend/generated/endpoints.js';

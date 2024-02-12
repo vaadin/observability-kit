@@ -21,6 +21,6 @@ declare global {
 window.Vaadin ??= {};
 window.Vaadin.registrations ??= [];
 window.Vaadin.registrations.push({
-  is: '@hilla/observability-kit-client',
+  is: '@vaadin/observability-kit-client',
   version: __VERSION__,
 });

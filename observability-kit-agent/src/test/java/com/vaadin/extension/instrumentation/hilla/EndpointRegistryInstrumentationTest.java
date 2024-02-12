@@ -14,7 +14,7 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 
 public class EndpointRegistryInstrumentationTest extends AbstractTypeInstrumentationTest {
-    private static final String patchedClassName = "dev.hilla.EndpointRegistry";
+    private static final String patchedClassName = "com.vaadin.hilla.EndpointRegistry";
     private static final String patchedMethodName = "registerEndpoint";
     private EndpointRegistryInstrumentation instrumentation;
 
