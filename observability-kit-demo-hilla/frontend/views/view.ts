@@ -1,5 +1,5 @@
 import { LitElement } from 'lit';
-import { applyTheme } from 'Frontend/generated/theme.js';
+import { applyTheme } from 'Frontend/generated/theme';
 
 /**
  * A view is a container that holds all UI elements, layouts and styling of a section of the application. A view is
@@ -13,7 +13,7 @@ import { applyTheme } from 'Frontend/generated/theme.js';
  * The view class also brings the MobX dependency for state management.
  */
 export class View extends LitElement {
-  protected override createRenderRoot(): Element | ShadowRoot {
+  protected override createRenderRoot(): HTMLElement | ShadowRoot {
     // Do not use a shadow root
     return this;
   }

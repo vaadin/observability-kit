@@ -6,8 +6,8 @@ import { XMLHttpRequestInstrumentation } from '@opentelemetry/instrumentation-xm
 import { Resource } from '@opentelemetry/resources';
 import { BatchSpanProcessor, StackContextManager, WebTracerProvider } from '@opentelemetry/sdk-trace-web';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
-import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation.js';
-import { HillaEndpointExporter } from './HillaEndpointExporter.js';
+import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation';
+import { HillaEndpointExporter } from './HillaEndpointExporter';
 
 export type EndpointMethod = (jsonString: string) => Promise<void>;
 

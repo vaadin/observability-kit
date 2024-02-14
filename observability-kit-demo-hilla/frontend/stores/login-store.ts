@@ -1,8 +1,8 @@
 import { login as serverLogin, logout as serverLogout } from '@vaadin/hilla-frontend';
 import { effect, signal } from '@preact/signals-core';
 import { Router } from '@vaadin/router';
-import { UserEndpoint } from 'Frontend/generated/endpoints.js';
-import type UserDetails from 'Frontend/generated/org/springframework/security/core/userdetails/UserDetails.js';
+import { UserEndpoint } from 'Frontend/generated/endpoints';
+import type UserDetails from 'Frontend/generated/org/springframework/security/core/userdetails/UserDetails';
 
 export const user = signal<UserDetails | undefined>(undefined);
 

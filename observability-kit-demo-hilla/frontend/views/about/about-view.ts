@@ -1,6 +1,6 @@
 import { html, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { View } from '../view.js';
+import { View } from '../view';
 
 @customElement('about-view')
 export default class AboutView extends View {

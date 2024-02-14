@@ -11,12 +11,12 @@ import '@vaadin/vaadin-lumo-styles/vaadin-iconset';
 import '../components/auth-button.js';
 import { html, nothing, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { router } from '../index.js';
-import { hasAccess, type ViewRoute, views } from '../routes.js';
-import { appName, location } from '../stores/location-store.js';
+import { router } from '../index';
+import { hasAccess, type ViewRoute, views } from '../routes';
+import { appName, location } from '../stores/location-store';
 import { Layout } from './view.js';
-import { checkAuthentication, doesUserHaveRole, user } from 'Frontend/stores/login-store.js';
-import SignalController from 'Frontend/stores/signal-controller.js';
+import { checkAuthentication, doesUserHaveRole, user } from 'Frontend/stores/login-store';
+import SignalController from 'Frontend/stores/signal-controller';
 
 interface RouteInfo {
   path: string;
