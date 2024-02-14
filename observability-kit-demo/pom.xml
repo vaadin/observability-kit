@@ -28,6 +28,7 @@
         <observability-kit.agent.jar>
             ${project.basedir}/../observability-kit-agent/target/observability-kit-agent-${project.version}.jar
         </observability-kit.agent.jar>
+        <vaadin.version>24.4-SNAPSHOT</vaadin.version>
     </properties>
 
     <repositories>
@@ -71,6 +72,9 @@
             <url>
                 https://maven.vaadin.com/vaadin-prereleases/
             </url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
         </pluginRepository>
     </pluginRepositories>
 
@@ -83,6 +87,13 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>com.vaadin</groupId>
+                <artifactId>vaadin-bom</artifactId>
+                <version>${vaadin.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -90,114 +101,99 @@
         <!-- Importing Vaadin dependencies one by one to avoid circular references with platform -->
         <dependency>
             <groupId>com.vaadin</groupId>
-            <artifactId>flow-server</artifactId>
-            <version>${flow.version}</version>
+            <artifactId>vaadin</artifactId>
+            <version>${vaadin.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.vaadin.hilla</groupId>
+                    <artifactId>hilla-react</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
-            <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-dev-server</artifactId>
-            <version>${flow.version}</version>
+            <groupId>com.vaadin.hilla</groupId>
+            <artifactId>hilla</artifactId>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>flow-html-components</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-button-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-custom-field-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-text-field-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-checkbox-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-select-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-combo-box-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-date-picker-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-icons-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-progress-bar-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-grid-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-grid-pro-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-notification-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-split-layout-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-ordered-layout-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-form-layout-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-app-layout-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-login-flow</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-lumo-theme</artifactId>
-            <version>${flow.version}</version>
         </dependency>
 
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-spring</artifactId>
-            <version>${flow.version}</version>
         </dependency>
         <dependency>
             <groupId>com.h2database</groupId>
@@ -291,8 +287,7 @@
             </plugin>
             <plugin>
                 <groupId>com.vaadin</groupId>
-                <artifactId>flow-maven-plugin</artifactId>
-                <version>${flow.version}</version>
+                <artifactId>vaadin-maven-plugin</artifactId>
                 <executions>
                     <execution>
                         <goals>
@@ -302,6 +297,7 @@
                 </executions>
                 <configuration>
                     <frontendHotdeploy>false</frontendHotdeploy>
+                    <reactRouterEnabled>false</reactRouterEnabled>
                 </configuration>
             </plugin>
         </plugins>
@@ -328,8 +324,7 @@
                 <plugins>
                     <plugin>
                         <groupId>com.vaadin</groupId>
-                        <artifactId>flow-maven-plugin</artifactId>
-                        <version>${flow.version}</version>
+                        <artifactId>vaadin-maven-plugin</artifactId>
                         <executions>
                             <execution>
                                 <goals>
@@ -339,7 +334,7 @@
                             </execution>
                         </executions>
                         <configuration>
-                            <productionMode>true</productionMode>
+                            <reactRouterEnabled>false</reactRouterEnabled>
                         </configuration>
                     </plugin>
                     <plugin>
