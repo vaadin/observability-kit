@@ -1,4 +1,4 @@
-import { type MiddlewareContext, type MiddlewareNext, ConnectClient } from '@vaadin/hilla-core';
+import { type MiddlewareContext, type MiddlewareNext, ConnectClient } from '@vaadin/hilla-frontend';
 import { logout } from 'Frontend/stores/login-store.js';
 
 const client = new ConnectClient({
