@@ -21,7 +21,7 @@ export class HillaEndpointExporter
   }
 
   convert(spans: ReadableSpan[]): IExportTraceServiceRequest {
-    return createExportTraceServiceRequest(spans, true);
+    return createExportTraceServiceRequest(spans);
   }
 
   override async send(
