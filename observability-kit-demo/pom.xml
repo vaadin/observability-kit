@@ -237,9 +237,6 @@
                                 <phase>compile</phase>
                             </execution>
                         </executions>
-                        <configuration>
-                            <productionMode>true</productionMode>
-                        </configuration>
                     </plugin>
                     <plugin>
                         <groupId>org.springframework.boot</groupId>
