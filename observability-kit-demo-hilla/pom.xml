@@ -152,7 +152,7 @@
                             <package>com.vaadin.hilla.observability</package>
                         </packages>
                     </parser>
-                    <reactRouterEnabled>false</reactRouterEnabled>
+                    <reactEnable>false</reactEnable>
                 </configuration>
             </plugin>
         </plugins>
