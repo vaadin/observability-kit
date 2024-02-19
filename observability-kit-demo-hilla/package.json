@@ -90,7 +90,13 @@
     "@vaadin/virtual-list": "24.4.0-alpha13",
     "construct-style-sheets-polyfill": "3.1.0",
     "date-fns": "2.29.3",
-    "lit": "3.1.2"
+    "lit": "3.1.2",
+    "react-dom": "18.2.0",
+    "@vaadin/hilla-react-auth": "24.4.0-alpha4",
+    "react-router-dom": "6.22.0",
+    "react": "18.2.0",
+    "@vaadin/hilla-react-crud": "24.4.0-alpha4",
+    "@vaadin/hilla-react-form": "24.4.0-alpha4"
   },
   "devDependencies": {
     "@babel/preset-react": "^7",
@@ -118,7 +124,18 @@
     "vite-plugin-checker": "0.6.4",
     "workbox-build": "7.0.0",
     "workbox-core": "7.0.0",
-    "workbox-precaching": "7.0.0"
+    "workbox-precaching": "7.0.0",
+    "@vaadin/hilla-generator-plugin-model": "24.4.0-alpha4",
+    "@vaadin/hilla-generator-plugin-client": "24.4.0-alpha4",
+    "@types/react-dom": "18.2.19",
+    "@vaadin/hilla-generator-plugin-subtypes": "24.4.0-alpha4",
+    "@vaadin/hilla-generator-utils": "24.4.0-alpha4",
+    "@vaadin/hilla-generator-plugin-barrel": "24.4.0-alpha4",
+    "@vaadin/hilla-generator-cli": "24.4.0-alpha4",
+    "@types/react": "18.2.55",
+    "@vaadin/hilla-generator-core": "24.4.0-alpha4",
+    "@vaadin/hilla-generator-plugin-push": "24.4.0-alpha4",
+    "@vaadin/hilla-generator-plugin-backbone": "24.4.0-alpha4"
   },
   "vaadin": {
     "dependencies": {
@@ -148,6 +165,15 @@
       "@vaadin/form-layout": "24.4.0-alpha13",
       "@vaadin/grid": "24.4.0-alpha13",
       "@vaadin/hilla-frontend": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-cli": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-core": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-backbone": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-barrel": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-client": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-model": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-push": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-subtypes": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-utils": "24.4.0-alpha4",
       "@vaadin/hilla-lit-form": "24.4.0-alpha4",
       "@vaadin/horizontal-layout": "24.4.0-alpha13",
       "@vaadin/icon": "24.4.0-alpha13",
@@ -190,7 +216,13 @@
       "@vaadin/virtual-list": "24.4.0-alpha13",
       "construct-style-sheets-polyfill": "3.1.0",
       "date-fns": "2.29.3",
-      "lit": "3.1.2"
+      "lit": "3.1.2",
+      "react-dom": "18.2.0",
+      "@vaadin/hilla-react-auth": "24.4.0-alpha4",
+      "react-router-dom": "6.22.0",
+      "react": "18.2.0",
+      "@vaadin/hilla-react-crud": "24.4.0-alpha4",
+      "@vaadin/hilla-react-form": "24.4.0-alpha4"
     },
     "devDependencies": {
       "@babel/preset-react": "^7",
@@ -217,7 +249,18 @@
       "vite-plugin-checker": "0.6.4",
       "workbox-build": "7.0.0",
       "workbox-core": "7.0.0",
-      "workbox-precaching": "7.0.0"
+      "workbox-precaching": "7.0.0",
+      "@vaadin/hilla-generator-plugin-model": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-client": "24.4.0-alpha4",
+      "@types/react-dom": "18.2.19",
+      "@vaadin/hilla-generator-plugin-subtypes": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-utils": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-barrel": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-cli": "24.4.0-alpha4",
+      "@types/react": "18.2.55",
+      "@vaadin/hilla-generator-core": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-push": "24.4.0-alpha4",
+      "@vaadin/hilla-generator-plugin-backbone": "24.4.0-alpha4"
     },
     "hash": "29be67c87ad41a979a800e58fa30f10000a7d4d256623b53b5816900fd6b6f37"
   },
