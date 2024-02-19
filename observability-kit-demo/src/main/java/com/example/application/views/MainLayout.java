@@ -1,7 +1,5 @@
 package com.example.application.views;
 
-import com.example.application.components.appnav.AppNav;
-import com.example.application.components.appnav.AppNavItem;
 import com.example.application.views.addressform.AddressFormView;
 import com.example.application.views.client.ClientComponentsView;
 import com.example.application.views.creditcardform.CreditCardFormView;
@@ -24,6 +22,8 @@ import com.vaadin.flow.component.html.H1;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Header;
 import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.sidenav.SideNav;
+import com.vaadin.flow.component.sidenav.SideNavItem;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.RouterLink;
 import com.vaadin.flow.server.auth.AccessAnnotationChecker;
@@ -72,50 +72,50 @@ public class MainLayout extends AppLayout {
         return section;
     }
 
-    private AppNav createNavigation() {
-        // AppNav is not yet an official component.
-        // For documentation, visit https://github.com/vaadin/vcf-nav#readme
-        AppNav nav = new AppNav();
+    private SideNav createNavigation() {
+        SideNav nav = new SideNav();
         nav.addClassNames("app-nav");
 
         if (accessChecker.hasAccess(HelloWorldView.class)) {
-            nav.addItem(new AppNavItem("Hello World", HelloWorldView.class,
-                    "la la-glass-cheers"));
+            nav.addItem(new SideNavItem("Hello World", HelloWorldView.class,
+                    new Icon("la", "la-glass-cheers")));
         }
         if (accessChecker.hasAccess(AddressFormView.class)) {
-            nav.addItem(new AppNavItem("Address Form", AddressFormView.class,
-                    "lab la-mandalorian"));
+            nav.addItem(new SideNavItem("Address Form", AddressFormView.class,
+                    new Icon("la", "la-mandalorian")));
         }
         if (accessChecker.hasAccess(MasterDetailViewNPlusOne.class)) {
-            nav.addItem(new AppNavItem("Master-Detail-N-Plus-One",
-                    MasterDetailViewNPlusOne.class, "la la-crow"));
+            nav.addItem(new SideNavItem("Master-Detail-N-Plus-One",
+                    MasterDetailViewNPlusOne.class, new Icon("la", "la-crow")));
         }
         if (accessChecker.hasAccess(MasterDetailViewPlain.class)) {
-            nav.addItem(new AppNavItem("Master-Detail-Plain",
-                    MasterDetailViewPlain.class, "la la-crow"));
+            nav.addItem(new SideNavItem("Master-Detail-Plain",
+                    MasterDetailViewPlain.class, new Icon("la", "la-crow")));
         }
         if (accessChecker.hasAccess(MasterDetailView.class)) {
-            nav.addItem(new AppNavItem("Master-Detail", MasterDetailView.class,
-                    "la la-crow"));
+            nav.addItem(new SideNavItem("Master-Detail", MasterDetailView.class,
+                    new Icon("la", "la-crow")));
         }
         if (accessChecker.hasAccess(CreditCardFormView.class)) {
-            nav.addItem(new AppNavItem("Credit Card Form",
-                    CreditCardFormView.class, "la la-frog"));
+            nav.addItem(new SideNavItem("Credit Card Form",
+                    CreditCardFormView.class, new Icon("la", "la-frog")));
         }
         if (accessChecker.hasAccess(ImageListView.class)) {
-            nav.addItem(new AppNavItem("Image List", ImageListView.class,
-                    "la la-images"));
+            nav.addItem(new SideNavItem("Image List", ImageListView.class,
+                    new Icon("la", "la-images")));
         }
         if (accessChecker.hasAccess(ListView.class)) {
-            nav.addItem(new AppNavItem("List", ListView.class, "la la-th"));
+            nav.addItem(new SideNavItem("List", ListView.class,
+                    new Icon("la", "la-th")));
         }
         if (accessChecker.hasAccess(MemoryView.class)) {
-            nav.addItem(
-                    new AppNavItem("Memory", MemoryView.class, "la la-memory"));
+            nav.addItem(new SideNavItem("Memory", MemoryView.class,
+                    new Icon("la", "la-memory")));
         }
         if (accessChecker.hasAccess(ClientComponentsView.class)) {
-            nav.addItem(new AppNavItem("Client component",
-                    ClientComponentsView.class, "la la-puzzle-piece"));
+            nav.addItem(new SideNavItem("Client component",
+                    ClientComponentsView.class,
+                    new Icon("la", "la-puzzle-piece")));
         }
 
         return nav;
@@ -143,5 +143,12 @@ public class MainLayout extends AppLayout {
         PageTitle title = getContent().getClass()
                 .getAnnotation(PageTitle.class);
         return title == null ? "" : title.value();
+    }
+
+    static class Icon extends Span {
+
+        Icon(String... classNames) {
+            addClassNames(classNames);
+        }
     }
 }
