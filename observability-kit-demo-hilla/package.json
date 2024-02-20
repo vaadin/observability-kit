@@ -3,16 +3,6 @@
   "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
-    "@opentelemetry/api": "^1.7.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.41.1",
-    "@opentelemetry/instrumentation": "^0.48.0",
-    "@opentelemetry/instrumentation-document-load": "^0.35.0",
-    "@opentelemetry/instrumentation-long-task": "^0.35.0",
-    "@opentelemetry/instrumentation-user-interaction": "^0.35.0",
-    "@opentelemetry/instrumentation-xml-http-request": "^0.48.0",
-    "@opentelemetry/sdk-node": "^0.48.0",
-    "@opentelemetry/sdk-trace-web": "^1.21.0",
-    "@opentelemetry/semantic-conventions": "^1.21.0",
     "@polymer/polymer": "3.5.1",
     "@preact/signals-core": "^1.5.1",
     "@vaadin/a11y-base": "24.4.0-alpha13",
@@ -62,6 +52,7 @@
     "@vaadin/multi-select-combo-box": "24.4.0-alpha13",
     "@vaadin/notification": "24.4.0-alpha13",
     "@vaadin/number-field": "24.4.0-alpha13",
+    "@vaadin/observability-kit-client": "file:../ts/observability-kit-client",
     "@vaadin/overlay": "24.4.0-alpha13",
     "@vaadin/password-field": "24.4.0-alpha13",
     "@vaadin/polymer-legacy-adapter": "24.4.0-alpha13",
@@ -227,7 +218,7 @@
       "workbox-core": "7.0.0",
       "workbox-precaching": "7.0.0"
     },
-    "hash": "45fc6d3076b5e0ed8e32a0d11f62e03d9272a973f94a98305154cb6563a8f112"
+    "hash": "67a64739cf106a5bab34e44b4dac8ccd69a86b0b095feb75668efbc166764d1c"
   },
   "overrides": {
     "@vaadin/bundles": "$@vaadin/bundles",
@@ -315,16 +306,6 @@
     "@vaadin/hilla-generator-plugin-subtypes": "$@vaadin/hilla-generator-plugin-subtypes",
     "@vaadin/vaadin-themable-mixin": "$@vaadin/vaadin-themable-mixin",
     "date-fns": "$date-fns",
-    "@preact/signals-core": "$@preact/signals-core",
-    "@opentelemetry/api": "$@opentelemetry/api",
-    "@opentelemetry/auto-instrumentations-node": "$@opentelemetry/auto-instrumentations-node",
-    "@opentelemetry/instrumentation": "$@opentelemetry/instrumentation",
-    "@opentelemetry/instrumentation-document-load": "$@opentelemetry/instrumentation-document-load",
-    "@opentelemetry/instrumentation-long-task": "$@opentelemetry/instrumentation-long-task",
-    "@opentelemetry/instrumentation-user-interaction": "$@opentelemetry/instrumentation-user-interaction",
-    "@opentelemetry/instrumentation-xml-http-request": "$@opentelemetry/instrumentation-xml-http-request",
-    "@opentelemetry/sdk-node": "$@opentelemetry/sdk-node",
-    "@opentelemetry/sdk-trace-web": "$@opentelemetry/sdk-trace-web",
-    "@opentelemetry/semantic-conventions": "$@opentelemetry/semantic-conventions"
+    "@preact/signals-core": "$@preact/signals-core"
   }
 }
