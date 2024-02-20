@@ -21,7 +21,7 @@ services:
     networks:
       - o11y
   collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:0.69.0
     ports:
       - "4317:4317"
       - "4318:4318"
