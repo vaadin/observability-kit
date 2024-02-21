@@ -14,7 +14,7 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 
 public class PushMethodHandlerInstrumentationTest extends AbstractTypeInstrumentationTest {
-    private static final String patchedClassName = "dev.hilla.push.PushMessageHandler";
+    private static final String patchedClassName = "com.vaadin.hilla.push.PushMessageHandler";
     private static final String patchedMethodName = "handleBrowserSubscribe";
     private PushMessageHandlerInstrumentation instrumentation;
 

@@ -6,7 +6,7 @@ import './image-list-card.js';
 import { html, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import styles from './image-list-view.css';
+import styles from './image-list-view.css?inline';
 import { Layout } from 'Frontend/views/view.js';
 
 const $sorting = Symbol();

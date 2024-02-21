@@ -21,8 +21,7 @@
     "useDefineForClassFields": false,
     "baseUrl": "observability-kit-demo-hilla/frontend",
     "paths": {
-      "@hilla/ob-kit-test": ["ts/ob-kit-test/src/index.ts"],
-      "@hilla/observability-kit": ["ts/observability-kit/src/index.ts"],
+      "@vaadin/observability-kit-client": ["ts/observability-kit-client/src/index.ts"],
       "@vaadin/flow-frontend": ["generated/jar-resources"],
       "@vaadin/flow-frontend/*": ["generated/jar-resources/*"],
       "Frontend/*": ["*"]

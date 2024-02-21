@@ -9,7 +9,6 @@
  */
 package com.vaadin.extension.instrumentation.hilla;
 
-import dev.hilla.push.messages.fromclient.SubscribeMessage;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -22,6 +21,7 @@ import net.bytebuddy.matcher.ElementMatcher;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.conf.TraceLevel;
+import com.vaadin.hilla.push.messages.fromclient.SubscribeMessage;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
@@ -30,12 +30,12 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 public class PushMessageHandlerInstrumentation implements TypeInstrumentation {
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
-        return hasClassesNamed("dev.hilla.push.PushMessageHandler");
+        return hasClassesNamed("com.vaadin.hilla.push.PushMessageHandler");
     }
 
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named("dev.hilla.push.PushMessageHandler");
+        return named("com.vaadin.hilla.push.PushMessageHandler");
     }
 
     @Override

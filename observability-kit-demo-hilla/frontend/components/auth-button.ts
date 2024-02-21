@@ -1,7 +1,7 @@
 import { html, type TemplateResult } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import styles from './auth-button.css';
-import { Layout } from 'Frontend/views/view.js';
+import styles from './auth-button.css?inline';
+import { Layout } from 'Frontend/views/view';
 
 @customElement('auth-button')
 export default class AuthButton extends Layout {

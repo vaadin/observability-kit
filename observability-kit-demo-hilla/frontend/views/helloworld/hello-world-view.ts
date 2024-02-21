@@ -4,8 +4,8 @@ import '@vaadin/text-field';
 import type { TextFieldValueChangedEvent } from '@vaadin/text-field';
 import { html, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { View } from '../view.js';
-import * as HelloWorldEndpoint from 'Frontend/generated/HelloWorldEndpoint.js';
+import { View } from '../view';
+import * as HelloWorldEndpoint from 'Frontend/generated/HelloWorldEndpoint';
 
 @customElement('hello-world-view')
 export default class HelloWorldView extends View {

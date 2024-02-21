@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals-core';
 import type { RouterLocation } from '@vaadin/router';
-import type { ViewRoute } from 'Frontend/routes.js';
+import type { ViewRoute } from 'Frontend/routes';
 
 export const appName = 'observability-kit-hilla-demo';
 

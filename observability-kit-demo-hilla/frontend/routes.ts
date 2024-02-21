@@ -1,9 +1,9 @@
 import type { Route, Router } from '@vaadin/router';
-import './views/helloworld/hello-world-view.js';
-import './views/main-layout.js';
-import './views/login-view.ts';
-import './views/image-list/image-list-view.js';
-import { user, login, logout, doesUserHaveRole } from 'Frontend/stores/login-store.js';
+import './views/helloworld/hello-world-view';
+import './views/main-layout';
+import './views/login-view';
+import './views/image-list/image-list-view';
+import { user, logout, doesUserHaveRole } from 'Frontend/stores/login-store';
 
 export type ViewRoute = Route & {
   children?: ViewRoute[];

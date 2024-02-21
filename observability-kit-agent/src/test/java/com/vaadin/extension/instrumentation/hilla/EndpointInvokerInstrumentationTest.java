@@ -14,7 +14,7 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
 
 public class EndpointInvokerInstrumentationTest extends AbstractTypeInstrumentationTest {
-    private static final String patchedClassName = "dev.hilla.EndpointInvoker";
+    private static final String patchedClassName = "com.vaadin.hilla.EndpointInvoker";
     private static final String patchedMethodName = "invokeVaadinEndpointMethod";
     private EndpointInvokerInstrumentation instrumentation;
 

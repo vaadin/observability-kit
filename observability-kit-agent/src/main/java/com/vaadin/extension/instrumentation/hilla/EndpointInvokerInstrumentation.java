@@ -29,12 +29,12 @@ import static net.bytebuddy.matcher.ElementMatchers.named;
 public class EndpointInvokerInstrumentation implements TypeInstrumentation {
     @Override
     public ElementMatcher<ClassLoader> classLoaderOptimization() {
-        return hasClassesNamed("dev.hilla.EndpointInvoker");
+        return hasClassesNamed("com.vaadin.hilla.EndpointInvoker");
     }
 
     @Override
     public ElementMatcher<TypeDescription> typeMatcher() {
-        return named("dev.hilla.EndpointInvoker");
+        return named("com.vaadin.hilla.EndpointInvoker");
     }
 
     @Override

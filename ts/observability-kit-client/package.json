@@ -1,6 +1,6 @@
 {
-  "name": "@hilla/observability-kit-client",
-  "version": "2.2.1",
+  "name": "@vaadin/observability-kit-client",
+  "version": "3.0.0",
   "type": "module",
   "description": "Observability Kit frontend",
   "main": "index.js",
@@ -38,17 +38,17 @@
   "dependencies": {
     "@opentelemetry/api": "^1.4.1",
     "@opentelemetry/context-zone": "^1.13.0",
-    "@opentelemetry/instrumentation": "^0.39.1",
-    "@opentelemetry/instrumentation-document-load": "^0.32.2",
-    "@opentelemetry/instrumentation-long-task": "^0.32.4",
-    "@opentelemetry/instrumentation-user-interaction": "^0.32.3",
-    "@opentelemetry/instrumentation-xml-http-request": "^0.39.1",
-    "@opentelemetry/otlp-exporter-base": "^0.39.1",
-    "@opentelemetry/otlp-transformer": "^0.39.1",
-    "@opentelemetry/resources": "^1.13.0",
-    "@opentelemetry/sdk-trace-base": "^1.13.0",
-    "@opentelemetry/sdk-trace-web": "^1.13.0",
-    "@opentelemetry/semantic-conventions": "^1.13.0"
+    "@opentelemetry/instrumentation": "~0.39.1",
+    "@opentelemetry/instrumentation-document-load": "~0.32.2",
+    "@opentelemetry/instrumentation-long-task": "~0.32.4",
+    "@opentelemetry/instrumentation-user-interaction": "~0.32.3",
+    "@opentelemetry/instrumentation-xml-http-request": "~0.39.1",
+    "@opentelemetry/otlp-exporter-base": "~0.39.1",
+    "@opentelemetry/otlp-transformer": "~0.39.1",
+    "@opentelemetry/resources": "~1.13.0",
+    "@opentelemetry/sdk-trace-base": "~1.13.0",
+    "@opentelemetry/sdk-trace-web": "~1.13.0",
+    "@opentelemetry/semantic-conventions": "~1.13.0"
   },
   "devDependencies": {
     "karma": "^6.4.2"

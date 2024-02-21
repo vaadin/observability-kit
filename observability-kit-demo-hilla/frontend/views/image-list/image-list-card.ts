@@ -1,6 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
-import styles from './image-list-card.css';
+import styles from './image-list-card.css?inline';
 import { Layout } from 'Frontend/views/view.js';
 
 declare global {

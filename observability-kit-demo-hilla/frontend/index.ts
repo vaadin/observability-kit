@@ -1,8 +1,8 @@
 import { Router } from '@vaadin/router';
-import { ObservabilityEndpoint } from 'Frontend/generated/endpoints.js';
-import { routes } from './routes.js';
-import { appName, location, setLocation } from './stores/location-store.js';
-import { initTelemetry } from 'Frontend/utils/telemetry.js';
+import { ObservabilityEndpoint } from 'Frontend/generated/endpoints';
+import { routes } from './routes';
+import { appName, location, setLocation } from './stores/location-store';
+import { init as initTelemetry } from '@vaadin/observability-kit-client';
 
 initTelemetry(ObservabilityEndpoint.export, {
   serviceName: 'hilla',

@@ -1,11 +1,11 @@
 import '@vaadin/button';
 import '@vaadin/login';
-import type { LoginFormLoginEvent } from '@vaadin/login/vaadin-login-form.js';
+import type { LoginFormLoginEvent } from '@vaadin/login/vaadin-login-form';
 import '@vaadin/text-field';
 import { html, type TemplateResult } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { login } from 'Frontend/stores/login-store.js';
-import { Layout } from 'Frontend/views/view.js';
+import { login } from 'Frontend/stores/login-store';
+import { Layout } from 'Frontend/views/view';
 
 @customElement('login-view')
 export default class LoginView extends Layout {

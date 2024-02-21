@@ -98,6 +98,7 @@
             <plugin>
                 <groupId>com.vaadin</groupId>
                 <artifactId>flow-maven-plugin</artifactId>
+                <version>${flow.version}</version>
                 <executions>
                     <execution>
                         <id>default</id>

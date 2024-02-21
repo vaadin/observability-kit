@@ -16,7 +16,7 @@ import net.bytebuddy.matcher.ElementMatchers;
 
 public class HillaClientInstrumentationTest
         extends AbstractTypeInstrumentationTest {
-    private static final String targetClassName = "dev.hilla.observability.ObservabilityEndpoint";
+    private static final String targetClassName = "com.vaadin.hilla.observability.ObservabilityEndpoint";
     private HillaClientInstrumentation instrumentation;
 
     @BeforeEach

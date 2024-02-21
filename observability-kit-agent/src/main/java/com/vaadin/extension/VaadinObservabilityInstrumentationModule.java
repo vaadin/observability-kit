@@ -154,7 +154,7 @@ public class VaadinObservabilityInstrumentationModule
     }
 
     private Stream<TypeInstrumentation> hillaInstrumentation() {
-        if (classExists("dev.hilla.Endpoint")) {
+        if (classExists("com.vaadin.hilla.Endpoint")) {
             return Stream.of(new PushMessageHandlerInstrumentation(),
                     new EndpointInvokerInstrumentation(),
                     new EndpointRegistryInstrumentation());
