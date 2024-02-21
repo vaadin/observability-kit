@@ -10,7 +10,6 @@
         <version>3.0-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.vaadin.hilla</groupId>
     <artifactId>observability-kit-demo-hilla</artifactId>
     <name>Observability Kit demo application for Hilla</name>
 
@@ -59,8 +58,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.vaadin.hilla</groupId>
-            <artifactId>observability-kit-starter</artifactId>
+            <groupId>com.vaadin</groupId>
+            <artifactId>observability-kit-starter-hilla</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

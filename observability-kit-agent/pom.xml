@@ -36,8 +36,8 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>com.vaadin.hilla</groupId>
-            <artifactId>endpoint</artifactId>
+            <groupId>com.vaadin</groupId>
+            <artifactId>hilla-endpoint</artifactId>
             <version>${hilla.version}</version>
             <scope>provided</scope>
         </dependency>
