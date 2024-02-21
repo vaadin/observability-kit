@@ -10,8 +10,7 @@
         <version>3.0-SNAPSHOT</version>
     </parent>
 
-    <groupId>com.vaadin.hilla</groupId>
-    <artifactId>observability-kit-starter</artifactId>
+    <artifactId>observability-kit-starter-hilla</artifactId>
 
     <properties>
         <cvdl.name>hilla-observability-kit</cvdl.name>
@@ -28,8 +27,8 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>com.vaadin.hilla</groupId>
-            <artifactId>endpoint</artifactId>
+            <groupId>com.vaadin</groupId>
+            <artifactId>hilla-endpoint</artifactId>
             <version>${hilla.version}</version>
             <scope>provided</scope>
         </dependency>
