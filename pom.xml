@@ -55,7 +55,8 @@
         <flow.version>24.4-SNAPSHOT</flow.version>
         <hilla.version>24.4-SNAPSHOT</hilla.version>
         <vaadin.license.checker.version>1.12.12</vaadin.license.checker.version>
-        <spring.boot.version>3.2.3</spring.boot.version>
+        <spring.boot.version>3.2.5</spring.boot.version>
+
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
