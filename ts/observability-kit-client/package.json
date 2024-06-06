@@ -1,6 +1,6 @@
 {
   "name": "@vaadin/observability-kit-client",
-  "version": "3.0.0-beta1",
+  "version": "3.0.0-rc1",
   "type": "module",
   "description": "Observability Kit frontend",
   "main": "index.js",
