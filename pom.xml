@@ -57,13 +57,13 @@
         <vaadin.license.checker.version>1.12.12</vaadin.license.checker.version>
         <spring.boot.version>3.2.5</spring.boot.version>
 
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <servlet.api.version>6.0.0</servlet.api.version>
         <annotation.api.version>2.1.1</annotation.api.version>
-        <opentelemetry.version>1.23.0</opentelemetry.version>
+        <opentelemetry.version>1.31.0</opentelemetry.version>
         <jetty.version>11.0.13</jetty.version>
         <junit.version>5.9.2</junit.version>
         <mockito.version>5.2.0</mockito.version>

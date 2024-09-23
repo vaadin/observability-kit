@@ -7,7 +7,7 @@ import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.VaadinRequest;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
+import io.opentelemetry.semconv.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;

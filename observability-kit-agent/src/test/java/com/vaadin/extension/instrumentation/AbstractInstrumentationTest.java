@@ -28,7 +28,7 @@ import io.opentelemetry.sdk.metrics.data.LongPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.trace.data.EventData;
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
+import io.opentelemetry.semconv.SemanticAttributes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -145,7 +145,7 @@ public abstract class AbstractInstrumentationTest {
     }
 
     protected void readMetrics() {
-        OpenTelemetryTestTools.getMetricReader().read();
+        OpenTelemetryTestTools.getMetricReader().collectAllMetrics();
     }
 
     protected MetricData getMetric(String name) {
