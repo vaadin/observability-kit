@@ -81,7 +81,7 @@ public class OpenTelemetryTestTools {
 
         metricReader = new TestMetricReader();
         SdkMeterProvider meterProvider = SdkMeterProvider.builder()
-                .registerMetricReader(metricReader).build();
+                .registerMetricReader(metricReader.getMetricReader()).build();
 
         openTelemetry = OpenTelemetrySdk.builder()
                 .setTracerProvider(sdkTracerProviderSpy)
