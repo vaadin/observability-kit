@@ -13,8 +13,8 @@
 
     <properties>
         <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
-        <google.auto-service.version>1.0</google.auto-service.version>
-        <byte-buddy.version>1.15.1</byte-buddy.version>
+        <google.auto-service.version>1.1.1</google.auto-service.version>
+        <byte-buddy.version>1.15.0</byte-buddy.version>
     </properties>
 
     <dependencies>

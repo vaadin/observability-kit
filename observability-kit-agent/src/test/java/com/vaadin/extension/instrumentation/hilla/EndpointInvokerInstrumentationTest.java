@@ -27,8 +27,8 @@ public class EndpointInvokerInstrumentationTest extends AbstractTypeInstrumentat
     public void should_ApplyAdviceClass_When_TransformMethodCalled() {
         var typeTransformer = mock(TypeTransformer.class);
         instrumentation.transform(typeTransformer);
-        verify(typeTransformer).applyAdviceToMethod(ArgumentMatchers.eq(ElementMatchers.named(patchedMethodName)),
-            ArgumentMatchers.eq(EndpointInvokerInstrumentation.MethodAdvice.class.getName()));
+        verify(typeTransformer).applyAdviceToMethod(ElementMatchers.named(patchedMethodName),
+            EndpointInvokerInstrumentation.MethodAdvice.class.getName());
     }
 
     @Test
