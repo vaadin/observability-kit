@@ -22,8 +22,6 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
-import io.opentelemetry.instrumentation.api.instrumenter.http.HttpServerRoute;
-import io.opentelemetry.instrumentation.api.instrumenter.http.HttpServerRouteSource;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
