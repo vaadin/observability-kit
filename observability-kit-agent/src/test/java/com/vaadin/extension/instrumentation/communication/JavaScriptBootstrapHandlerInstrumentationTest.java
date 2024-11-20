@@ -1,6 +1,6 @@
 package com.vaadin.extension.instrumentation.communication;
 
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.vaadin.extension.Constants;

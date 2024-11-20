@@ -1,7 +1,7 @@
 package com.vaadin.extension.instrumentation.communication;
 
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
-import static io.opentelemetry.semconv.SemanticAttributes.URL_PATH;
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
+import static io.opentelemetry.semconv.UrlAttributes.URL_PATH;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.vaadin.extension.conf.TraceLevel;

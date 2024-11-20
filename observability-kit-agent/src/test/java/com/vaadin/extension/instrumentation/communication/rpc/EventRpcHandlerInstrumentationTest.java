@@ -1,8 +1,8 @@
 package com.vaadin.extension.instrumentation.communication.rpc;
 
 import static com.vaadin.extension.Constants.SESSION_ID;
-import static io.opentelemetry.semconv.SemanticAttributes.EXCEPTION_MESSAGE;
-import static io.opentelemetry.semconv.SemanticAttributes.EXCEPTION_TYPE;
+import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_MESSAGE;
+import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_TYPE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import elemental.json.Json;

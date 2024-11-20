@@ -11,7 +11,7 @@ package com.vaadin.extension.instrumentation.communication;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.Constants;

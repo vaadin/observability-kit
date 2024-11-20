@@ -14,7 +14,7 @@
     <properties>
         <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
         <google.auto-service.version>1.0</google.auto-service.version>
-        <byte-buddy.version>1.15.0</byte-buddy.version>
+        <byte-buddy.version>1.15.1</byte-buddy.version>
     </properties>
 
     <dependencies>
@@ -59,8 +59,8 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>io.opentelemetry.instrumentation</groupId>
-            <artifactId>opentelemetry-instrumentation-api-semconv</artifactId>
+            <groupId>io.opentelemetry.semconv</groupId>
+            <artifactId>opentelemetry-semconv</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -97,7 +97,7 @@
         <dependency>
             <groupId>io.opentelemetry.javaagent</groupId>
             <artifactId>opentelemetry-javaagent</artifactId>
-            <version>${opentelemetry.version}</version>
+            <version>${opentelemetry.javaagent.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -162,7 +162,7 @@
                     <dependency>
                         <groupId>io.opentelemetry.javaagent</groupId>
                         <artifactId>opentelemetry-muzzle</artifactId>
-                        <version>${opentelemetry.version}-alpha</version>
+                        <version>${opentelemetry.javaagent.version}-alpha</version>
                     </dependency>
                     <dependency>
                         <groupId>com.google.auto.service</groupId>
