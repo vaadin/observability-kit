@@ -1,7 +1,7 @@
 package com.vaadin.extension.instrumentation.communication;
 
 import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_TARGET;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_PATH;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
@@ -53,7 +53,7 @@ public class StreamRequestHandlerInstrumentationTest
                 getExportedSpan(1).getAttributes()
                         .get(HTTP_ROUTE));
         assertEquals("/dynamic/resource/0/aa284e2/image.png", getExportedSpan(1)
-                .getAttributes().get(HTTP_TARGET));
+                .getAttributes().get(URL_PATH));
     }
 
     @Test

@@ -1,7 +1,7 @@
 package com.vaadin.extension.instrumentation.communication;
 
 import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_TARGET;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_PATH;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.vaadin.extension.conf.TraceLevel;
@@ -50,7 +50,7 @@ class UidlRequestHandlerInstrumentationTest
         assertEquals("/test-route",
                 rootSpan.getAttributes().get(HTTP_ROUTE));
         assertEquals("/test-route",
-                rootSpan.getAttributes().get(HTTP_TARGET));
+                rootSpan.getAttributes().get(URL_PATH));
     }
 
     @Test

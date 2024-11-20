@@ -14,14 +14,17 @@ import static com.vaadin.extension.Constants.REQUEST_TYPE;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static com.vaadin.flow.server.Constants.VAADIN_MAPPING;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_HOST;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_METHOD;
+import static io.opentelemetry.semconv.SemanticAttributes.SERVER_ADDRESS;
+import static io.opentelemetry.semconv.SemanticAttributes.HTTP_REQUEST_METHOD;
 import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_SCHEME;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_STATUS_CODE;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_TARGET;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_SCHEME;
+import static io.opentelemetry.semconv.SemanticAttributes.HTTP_RESPONSE_STATUS_CODE;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_PATH;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_QUERY;
 
 import io.opentelemetry.context.propagation.TextMapGetter;
+import io.opentelemetry.instrumentation.api.instrumenter.http.HttpServerRoute;
+import io.opentelemetry.instrumentation.api.instrumenter.http.HttpServerRouteSource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -43,8 +46,6 @@ import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.Instrumenter;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
-import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
-import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
 
 import java.time.Instant;
 import java.util.Enumeration;
@@ -184,16 +185,14 @@ public class InstrumentationHelper {
         Map<String, String> spanMap = new HashMap<>();
 
         // Add semantic HTTP attributes
-        spanMap.put(HTTP_SCHEME.getKey(), servletRequest.getScheme());
-        spanMap.put(HTTP_METHOD.getKey(), servletRequest.getMethod());
-        spanMap.put(HTTP_HOST.getKey(), servletRequest.getRemoteHost());
+        spanMap.put(URL_SCHEME.getKey(), servletRequest.getScheme());
+        spanMap.put(HTTP_REQUEST_METHOD.getKey(), servletRequest.getMethod());
+        spanMap.put(SERVER_ADDRESS.getKey(), servletRequest.getRemoteHost());
         String httpTarget = servletRequest.getContextPath()
                 + servletRequest.getPathInfo();
+        spanMap.put(URL_PATH.getKey(), httpTarget);
         String queryString = servletRequest.getQueryString();
-        if (queryString != null) {
-            httpTarget += "?" + queryString;
-        }
-        spanMap.put(HTTP_TARGET.getKey(), httpTarget);
+        spanMap.put(URL_QUERY.getKey(), queryString);
         spanMap.put(HTTP_ROUTE.getKey(), servletRequest.getPathInfo());
 
         String rootSpanName = servletRequest.getPathInfo();
@@ -223,7 +222,7 @@ public class InstrumentationHelper {
             Context context, Throwable throwable) {
         Span rootSpan = LocalRootSpan.fromContextOrNull(context);
         if (rootSpan != null) {
-            rootSpan.setAttribute(HTTP_STATUS_CODE.getKey(),
+            rootSpan.setAttribute(HTTP_RESPONSE_STATUS_CODE.getKey(),
                     servletResponse.getStatus());
             if (servletResponse.getStatus() == HttpStatusCode.NOT_FOUND
                     .getCode()) {
@@ -283,17 +282,17 @@ public class InstrumentationHelper {
             // Update root span name to contain the route.
             localRootSpan.updateName(route);
             localRootSpan.setAttribute(HTTP_ROUTE, route);
-            // Also update using HttpRouteHolder to prevent subsequent
+            // Also update using HttpServerRoute to prevent subsequent
             // instrumentations from overwriting the route.
-            // HttpRouteSource.NESTED_CONTROLLER is the most specific type of
+            // HttpServerRouteSource.NESTED_CONTROLLER is the most specific type of
             // route
-            HttpRouteHolder.updateHttpRoute(Context.current(),
-                    HttpRouteSource.NESTED_CONTROLLER, route);
+            HttpServerRoute.update(Context.current(),
+                HttpServerRouteSource.NESTED_CONTROLLER, route);
         }
         // Update http.target to contain actual path with params
         String locationPath = "/"
                 + ui.getInternals().getActiveViewLocation().getPath();
-        localRootSpan.setAttribute(HTTP_TARGET, locationPath);
+        localRootSpan.setAttribute(URL_PATH, locationPath);
     }
 
     /**

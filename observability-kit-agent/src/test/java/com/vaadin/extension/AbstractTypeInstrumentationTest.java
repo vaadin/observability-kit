@@ -17,7 +17,7 @@ public class AbstractTypeInstrumentationTest {
     private static void checkAdviceClassMethods(Method[] methods) {
         for (var method : methods) {
             var annotations = method.getDeclaredAnnotations();
-            assertNotEquals(annotations.length, 0);
+            assertNotEquals(0, annotations.length);
             assertTrue(Arrays.stream(annotations).map(Annotation::annotationType).anyMatch(
                 type -> type.equals(Advice.OnMethodExit.class) || type.equals(Advice.OnMethodEnter.class)));
         }

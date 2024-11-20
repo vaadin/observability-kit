@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -38,24 +39,25 @@ public class SecurityConfiguration extends VaadinWebSecurity {
 
     @Override
     protected void configure(HttpSecurity http) throws Exception {
-        http.authorizeHttpRequests()
-                .requestMatchers(new AntPathRequestMatcher("/images/*.png"))
-                .permitAll();
-        // Icons from the line-awesome addon
-        http.authorizeHttpRequests()
-                .requestMatchers(
-                        new AntPathRequestMatcher("/line-awesome/**/*.svg"))
-                .permitAll();
+        http.authorizeHttpRequests(this::requestWhiteList);
 
         super.configure(http);
 
-        http.sessionManagement()
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+        http.sessionManagement(sessionManagement ->
+                sessionManagement.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         setLoginView(http, "/login");
         setStatelessAuthentication(http,
                 new SecretKeySpec(Base64.getDecoder().decode(authSecret),
                         JwsAlgorithms.HS256),
                 "com.example.application");
+    }
+
+    protected void requestWhiteList(
+        AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry urlRegistry) {
+        urlRegistry.requestMatchers(new AntPathRequestMatcher("/images/*.png"),
+                // Icons from the line-awesome addon
+                new AntPathRequestMatcher("/line-awesome/**/*.svg"))
+                .permitAll();
     }
 
 }

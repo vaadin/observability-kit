@@ -2,11 +2,12 @@ package com.vaadin.extension.instrumentation.server;
 
 import static com.vaadin.extension.Constants.*;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_HOST;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_METHOD;
+import static io.opentelemetry.semconv.SemanticAttributes.HTTP_REQUEST_METHOD;
 import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_SCHEME;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_TARGET;
+import static io.opentelemetry.semconv.SemanticAttributes.SERVER_ADDRESS;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_PATH;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_QUERY;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_SCHEME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -72,13 +73,15 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals(SpanKind.SERVER, span.getKind());
 
         assertEquals("https",
-                span.getAttributes().get(HTTP_SCHEME));
+                span.getAttributes().get(URL_SCHEME));
         assertEquals("POST",
-                span.getAttributes().get(HTTP_METHOD));
+                span.getAttributes().get(HTTP_REQUEST_METHOD));
         assertEquals("example.com",
-                span.getAttributes().get(HTTP_HOST));
-        assertEquals("/app/route?foo=bar",
-                span.getAttributes().get(HTTP_TARGET));
+                span.getAttributes().get(SERVER_ADDRESS));
+        assertEquals("/app/route",
+                span.getAttributes().get(URL_PATH));
+        assertEquals("foo=bar",
+            span.getAttributes().get(URL_QUERY));
         assertEquals("/route",
                 span.getAttributes().get(HTTP_ROUTE));
     }

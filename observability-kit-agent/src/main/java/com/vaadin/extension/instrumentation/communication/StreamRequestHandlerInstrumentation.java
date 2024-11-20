@@ -11,7 +11,7 @@ package com.vaadin.extension.instrumentation.communication;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static io.opentelemetry.semconv.SemanticAttributes.HTTP_ROUTE;
-import static io.opentelemetry.semconv.SemanticAttributes.HTTP_TARGET;
+import static io.opentelemetry.semconv.SemanticAttributes.URL_PATH;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 import static net.bytebuddy.matcher.ElementMatchers.takesArgument;
 
@@ -84,7 +84,7 @@ public class StreamRequestHandlerInstrumentation
 
             Span localRootSpan = LocalRootSpan.current();
             localRootSpan.updateName(rootSpanName);
-            localRootSpan.setAttribute(HTTP_TARGET,
+            localRootSpan.setAttribute(URL_PATH,
                     request.getPathInfo());
             localRootSpan.setAttribute(HTTP_ROUTE,
                     rootSpanName);
