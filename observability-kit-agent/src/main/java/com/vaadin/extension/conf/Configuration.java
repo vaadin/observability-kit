@@ -2,7 +2,7 @@ package com.vaadin.extension.conf;
 
 import com.vaadin.extension.Constants;
 
-import io.opentelemetry.javaagent.bootstrap.internal.InstrumentationConfig;
+import io.opentelemetry.javaagent.bootstrap.internal.AgentInstrumentationConfig;
 
 /**
  * Provides the effective configuration for the Vaadin observability extension.
@@ -11,7 +11,7 @@ public class Configuration {
     public static final TraceLevel TRACE_LEVEL = determineTraceLevel();
 
     private static TraceLevel determineTraceLevel() {
-        String traceLevelString = InstrumentationConfig.get().getString(
+        String traceLevelString = AgentInstrumentationConfig.get().getString(
                 Constants.CONFIG_TRACE_LEVEL, TraceLevel.DEFAULT.name());
         try {
             return TraceLevel.valueOf(traceLevelString.toUpperCase());
