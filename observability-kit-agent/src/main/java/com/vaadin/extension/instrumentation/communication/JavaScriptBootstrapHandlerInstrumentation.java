@@ -11,6 +11,7 @@ package com.vaadin.extension.instrumentation.communication;
 
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
 import com.vaadin.extension.Constants;
@@ -21,8 +22,6 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.api.instrumenter.LocalRootSpan;
-import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteHolder;
-import io.opentelemetry.instrumentation.api.instrumenter.http.HttpRouteSource;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
@@ -75,11 +74,9 @@ public class JavaScriptBootstrapHandlerInstrumentation
                 String route = "/" + InstrumentationHelper
                         .getRouteTemplateForLocation(location).orElse("");
 
-                // Need to use HttpRouteHolder.updateHttpRoute here, it seems
-                // otherwise this gets overwritten by another instrumentation
-                // later on
-                HttpRouteHolder.updateHttpRoute(Context.current(),
-                        HttpRouteSource.NESTED_CONTROLLER, route);
+                // Need to set the HTTP route here, it seems otherwise this
+                // gets overwritten by another instrumentation later on
+                localRootSpan.setAttribute(HTTP_ROUTE, route);
                 String rootSpanName = route + " : JavaScript Bootstrap";
                 localRootSpan.updateName(rootSpanName);
             }

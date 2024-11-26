@@ -1,5 +1,6 @@
 package com.vaadin.extension.instrumentation.communication;
 
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.vaadin.extension.Constants;
@@ -7,7 +8,6 @@ import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.VaadinRequest;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -51,7 +51,7 @@ class JavaScriptBootstrapHandlerInstrumentationTest
         SpanData rootSpan = getExportedSpan(1);
         assertEquals("/test-route : JavaScript Bootstrap", rootSpan.getName());
         assertEquals("/test-route",
-                rootSpan.getAttributes().get(SemanticAttributes.HTTP_ROUTE));
+                rootSpan.getAttributes().get(HTTP_ROUTE));
     }
 
     @Test

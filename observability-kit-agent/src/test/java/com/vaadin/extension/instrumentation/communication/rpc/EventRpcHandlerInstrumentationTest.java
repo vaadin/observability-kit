@@ -1,6 +1,8 @@
 package com.vaadin.extension.instrumentation.communication.rpc;
 
 import static com.vaadin.extension.Constants.SESSION_ID;
+import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_MESSAGE;
+import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_TYPE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import elemental.json.Json;
@@ -15,7 +17,6 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.trace.data.EventData;
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -113,9 +114,9 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals(1, span.getEvents().size());
         EventData eventData = span.getEvents().get(0);
         assertEquals(RuntimeException.class.getCanonicalName(), eventData
-                .getAttributes().get(SemanticAttributes.EXCEPTION_TYPE));
+                .getAttributes().get(EXCEPTION_TYPE));
         assertEquals("test error", eventData.getAttributes()
-                .get(SemanticAttributes.EXCEPTION_MESSAGE));
+                .get(EXCEPTION_MESSAGE));
     }
 
     @Test

@@ -1,12 +1,13 @@
 package com.vaadin.extension.instrumentation.communication;
 
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
+import static io.opentelemetry.semconv.UrlAttributes.URL_PATH;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.VaadinRequest;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -50,9 +51,9 @@ public class StreamRequestHandlerInstrumentationTest
                 getExportedSpan(1).getName());
         assertEquals("/dynamic/resource/[ui]/[secret]/image.png",
                 getExportedSpan(1).getAttributes()
-                        .get(SemanticAttributes.HTTP_ROUTE));
+                        .get(HTTP_ROUTE));
         assertEquals("/dynamic/resource/0/aa284e2/image.png", getExportedSpan(1)
-                .getAttributes().get(SemanticAttributes.HTTP_TARGET));
+                .getAttributes().get(URL_PATH));
     }
 
     @Test

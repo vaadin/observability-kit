@@ -1,5 +1,7 @@
 package com.vaadin.extension.instrumentation.communication;
 
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
+import static io.opentelemetry.semconv.UrlAttributes.URL_PATH;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.vaadin.extension.conf.TraceLevel;
@@ -7,7 +9,6 @@ import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.server.VaadinRequest;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -47,9 +48,9 @@ class UidlRequestHandlerInstrumentationTest
         SpanData rootSpan = getExportedSpan(1);
         assertEquals("/test-route", rootSpan.getName());
         assertEquals("/test-route",
-                rootSpan.getAttributes().get(SemanticAttributes.HTTP_ROUTE));
+                rootSpan.getAttributes().get(HTTP_ROUTE));
         assertEquals("/test-route",
-                rootSpan.getAttributes().get(SemanticAttributes.HTTP_TARGET));
+                rootSpan.getAttributes().get(URL_PATH));
     }
 
     @Test
