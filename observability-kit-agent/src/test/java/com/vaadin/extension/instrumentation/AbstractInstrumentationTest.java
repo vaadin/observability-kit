@@ -1,5 +1,7 @@
 package com.vaadin.extension.instrumentation;
 
+import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_MESSAGE;
+import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_TYPE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,7 +30,6 @@ import io.opentelemetry.sdk.metrics.data.LongPointData;
 import io.opentelemetry.sdk.metrics.data.MetricData;
 import io.opentelemetry.sdk.trace.data.EventData;
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -145,7 +146,7 @@ public abstract class AbstractInstrumentationTest {
     }
 
     protected void readMetrics() {
-        OpenTelemetryTestTools.getMetricReader().read();
+        OpenTelemetryTestTools.getMetricReader().collectAllMetrics();
     }
 
     protected MetricData getMetric(String name) {
@@ -180,9 +181,9 @@ public abstract class AbstractInstrumentationTest {
         assertEquals(1, span.getEvents().size());
         EventData eventData = span.getEvents().get(0);
         assertEquals(throwable.getClass().getCanonicalName(), eventData
-                .getAttributes().get(SemanticAttributes.EXCEPTION_TYPE));
+                .getAttributes().get(EXCEPTION_TYPE));
         assertEquals(throwable.getMessage(), eventData.getAttributes()
-                .get(SemanticAttributes.EXCEPTION_MESSAGE));
+                .get(EXCEPTION_MESSAGE));
     }
 
     protected void configureTraceLevel(TraceLevel level) {

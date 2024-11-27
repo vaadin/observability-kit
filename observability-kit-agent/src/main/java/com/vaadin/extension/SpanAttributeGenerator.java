@@ -22,8 +22,8 @@ public class SpanAttributeGenerator
     public void onStart(AttributesBuilder attributes, Context parentContext,
             InstrumentationRequest vaadinRequest) {
         final Map<String, String> attributesMap = vaadinRequest.getAttributes();
-        for (String key : attributesMap.keySet()) {
-            attributes.put(key, attributesMap.get(key));
+        for (Map.Entry<String, String> entry : attributesMap.entrySet()) {
+            attributes.put(entry.getKey(), entry.getValue());
         }
     }
 

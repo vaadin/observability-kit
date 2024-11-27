@@ -2,6 +2,12 @@ package com.vaadin.extension.instrumentation.server;
 
 import static com.vaadin.extension.Constants.*;
 import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentContext;
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_REQUEST_METHOD;
+import static io.opentelemetry.semconv.HttpAttributes.HTTP_ROUTE;
+import static io.opentelemetry.semconv.ServerAttributes.SERVER_ADDRESS;
+import static io.opentelemetry.semconv.UrlAttributes.URL_PATH;
+import static io.opentelemetry.semconv.UrlAttributes.URL_QUERY;
+import static io.opentelemetry.semconv.UrlAttributes.URL_SCHEME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
@@ -14,7 +20,6 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.SpanKind;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.trace.data.SpanData;
-import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -68,15 +73,17 @@ class VaadinServletInstrumentationTest extends AbstractInstrumentationTest {
         assertEquals(SpanKind.SERVER, span.getKind());
 
         assertEquals("https",
-                span.getAttributes().get(SemanticAttributes.HTTP_SCHEME));
+                span.getAttributes().get(URL_SCHEME));
         assertEquals("POST",
-                span.getAttributes().get(SemanticAttributes.HTTP_METHOD));
+                span.getAttributes().get(HTTP_REQUEST_METHOD));
         assertEquals("example.com",
-                span.getAttributes().get(SemanticAttributes.HTTP_HOST));
-        assertEquals("/app/route?foo=bar",
-                span.getAttributes().get(SemanticAttributes.HTTP_TARGET));
+                span.getAttributes().get(SERVER_ADDRESS));
+        assertEquals("/app/route",
+                span.getAttributes().get(URL_PATH));
+        assertEquals("foo=bar",
+            span.getAttributes().get(URL_QUERY));
         assertEquals("/route",
-                span.getAttributes().get(SemanticAttributes.HTTP_ROUTE));
+                span.getAttributes().get(HTTP_ROUTE));
     }
 
     @Test

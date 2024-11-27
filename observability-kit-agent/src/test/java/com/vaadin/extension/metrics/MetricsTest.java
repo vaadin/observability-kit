@@ -69,7 +69,6 @@ class MetricsTest extends AbstractInstrumentationTest {
 
     @Test
     public void sessionDuration() {
-        Instant endInstant = Instant.ofEpochSecond(2000);
         VaadinSession session = mockSession("session");
 
         Metrics.setInstantProvider(() -> Instant.ofEpochSecond(500));
