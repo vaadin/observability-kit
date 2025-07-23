@@ -66,8 +66,7 @@ public class ObjectMapExporter
             // if (span.getName().contains("documentLoad")) {
                 Long durationNanos = span.getEndEpochNanos() - span.getStartEpochNanos();
                 Long durationMs = durationNanos / 1000000;  
-                System.out.println("Span name: " + span.getName());
-                Metrics.recordSpanDuration(span.getName(), durationMs, span.getTraceId());
+                Metrics.recordSpanDuration(span.getName(), durationMs, span.getSpanContext());
             // }
         });
 

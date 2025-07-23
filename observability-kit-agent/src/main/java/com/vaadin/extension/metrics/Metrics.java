@@ -17,6 +17,8 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.context.Context;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -129,14 +131,24 @@ public class Metrics {
         Instant get();
     }
 
-    public static void recordSpanDuration(String spanName, long durationMs, String traceId) {
-        Metrics.ensureMetricsRegistered();
+    public static void recordSpanDuration(String spanName, long durationMs, SpanContext spanContext) {
         Attributes attributes = Attributes.of(
             AttributeKey.stringKey("span.name"), spanName
         );
-        if (spanName.contains("documentLoad")) {
-            documentLoadHistogram.record(durationMs, attributes);
+        
+        // Create a Context with span information for exemplars
+        Context contextWithSpan = Context.current();
+        if (spanContext != null && spanContext.isValid()) {
+            contextWithSpan = Context.current().with(
+                io.opentelemetry.api.trace.Span.wrap(spanContext)
+            );
         }
-        spanDurationHistogram.record(durationMs, attributes);
+        
+        if (spanName.contains("documentLoad")) {
+            documentLoadHistogram.record(durationMs, attributes, contextWithSpan);
+        }
+        spanDurationHistogram.record(durationMs, attributes, contextWithSpan);
     }
+
+
 }

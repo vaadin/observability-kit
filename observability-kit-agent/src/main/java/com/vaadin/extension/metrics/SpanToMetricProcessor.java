@@ -20,7 +20,7 @@ public class SpanToMetricProcessor implements SpanProcessor {
     @Override
     public void onEnd(ReadableSpan span) {
         Long latencyMs = span.getLatencyNanos() / 1000000;
-        Metrics.recordSpanDuration(span.getName(), latencyMs, span.getSpanContext().getTraceId());
+        Metrics.recordSpanDuration(span.getName(), latencyMs, span.getSpanContext());
     }
 
     @Override
