@@ -13,6 +13,8 @@ import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.flow.server.VaadinSession;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
 
@@ -30,11 +32,12 @@ public class Metrics {
     private static final Map<String, Instant> sessionStarts = new ConcurrentHashMap<>();
 
     private static LongHistogram sessionDurationMeasurement;
-
+    private static LongHistogram spanDurationHistogram;
+    private static LongHistogram documentLoadHistogram;
     private static InstantProvider instantProvider = Instant::now;
 
     static void setInstantProvider(InstantProvider instantProvider) {
-        Metrics.instantProvider = instantProvider;
+        Metrics.instantProvider = instantProvider;  
     }
 
     public static void ensureMetricsRegistered() {
@@ -62,6 +65,20 @@ public class Metrics {
                     .histogramBuilder("vaadin.session.duration")
                     .setDescription("Duration of sessions").setUnit("seconds")
                     .ofLongs().build();
+
+            spanDurationHistogram = meter
+                    .histogramBuilder("vaadin.span.duration")
+                    .setDescription("Duration of spans in milliseconds")
+                    .setUnit("ms")
+                    .ofLongs()
+                    .build();
+            
+            documentLoadHistogram = meter
+                    .histogramBuilder("vaadin.document.load.duration")
+                    .setDescription("Duration of document loads in milliseconds")
+                    .setUnit("ms")
+                    .ofLongs()
+                    .build();
         }
     }
 
@@ -110,5 +127,16 @@ public class Metrics {
     @FunctionalInterface
     interface InstantProvider {
         Instant get();
+    }
+
+    public static void recordSpanDuration(String spanName, long durationMs, String traceId) {
+        Metrics.ensureMetricsRegistered();
+        Attributes attributes = Attributes.of(
+            AttributeKey.stringKey("span.name"), spanName
+        );
+        if (spanName.contains("documentLoad")) {
+            documentLoadHistogram.record(durationMs, attributes);
+        }
+        spanDurationHistogram.record(durationMs, attributes);
     }
 }
