@@ -63,11 +63,9 @@ public class ObjectMapExporter
         }
 
         exportSpans.forEach(span -> {
-            // if (span.getName().contains("documentLoad")) {
                 Long durationNanos = span.getEndEpochNanos() - span.getStartEpochNanos();
                 Long durationMs = durationNanos / 1000000;  
                 Metrics.recordSpanDuration(span.getName(), durationMs, span.getSpanContext());
-            // }
         });
 
         ConfigurationDefaults.spanExporter.export(exportSpans);

@@ -35,6 +35,7 @@ public class Metrics {
 
     private static LongHistogram sessionDurationMeasurement;
     private static LongHistogram spanDurationHistogram;
+    private static LongHistogram documentLoadHistogram;
     private static InstantProvider instantProvider = Instant::now;
 
     static void setInstantProvider(InstantProvider instantProvider) {
@@ -70,6 +71,13 @@ public class Metrics {
             spanDurationHistogram = meter
                     .histogramBuilder("vaadin.span.duration")
                     .setDescription("Duration of spans in milliseconds")
+                    .setUnit("ms")
+                    .ofLongs()
+                    .build();
+
+            documentLoadHistogram = meter
+                    .histogramBuilder("vaadin.document.load")
+                    .setDescription("Duration of document load in milliseconds")
                     .setUnit("ms")
                     .ofLongs()
                     .build();
@@ -128,15 +136,11 @@ public class Metrics {
         Attributes attributes = Attributes.of(
             AttributeKey.stringKey("span.name"), spanName
         );
-        
-        // Create a Context with span information for exemplars
-        Context contextWithSpan = Context.current();
-        if (spanContext != null && spanContext.isValid()) {
-            contextWithSpan = Context.current().with(
-                io.opentelemetry.api.trace.Span.wrap(spanContext)
-            );
+        spanDurationHistogram.record(durationMs, attributes);
+
+        if (spanName.contains("documentLoad") || spanName.contains("navigate") || spanName.contains("Navigate")) {
+            documentLoadHistogram.record(durationMs, attributes);
         }
-        spanDurationHistogram.record(durationMs, attributes, contextWithSpan);
     }
 
 
