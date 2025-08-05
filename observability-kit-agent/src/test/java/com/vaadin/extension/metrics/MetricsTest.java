@@ -1,11 +1,15 @@
 package com.vaadin.extension.metrics;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
 import com.vaadin.flow.server.VaadinSession;
 
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
 import io.opentelemetry.sdk.metrics.data.HistogramPointData;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -83,10 +87,63 @@ class MetricsTest extends AbstractInstrumentationTest {
         assertEquals(1500, metricValue.getSum(), 0);
     }
 
+    @Test
+    public void recordSpanDuration() {
+        SpanContext spanContext = createMockSpanContext();
+        String spanName = "test-span";
+        long durationNanos = 150_000_000; // 150ms in nanoseconds
+
+        Metrics.recordSpanDuration(spanName, durationNanos, spanContext);
+
+        HistogramPointData metricValue = getLastHistogramMetricValue("vaadin.span.duration");
+        assertEquals(150, metricValue.getSum(), 0); // Should be 150ms
+        assertEquals(1, metricValue.getCount());
+        
+        // Verify span name attribute is recorded
+        assertTrue(metricValue.getAttributes().asMap().containsKey(io.opentelemetry.api.common.AttributeKey.stringKey("span.name")));
+        assertEquals(spanName, metricValue.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("span.name")));
+    }
+
+    @Test
+    public void recordSpanDurationVariousSpanNames() {
+        SpanContext spanContext = createMockSpanContext();
+        
+        // Test recording spans with different names (including ones that used to trigger document load)
+        String[] spanNames = {
+            "regular-operation",
+            "documentLoad", 
+            "navigate-to-page",
+            "Navigate-Home"
+        };
+        
+        // Record spans and verify basic functionality
+        for (String spanName : spanNames) {
+            Metrics.recordSpanDuration(spanName, 100_000_000, spanContext); // 100ms in nanoseconds
+        }
+        
+        // Verify basic functionality - that spans are recorded in the histogram
+        HistogramPointData spanMetric = getLastHistogramMetricValue("vaadin.span.duration");
+        assertTrue(spanMetric.getCount() >= 1, "Should have recorded at least 1 span");
+        assertTrue(spanMetric.getSum() >= 100, "Should have recorded at least 100ms total");
+        
+        // Verify that span name attribute key exists (value will be from the last recorded span)
+        assertTrue(spanMetric.getAttributes().asMap().containsKey(io.opentelemetry.api.common.AttributeKey.stringKey("span.name")),
+                "Span name attribute should be present");
+    }
+
     private static VaadinSession mockSession(String sessionId) {
         VaadinSession session = Mockito.mock(VaadinSession.class);
         Mockito.when(session.getPushId()).thenReturn(sessionId);
 
         return session;
+    }
+
+    private static SpanContext createMockSpanContext() {
+        return SpanContext.create(
+            "12345678901234567890123456789012", // traceId (32 hex chars)
+            "1234567890123456", // spanId (16 hex chars)  
+            TraceFlags.getSampled(),
+            TraceState.getDefault()
+        );
     }
 }

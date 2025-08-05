@@ -18,7 +18,6 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongHistogram;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.trace.SpanContext;
-import io.opentelemetry.context.Context;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -35,7 +34,6 @@ public class Metrics {
 
     private static LongHistogram sessionDurationMeasurement;
     private static LongHistogram spanDurationHistogram;
-    private static LongHistogram documentLoadHistogram;
     private static InstantProvider instantProvider = Instant::now;
 
     static void setInstantProvider(InstantProvider instantProvider) {
@@ -71,13 +69,6 @@ public class Metrics {
             spanDurationHistogram = meter
                     .histogramBuilder("vaadin.span.duration")
                     .setDescription("Duration of spans in milliseconds")
-                    .setUnit("ms")
-                    .ofLongs()
-                    .build();
-
-            documentLoadHistogram = meter
-                    .histogramBuilder("vaadin.document.load")
-                    .setDescription("Duration of document load in milliseconds")
                     .setUnit("ms")
                     .ofLongs()
                     .build();
@@ -131,16 +122,13 @@ public class Metrics {
         Instant get();
     }
 
-    public static void recordSpanDuration(String spanName, long durationMs, SpanContext spanContext) {
+    public static void recordSpanDuration(String spanName, long durationNanos, SpanContext spanContext) {
+        long durationMs = durationNanos / 1000000;
         Metrics.ensureMetricsRegistered();
         Attributes attributes = Attributes.of(
             AttributeKey.stringKey("span.name"), spanName
         );
         spanDurationHistogram.record(durationMs, attributes);
-
-        if (spanName.contains("documentLoad") || spanName.contains("navigate") || spanName.contains("Navigate")) {
-            documentLoadHistogram.record(durationMs, attributes);
-        }
     }
 
 
