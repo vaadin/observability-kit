@@ -15,6 +15,7 @@ package com.vaadin.extension;
  */
 public class Constants {
     public static final String CONFIG_TRACE_LEVEL = "otel.instrumentation.vaadin.trace-level";
+    public static final String CONFIG_SPAN_TO_METRICS_ENABLED = "otel.instrumentation.vaadin.span-to-metrics.enabled";
 
     // Vaadin attribute names
     public static final String SESSION_ID = "vaadin.session.id";

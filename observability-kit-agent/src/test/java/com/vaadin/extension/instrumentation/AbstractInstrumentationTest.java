@@ -106,6 +106,8 @@ public abstract class AbstractInstrumentationTest {
                     TraceLevel level = invocation.getArgument(0);
                     return configuredTraceLevel.includes(level);
                 });
+        ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                .thenReturn(true);
     }
 
     @AfterEach

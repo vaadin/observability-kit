@@ -84,7 +84,15 @@ public class ConfigurationDefaults
 
     private SpanProcessor spanToMetricProcessor(SpanProcessor spanProcessor,
             ConfigProperties configProperties) {
-        return SpanProcessor.composite(spanProcessor, new SpanToMetricProcessor());
+        // Only add SpanToMetricProcessor if explicitly enabled
+        boolean spanToMetricsEnabled = configProperties.getBoolean(
+                Constants.CONFIG_SPAN_TO_METRICS_ENABLED, false);
+        
+        if (spanToMetricsEnabled) {
+            return SpanProcessor.composite(spanProcessor, new SpanToMetricProcessor());
+        } else {
+            return spanProcessor;
+        }
     }
 
     private Map<String, String> getDefaultProperties() {

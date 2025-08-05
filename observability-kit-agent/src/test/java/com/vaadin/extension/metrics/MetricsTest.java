@@ -3,6 +3,7 @@ package com.vaadin.extension.metrics;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
 import com.vaadin.flow.server.VaadinSession;
