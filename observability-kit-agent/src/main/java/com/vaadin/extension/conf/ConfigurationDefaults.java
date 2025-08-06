@@ -82,7 +82,7 @@ public class ConfigurationDefaults
         return spanExporter;
     }
 
-    private SpanProcessor spanToMetricProcessor(SpanProcessor spanProcessor,
+    SpanProcessor spanToMetricProcessor(SpanProcessor spanProcessor,
             ConfigProperties configProperties) {
         // Only add SpanToMetricProcessor if explicitly enabled
         boolean spanToMetricsEnabled = configProperties.getBoolean(

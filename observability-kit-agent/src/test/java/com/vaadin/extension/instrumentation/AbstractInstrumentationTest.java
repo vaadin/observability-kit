@@ -47,7 +47,7 @@ public abstract class AbstractInstrumentationTest {
     private VaadinSession mockSession;
     private VaadinService mockService;
     private Scope sessionScope;
-    private MockedStatic<Configuration> ConfigurationMock;
+    protected MockedStatic<Configuration> ConfigurationMock;
     private TraceLevel configuredTraceLevel;
 
     public UI getMockUI() {

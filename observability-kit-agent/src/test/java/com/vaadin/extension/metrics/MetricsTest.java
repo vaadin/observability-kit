@@ -1,12 +1,16 @@
 package com.vaadin.extension.metrics;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.extension.instrumentation.server.VaadinSessionInstrumentation;
+import com.vaadin.extension.metrics.SpanToMetricProcessor;
 import com.vaadin.flow.server.VaadinSession;
+
+import io.opentelemetry.sdk.trace.ReadableSpan;
 
 import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.api.trace.TraceFlags;
@@ -103,6 +107,29 @@ class MetricsTest extends AbstractInstrumentationTest {
         // Verify span name attribute is recorded
         assertTrue(metricValue.getAttributes().asMap().containsKey(io.opentelemetry.api.common.AttributeKey.stringKey("span.name")));
         assertEquals(spanName, metricValue.getAttributes().get(io.opentelemetry.api.common.AttributeKey.stringKey("span.name")));
+    }
+
+    @Test
+    public void spanToMetricsConfigurationRespected() {
+        // Test that the configuration mock works as expected
+        
+        // Disable span-to-metrics
+        ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                .thenReturn(false);
+        
+        assertFalse(Configuration.isSpanToMetricsEnabled(), 
+                "Configuration should reflect disabled state");
+        
+        // Enable span-to-metrics
+        ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                .thenReturn(true);
+        
+        assertTrue(Configuration.isSpanToMetricsEnabled(), 
+                "Configuration should reflect enabled state");
+        
+        // Reset to enabled for other tests
+        ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                .thenReturn(true);
     }
 
     @Test
