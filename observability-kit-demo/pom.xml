@@ -28,7 +28,7 @@
         <observability-kit.agent.jar>
             ${project.basedir}/../observability-kit-agent/target/observability-kit-agent-${project.version}.jar
         </observability-kit.agent.jar>
-        <vaadin.platform.version>24.6-SNAPSHOT</vaadin.platform.version>
+        <vaadin.platform.version>25.0-SNAPSHOT</vaadin.platform.version>
     </properties>
 
     <repositories>
