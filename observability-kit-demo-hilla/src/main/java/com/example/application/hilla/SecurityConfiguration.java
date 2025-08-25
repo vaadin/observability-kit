@@ -15,7 +15,7 @@ import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.jose.jws.JwsAlgorithms;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 import com.vaadin.flow.spring.security.VaadinWebSecurity;
 
@@ -43,8 +43,8 @@ public class SecurityConfiguration extends VaadinWebSecurity {
 
         super.configure(http);
 
-        http.sessionManagement(sessionManagement ->
-                sessionManagement.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        http.sessionManagement(sessionManagement -> sessionManagement
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         setLoginView(http, "/login");
         setStatelessAuthentication(http,
                 new SecretKeySpec(Base64.getDecoder().decode(authSecret),
@@ -53,10 +53,13 @@ public class SecurityConfiguration extends VaadinWebSecurity {
     }
 
     protected void requestWhiteList(
-        AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry urlRegistry) {
-        urlRegistry.requestMatchers(new AntPathRequestMatcher("/images/*.png"),
+            AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry urlRegistry) {
+        urlRegistry.requestMatchers(
+                PathPatternRequestMatcher.withDefaults()
+                        .matcher("/images/*.png"),
                 // Icons from the line-awesome addon
-                new AntPathRequestMatcher("/line-awesome/**/*.svg"))
+                PathPatternRequestMatcher.withDefaults()
+                        .matcher("/line-awesome/**/*.svg"))
                 .permitAll();
     }
 

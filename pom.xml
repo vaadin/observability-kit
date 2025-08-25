@@ -52,10 +52,10 @@
     </profiles>
 
     <properties>
-        <flow.version>24.6-SNAPSHOT</flow.version>
-        <hilla.version>24.6-SNAPSHOT</hilla.version>
-        <vaadin.license.checker.version>1.13.4</vaadin.license.checker.version>
-        <spring.boot.version>3.4.2</spring.boot.version>
+        <flow.version>25.0-SNAPSHOT</flow.version>
+        <hilla.version>25.0-SNAPSHOT</hilla.version>
+        <vaadin.license.checker.version>2.0.0-alpha2</vaadin.license.checker.version>
+        <spring.boot.version>4.0.0-M1</spring.boot.version>
 
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
