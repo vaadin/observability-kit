@@ -9,7 +9,7 @@
     </parent>
 
     <artifactId>observability-kit</artifactId>
-    <version>3.1-SNAPSHOT</version>
+    <version>3.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <licenses>
