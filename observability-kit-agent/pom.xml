@@ -10,6 +10,7 @@
     </parent>
 
     <artifactId>observability-kit-agent</artifactId>
+    <name>Observability Kit Agent</name>
 
     <properties>
         <extension.name>opentelemetry-vaadin-observability-instrumentation-extension</extension.name>
