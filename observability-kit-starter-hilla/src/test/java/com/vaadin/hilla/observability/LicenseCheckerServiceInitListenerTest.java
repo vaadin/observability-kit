@@ -21,12 +21,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.pro.licensechecker.BuildType;
+import com.vaadin.pro.licensechecker.Capabilities;
 import com.vaadin.pro.licensechecker.LicenseChecker;
 
 import static com.vaadin.hilla.observability.LicenseCheckerServiceInitListener.loadAllProperties;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.text.MatchesPattern.matchesPattern;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 
@@ -65,10 +67,9 @@ class LicenseCheckerServiceInitListenerTest {
         listener.serviceInit(new ServiceInitEvent(service));
 
         // Verify the license is checked
-        BuildType buildType = null;
         licenseChecker.verify(() -> LicenseChecker.checkLicense(
-                LicenseCheckerServiceInitListener.PRODUCT_NAME, version,
-                buildType));
+            eq(LicenseCheckerServiceInitListener.PRODUCT_NAME), eq(version),
+            any(Capabilities.class), isNull(BuildType.class)));
     }
 
     @Test
