@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>observability-kit-starter</artifactId>
+    <name>Observability Kit Starter</name>
 
     <properties>
         <cvdl.name>vaadin-observability-kit</cvdl.name>
