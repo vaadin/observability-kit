@@ -10,6 +10,7 @@
 
     <artifactId>observability-kit</artifactId>
     <version>4.0-SNAPSHOT</version>
+    <name>Observability Kit</name>
     <packaging>pom</packaging>
 
     <licenses>
