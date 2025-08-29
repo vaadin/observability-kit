@@ -11,6 +11,7 @@
     </parent>
 
     <artifactId>observability-kit-starter-hilla</artifactId>
+    <name>Observability Kit Starter Hilla</name>
 
     <properties>
         <cvdl.name>hilla-observability-kit</cvdl.name>
