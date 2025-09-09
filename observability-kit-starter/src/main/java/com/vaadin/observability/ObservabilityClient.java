@@ -17,14 +17,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.dependency.NpmPackage;
-import com.vaadin.flow.internal.JsonUtils;
-
-import elemental.json.JsonArray;
-import elemental.json.JsonValue;
+import com.vaadin.flow.internal.JacksonUtils;
 
 @NpmPackage(value = "@opentelemetry/sdk-trace-web", version = "1.8.0")
 @NpmPackage(value = "@opentelemetry/instrumentation", version = "0.35.0")
@@ -98,9 +97,9 @@ class ObservabilityClient extends Component
 
     @Override
     public Set<String> getUserInteractionEvents() {
-        return JsonUtils.stream(
-                (JsonArray) getElement().getPropertyRaw("traceUserInteraction"))
-                .map(JsonValue::asString).collect(Collectors.toSet());
+        return JacksonUtils.stream(
+                (ArrayNode) getElement().getPropertyRaw("traceUserInteraction"))
+                .map(JsonNode::asText).collect(Collectors.toSet());
     }
 
     @Override
@@ -143,10 +142,10 @@ class ObservabilityClient extends Component
     @Override
     public List<URLPattern> getIgnoredURLs() {
         if (getElement().hasProperty("ignoredURLs")) {
-            return JsonUtils
-                    .stream((JsonArray) getElement()
+            return JacksonUtils
+                    .stream((ArrayNode) getElement()
                             .getPropertyRaw("ignoredURLs"))
-                    .map(JsonValue::asString)
+                    .map(JsonNode::asText)
                     .map(URLPattern::fromInternalFormat)
                     .collect(Collectors.toList());
         }
