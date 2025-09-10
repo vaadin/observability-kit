@@ -3,6 +3,8 @@ package com.vaadin.extension.instrumentation.client;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vaadin.extension.conf.Configuration;
+import io.opentelemetry.sdk.metrics.data.HistogramPointData;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -251,6 +253,121 @@ public class ObjectMapExporterTest extends AbstractInstrumentationTest {
                     () -> new ObjectMapExporter().accept("foo", objectMap));
         } catch (Exception e) {
             fail(e);
+        }
+    }
+
+    @Test
+    public void spanToMetricsRespectedWhenDisabled() {
+        try {
+            // First, enable span-to-metrics and create a baseline metric
+            ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                    .thenReturn(true);
+            
+            String jsonString = """
+                    {
+                        "resourceSpans": [
+                            {
+                                "resource": {
+                                    "attributes": [
+                                        {
+                                            "key": "service.name",
+                                            "value": {"stringValue": "test_service"}
+                                        }
+                                    ]
+                                },
+                                "scopeSpans": [
+                                    {
+                                        "scope": {
+                                            "name": "test-scope"
+                                        },
+                                        "spans": [
+                                            {
+                                                "traceId": "12345678901234567890123456789012",
+                                                "spanId": "1234567890123456",
+                                                "name": "baseline-span",
+                                                "kind": 1,
+                                                "startTimeUnixNano": 1674542404352000000,
+                                                "endTimeUnixNano": 1674542405301000200,
+                                                "attributes": []
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                    """;
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> objectMap = objectMapper.readValue(jsonString, Map.class);
+
+            // Process the spans with enabled configuration to create the metric
+            new ObjectMapExporter().accept("foo", objectMap);
+            
+            // Now get initial metrics state (after creating the metric)
+            HistogramPointData initialSpanMetric = getLastHistogramMetricValue("vaadin.span.duration");
+            long initialSpanCount = initialSpanMetric.getCount();
+            double initialSpanSum = initialSpanMetric.getSum();
+            
+            // Now disable span-to-metrics
+            ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                    .thenReturn(false);
+            
+            String jsonString2 = """
+                    {
+                        "resourceSpans": [
+                            {
+                                "resource": {
+                                    "attributes": [
+                                        {
+                                            "key": "service.name",
+                                            "value": {"stringValue": "test_service"}
+                                        }
+                                    ]
+                                },
+                                "scopeSpans": [
+                                    {
+                                        "scope": {
+                                            "name": "test-scope"
+                                        },
+                                        "spans": [
+                                            {
+                                                "traceId": "12345678901234567890123456789013",
+                                                "spanId": "1234567890123457",
+                                                "name": "test-span-disabled",
+                                                "kind": 1,
+                                                "startTimeUnixNano": 1674542406352000000,
+                                                "endTimeUnixNano": 1674542407301000200,
+                                                "attributes": []
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                    """;
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> objectMap2 = objectMapper.readValue(jsonString2, Map.class);
+
+            // Process the spans with disabled configuration
+            new ObjectMapExporter().accept("foo", objectMap2);
+
+            // Verify no new span metrics were recorded
+            HistogramPointData finalSpanMetric = getLastHistogramMetricValue("vaadin.span.duration");
+            assertEquals(initialSpanCount, finalSpanMetric.getCount(), 
+                    "Span count should not increase when span-to-metrics is disabled");
+            assertEquals(initialSpanSum, finalSpanMetric.getSum(), 0, 
+                    "Span sum should not increase when span-to-metrics is disabled");
+            
+        } catch (Exception e) {
+            fail(e);
+        } finally {
+            // Re-enable for other tests
+            ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                    .thenReturn(true);
         }
     }
 }

@@ -47,7 +47,7 @@ public abstract class AbstractInstrumentationTest {
     private VaadinSession mockSession;
     private VaadinService mockService;
     private Scope sessionScope;
-    private MockedStatic<Configuration> ConfigurationMock;
+    protected MockedStatic<Configuration> ConfigurationMock;
     private TraceLevel configuredTraceLevel;
 
     public UI getMockUI() {
@@ -106,6 +106,8 @@ public abstract class AbstractInstrumentationTest {
                     TraceLevel level = invocation.getArgument(0);
                     return configuredTraceLevel.includes(level);
                 });
+        ConfigurationMock.when(() -> Configuration.isSpanToMetricsEnabled())
+                .thenReturn(true);
     }
 
     @AfterEach

@@ -12,12 +12,13 @@ package com.vaadin.extension.conf;
 import static java.util.Collections.emptyMap;
 
 import com.vaadin.extension.Constants;
-
+import com.vaadin.extension.metrics.SpanToMetricProcessor;
 import com.google.auto.service.AutoService;
 import io.opentelemetry.instrumentation.api.internal.ConfigPropertiesUtil;
 import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizer;
 import io.opentelemetry.sdk.autoconfigure.spi.AutoConfigurationCustomizerProvider;
 import io.opentelemetry.sdk.autoconfigure.spi.ConfigProperties;
+import io.opentelemetry.sdk.trace.SpanProcessor;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
 
 import java.io.File;
@@ -70,7 +71,8 @@ public class ConfigurationDefaults
     public void customize(AutoConfigurationCustomizer autoConfiguration) {
         autoConfiguration
                 .addSpanExporterCustomizer(this::setSpanExporter)
-                .addPropertiesSupplier(this::getDefaultProperties);
+                .addPropertiesSupplier(this::getDefaultProperties)
+                .addSpanProcessorCustomizer(this::spanToMetricProcessor);
     }
 
     private SpanExporter setSpanExporter(SpanExporter spanExporter,
@@ -78,6 +80,19 @@ public class ConfigurationDefaults
         ConfigurationDefaults.configProperties = configProperties;
         ConfigurationDefaults.spanExporter = spanExporter;
         return spanExporter;
+    }
+
+    SpanProcessor spanToMetricProcessor(SpanProcessor spanProcessor,
+            ConfigProperties configProperties) {
+        // Only add SpanToMetricProcessor if explicitly enabled
+        boolean spanToMetricsEnabled = configProperties.getBoolean(
+                Constants.CONFIG_SPAN_TO_METRICS_ENABLED, false);
+        
+        if (spanToMetricsEnabled) {
+            return SpanProcessor.composite(spanProcessor, new SpanToMetricProcessor());
+        } else {
+            return spanProcessor;
+        }
     }
 
     private Map<String, String> getDefaultProperties() {

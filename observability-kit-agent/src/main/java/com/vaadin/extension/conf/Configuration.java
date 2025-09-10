@@ -9,6 +9,7 @@ import io.opentelemetry.javaagent.bootstrap.internal.AgentInstrumentationConfig;
  */
 public class Configuration {
     public static final TraceLevel TRACE_LEVEL = determineTraceLevel();
+    public static final boolean SPAN_TO_METRICS_ENABLED = determineSpanToMetricsEnabled();
 
     private static TraceLevel determineTraceLevel() {
         String traceLevelString = AgentInstrumentationConfig.get().getString(
@@ -18,6 +19,11 @@ public class Configuration {
         } catch (IllegalArgumentException ignored) {
             return TraceLevel.DEFAULT;
         }
+    }
+
+    private static boolean determineSpanToMetricsEnabled() {
+        return AgentInstrumentationConfig.get().getBoolean(
+                Constants.CONFIG_SPAN_TO_METRICS_ENABLED, false);
     }
 
     /**
@@ -30,5 +36,15 @@ public class Configuration {
      */
     public static boolean isEnabled(TraceLevel traceLevel) {
         return TRACE_LEVEL.includes(traceLevel);
+    }
+
+    /**
+     * Checks whether span-to-metrics recording is enabled. When enabled,
+     * span duration data will be recorded as metrics.
+     *
+     * @return true if span-to-metrics is enabled, false if not
+     */
+    public static boolean isSpanToMetricsEnabled() {
+        return SPAN_TO_METRICS_ENABLED;
     }
 }
