@@ -13,8 +13,6 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
-import elemental.json.JsonObject;
-
 import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.extension.conf.Configuration;
@@ -22,6 +20,7 @@ import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
@@ -63,12 +62,12 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
 
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Argument(0) StateNode node,
-                @Advice.Argument(1) JsonObject jsonObject,
+                @Advice.Argument(1) ObjectNode objectNode,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
             if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
-                String eventType = jsonObject.getString("event");
+                String eventType = objectNode.get("event").asText();
                 ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                         node);
                 Element element = elementInfo.getElement();

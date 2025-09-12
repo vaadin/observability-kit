@@ -5,14 +5,13 @@ import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_MESSAGE;
 import static io.opentelemetry.semconv.ExceptionAttributes.EXCEPTION_TYPE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import elemental.json.Json;
-import elemental.json.JsonObject;
-
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.trace.StatusCode;
 import io.opentelemetry.sdk.trace.data.EventData;
@@ -23,14 +22,14 @@ import org.junit.jupiter.api.Test;
 class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
     TestComponent component;
-    JsonObject jsonObject;
+    ObjectNode objectNode;
 
     @BeforeEach
     public void setup() {
         component = new TestComponent();
         getMockUI().add(component);
-        jsonObject = Json.createObject();
-        jsonObject.put("event", "click");
+        objectNode = JsonNodeFactory.instance.objectNode();
+        objectNode.put("event", "click");
     }
 
     @Test
@@ -38,7 +37,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         component.getElement().setText("foo");
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -60,7 +59,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         component.getElement().setText("foo");
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -72,11 +71,11 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     @Test
     public void handleNodeWithOpenedChangedEvent_addsOpenedChangedState() {
         // Opened
-        jsonObject.put("event", "opened-changed");
+        objectNode.put("event", "opened-changed");
         component.getElement().setProperty("opened", true);
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -90,7 +89,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         component.getElement().setProperty("opened", false);
 
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -102,7 +101,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     @Test
     public void handleNodeWithException_setsErrorStatus() {
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         Exception exception = new RuntimeException("test error");
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(exception,
                 getCapturedSpan(0), null);
@@ -113,17 +112,17 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         assertEquals(1, span.getEvents().size());
         EventData eventData = span.getEvents().get(0);
-        assertEquals(RuntimeException.class.getCanonicalName(), eventData
-                .getAttributes().get(EXCEPTION_TYPE));
-        assertEquals("test error", eventData.getAttributes()
-                .get(EXCEPTION_MESSAGE));
+        assertEquals(RuntimeException.class.getCanonicalName(),
+                eventData.getAttributes().get(EXCEPTION_TYPE));
+        assertEquals("test error",
+                eventData.getAttributes().get(EXCEPTION_MESSAGE));
     }
 
     @Test
     public void handleNode_respectsTraceLevel() {
         configureTraceLevel(TraceLevel.MINIMUM);
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);
         // Should not export span
@@ -132,7 +131,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         configureTraceLevel(TraceLevel.DEFAULT);
         resetSpans();
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);
         // Should export span
@@ -141,7 +140,7 @@ class EventRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         configureTraceLevel(TraceLevel.MAXIMUM);
         resetSpans();
         EventRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         EventRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);
         // Should export span

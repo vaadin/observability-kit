@@ -3,14 +3,13 @@ package com.vaadin.extension.instrumentation.communication.rpc;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static org.junit.jupiter.api.Assertions.*;
 
-import elemental.json.Json;
-import elemental.json.JsonObject;
-
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,18 +17,18 @@ import org.junit.jupiter.api.Test;
 
 class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     TestComponent component;
-    JsonObject jsonObject;
+    ObjectNode objectNode;
 
     @BeforeEach
     public void setup() {
         component = new TestComponent();
         getMockUI().add(component);
-        jsonObject = Json.createObject();
-        jsonObject.put("type", "mSync");
-        jsonObject.put("node", 128);
-        jsonObject.put("feature", 1);
-        jsonObject.put("property", "value");
-        jsonObject.put("value", "foo");
+        objectNode = JsonNodeFactory.instance.objectNode();
+        objectNode.put("type", "mSync");
+        objectNode.put("node", 128);
+        objectNode.put("feature", 1);
+        objectNode.put("property", "value");
+        objectNode.put("value", "foo");
     }
 
     @Test
@@ -37,7 +36,7 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
         component.getElement().setText("foo");
 
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpan(0), null);
 
@@ -56,7 +55,7 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     @Test
     public void handleNodeWithException_setsErrorStatus() {
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         Exception exception = new RuntimeException("test error");
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(exception,
                 getCapturedSpan(0), null);
@@ -67,12 +66,12 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
     @Test
     public void mapChange_existingValue_spanSkipped() {
-        jsonObject.put("property", "value");
-        jsonObject.put("value", "default");
+        objectNode.put("property", "value");
+        objectNode.put("value", "default");
         component.getElement().setProperty("value", "default");
 
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         assertEquals(0, getCapturedSpanCount());
     }
 
@@ -84,7 +83,7 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
     public void handleNode_respectsTraceLevels() {
         configureTraceLevel(TraceLevel.MINIMUM);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);
 
@@ -92,7 +91,7 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         configureTraceLevel(TraceLevel.DEFAULT);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);
 
@@ -100,7 +99,7 @@ class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
 
         configureTraceLevel(TraceLevel.MAXIMUM);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onEnter(
-                component.getElement().getNode(), jsonObject, null, null);
+                component.getElement().getNode(), objectNode, null, null);
         MapSyncRpcHandlerInstrumentation.MethodAdvice.onExit(null,
                 getCapturedSpanOrNull(0), null);
 

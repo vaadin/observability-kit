@@ -67,7 +67,7 @@ public class PublishedServerEventHandlerRpcHandlerInstrumentation
                                 .and(takesArgument(1,
                                         named("java.lang.reflect.Method")))
                                 .and(takesArgument(2,
-                                        named("elemental.json.JsonArray")))
+                                        named("com.fasterxml.jackson.databind.node.ObjectNode")))
                                 .and(takesArgument(3, int.class)),
                         this.getClass().getName() + "$InvokeAdvice");
     }
