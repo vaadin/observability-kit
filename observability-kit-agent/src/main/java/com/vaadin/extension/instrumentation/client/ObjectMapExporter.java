@@ -17,7 +17,9 @@ import java.util.function.BiConsumer;
 
 import io.opentelemetry.sdk.trace.data.SpanData;
 
+import com.vaadin.extension.conf.Configuration;
 import com.vaadin.extension.conf.ConfigurationDefaults;
+import com.vaadin.extension.metrics.Metrics;
 
 /**
  * This is a consumer callback that is injected into an ObservabilityHandler
@@ -61,6 +63,14 @@ public class ObjectMapExporter
             }
         }
 
+        exportSpans.forEach(span -> {
+            if (Configuration.isSpanToMetricsEnabled()) {
+                long durationNanos = span.getEndEpochNanos() - span.getStartEpochNanos();
+                Metrics.recordSpanDuration(span.getName(), durationNanos, span.getSpanContext());
+            }
+        });
+
         ConfigurationDefaults.spanExporter.export(exportSpans);
+        
     }
 }
