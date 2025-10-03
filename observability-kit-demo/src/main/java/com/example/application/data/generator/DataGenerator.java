@@ -9,11 +9,11 @@ import com.example.application.data.entity.SampleAddress;
 import com.example.application.data.entity.SamplePerson;
 import com.example.application.data.service.SampleAddressRepository;
 import com.example.application.data.service.SamplePersonRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
+import tools.jackson.databind.ObjectMapper;
 
 import com.vaadin.exampledata.DataType;
 import com.vaadin.exampledata.ExampleDataGenerator;
@@ -43,20 +43,15 @@ public class DataGenerator {
     private static void loadDemoData(ObjectMapper objectMapper,
             SamplePersonRepository samplePersonRepository,
             SampleAddressRepository sampleAddressRepository) {
-        try {
-            getLogger().info("Loading demo data...");
-            List<SamplePerson> persons = objectMapper
-                    .readerForListOf(SamplePerson.class)
-                    .readValue(DataGenerator.class
-                            .getResourceAsStream("/META-INF/data/data.json"));
-            sampleAddressRepository.saveAll(
-                    persons.stream().map(SamplePerson::getAddress).toList());
-            samplePersonRepository.saveAll(persons);
-            getLogger().info("Loaded demo data");
-        } catch (IOException e) {
-            getLogger().error(
-                    "Cannot load demo data from /META-INF/data/data.json", e);
-        }
+        getLogger().info("Loading demo data...");
+        List<SamplePerson> persons = objectMapper
+                .readerForListOf(SamplePerson.class)
+                .readValue(DataGenerator.class
+                        .getResourceAsStream("/META-INF/data/data.json"));
+        sampleAddressRepository.saveAll(
+                persons.stream().map(SamplePerson::getAddress).toList());
+        samplePersonRepository.saveAll(persons);
+        getLogger().info("Loaded demo data");
 
     }
 

@@ -3,11 +3,7 @@ package com.vaadin.observability;
 import java.io.IOException;
 import java.util.Properties;
 
-import com.vaadin.flow.internal.UsageStatistics;
-import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.startup.BaseLicenseCheckerServiceInitListener;
-import com.vaadin.pro.licensechecker.BuildType;
-import com.vaadin.pro.licensechecker.LicenseChecker;
 
 public class LicenseCheckerServiceInitListener
         extends BaseLicenseCheckerServiceInitListener {
