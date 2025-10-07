@@ -1,27 +1,29 @@
 package com.example.application.hilla;
 
-import java.util.Base64;
-
 import javax.crypto.spec.SecretKeySpec;
+import java.util.Base64;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.jose.jws.JwsAlgorithms;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
-import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.SecurityFilterChain;
 
-import com.vaadin.flow.spring.security.VaadinWebSecurity;
+import com.vaadin.flow.spring.security.VaadinAwareSecurityContextHolderStrategyConfiguration;
+import com.vaadin.flow.spring.security.VaadinSecurityConfigurer;
+import com.vaadin.flow.spring.security.stateless.VaadinStatelessSecurityConfigurer;
 
 @EnableWebSecurity
 @Configuration
-public class SecurityConfiguration extends VaadinWebSecurity {
+@Import(VaadinAwareSecurityContextHolderStrategyConfiguration.class)
+public class SecurityConfiguration {
     // The secret is stored in /config/secrets/application.properties by
     // default. Never commit the secret into version control; each environment
     // should have its own secret.
@@ -37,30 +39,31 @@ public class SecurityConfiguration extends VaadinWebSecurity {
         return new InMemoryUserDetailsManager(user, admin);
     }
 
-    @Override
-    protected void configure(HttpSecurity http) throws Exception {
-        http.authorizeHttpRequests(this::requestWhiteList);
-
-        super.configure(http);
-
+    @Bean
+    public SecurityFilterChain vaadinSecurityFilterChain(HttpSecurity http)
+            throws Exception {
+        http.authorizeHttpRequests(authz -> authz.requestMatchers(
+                // static assets
+                "/images/*.png", "/line-awesome/**",
+                // hilla public routes
+                "/hello", "/image-list",
+                // spring error page
+                "/error").permitAll());
+        // hilla protected routes
+        http.authorizeHttpRequests(
+                authz -> authz.requestMatchers("/").authenticated()
+                        .requestMatchers("/address-form").hasRole("USER"));
         http.sessionManagement(sessionManagement -> sessionManagement
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
-        setLoginView(http, "/login");
-        setStatelessAuthentication(http,
-                new SecretKeySpec(Base64.getDecoder().decode(authSecret),
-                        JwsAlgorithms.HS256),
-                "com.example.application");
-    }
-
-    protected void requestWhiteList(
-            AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry urlRegistry) {
-        urlRegistry.requestMatchers(
-                PathPatternRequestMatcher.withDefaults()
-                        .matcher("/images/*.png"),
-                // Icons from the line-awesome addon
-                PathPatternRequestMatcher.withDefaults()
-                        .matcher("/line-awesome/**"))
-                .permitAll();
+        http.with(VaadinSecurityConfigurer.vaadin(),
+                vaadin -> vaadin.loginView("/login"));
+        http.with(new VaadinStatelessSecurityConfigurer<>(),
+                cfg -> cfg
+                        .withSecretKey(key -> key.secretKey(new SecretKeySpec(
+                                Base64.getDecoder().decode(authSecret),
+                                JwsAlgorithms.HS256)))
+                        .issuer("com.example.application"));
+        return http.build();
     }
 
 }

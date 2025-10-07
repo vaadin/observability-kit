@@ -22,14 +22,23 @@ build/
 
 generated/
 node_modules/
+**/src/main/bundles
 /observability-kit-demo/package.json
 /observability-kit-demo/package-lock.json
 /observability-kit-demo/tsconfig.json
 /observability-kit-demo/types.d.ts
 /observability-kit-demo/vite.*
+/observability-kit-demo-hilla/package.json
+/observability-kit-demo-hilla/package-lock.json
+/observability-kit-demo-hilla/tsconfig.json
+/observability-kit-demo-hilla/types.d.ts
+/observability-kit-demo-hilla/vite.*
 
 /ts/*/*.d.ts.map
 /ts/*/*.d.ts
 /ts/*/*.js.map
 /ts/*/*.js
 /ts/*/*.tgz
+
+
+observability-kit-demo-hilla/config/
