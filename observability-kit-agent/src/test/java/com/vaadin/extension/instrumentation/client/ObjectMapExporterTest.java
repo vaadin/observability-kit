@@ -2,11 +2,11 @@ package com.vaadin.extension.instrumentation.client;
 
 import java.util.Map;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 import com.vaadin.extension.conf.ConfigurationDefaults;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;

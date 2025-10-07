@@ -42,8 +42,8 @@ public class ObservabilityServiceInitListenerTest {
 
     @BeforeEach
     void setup() {
-        serviceInitEvent = mock(ServiceInitEvent.class);
         service = mock(VaadinService.class);
+        serviceInitEvent = new ServiceInitEvent(service);
         VaadinContext context = mock(VaadinContext.class);
         lookup = mock(Lookup.class);
 
@@ -58,7 +58,6 @@ public class ObservabilityServiceInitListenerTest {
             return null;
         }).when(service).fireUIInitListeners(any());
         when(service.getContext()).thenReturn(context);
-        when(serviceInitEvent.getSource()).thenReturn(service);
 
         when(context.getAttribute(Lookup.class)).thenReturn(lookup);
 

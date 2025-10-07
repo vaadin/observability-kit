@@ -9,13 +9,13 @@
  */
 package com.vaadin.hilla.observability;
 
-import java.io.IOException;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import com.vaadin.flow.server.auth.AnonymousAllowed;
 import com.vaadin.hilla.Endpoint;
@@ -34,14 +34,15 @@ public class ObservabilityEndpoint {
     public void export(String jsonString) {
         try {
             var objectMap = new ObjectMapper().readerForMapOf(Object.class)
-                    .<Map<String, Object>> readValue(jsonString);
+                .<Map<String, Object>>readValue(jsonString);
             if (!objectMap.containsKey("resourceSpans")) {
                 getLogger().error("Malformed traces message.");
                 throw new EndpointException("Malformed traces message.");
             }
             exporter.accept(null, objectMap);
-        } catch (IOException e) {
-            throw new EndpointException("Unexpected I/O error.");
+        } catch (JacksonException e) {
+            getLogger().error("Malformed JSON.", e);
+            throw new EndpointException("Malformed JSON.", e);
         }
     }
 }

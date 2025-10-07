@@ -17,10 +17,11 @@ import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.UI;
@@ -149,7 +150,7 @@ public class ObservabilityHandler extends SynchronizedRequestHandler {
             }
             exporter.accept(id, objectMap);
             response.setStatus(HttpServletResponse.SC_OK);
-        } catch (IOException e) {
+        } catch (JacksonException | IOException e) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         }
 

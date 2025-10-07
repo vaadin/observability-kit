@@ -17,8 +17,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.dependency.JsModule;
@@ -99,7 +100,7 @@ class ObservabilityClient extends Component
     public Set<String> getUserInteractionEvents() {
         return JacksonUtils.stream(
                 (ArrayNode) getElement().getPropertyRaw("traceUserInteraction"))
-                .map(JsonNode::asText).collect(Collectors.toSet());
+                .map(JsonNode::asString).collect(Collectors.toSet());
     }
 
     @Override
@@ -145,7 +146,7 @@ class ObservabilityClient extends Component
             return JacksonUtils
                     .stream((ArrayNode) getElement()
                             .getPropertyRaw("ignoredURLs"))
-                    .map(JsonNode::asText)
+                    .map(JsonNode::asString)
                     .map(URLPattern::fromInternalFormat)
                     .collect(Collectors.toList());
         }
