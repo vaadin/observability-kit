@@ -59,7 +59,7 @@ public class SecurityConfiguration extends VaadinWebSecurity {
                         .matcher("/images/*.png"),
                 // Icons from the line-awesome addon
                 PathPatternRequestMatcher.withDefaults()
-                        .matcher("/line-awesome/**/*.svg"))
+                        .matcher("/line-awesome/**"))
                 .permitAll();
     }
 
