@@ -1,5 +1,5 @@
-import '@vaadin/button';
-import '@vaadin/login';
+import '@vaadin/button/vaadin-button.js';
+import '@vaadin/login/vaadin-login-form.js';
 import type { LoginFormLoginEvent } from '@vaadin/login/vaadin-login-form';
 import '@vaadin/text-field';
 import { html, type TemplateResult } from 'lit';

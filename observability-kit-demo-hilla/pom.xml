@@ -144,13 +144,6 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <parser>
-                        <packages>
-                            <package>com.example.application.hilla.endpoints.helloworld</package>
-                            <package>com.example.application.hilla.endpoints.user</package>
-                            <package>com.vaadin.hilla.observability</package>
-                        </packages>
-                    </parser>
                     <reactEnable>false</reactEnable>
                 </configuration>
             </plugin>
