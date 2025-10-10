@@ -13,7 +13,7 @@ import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import org.mockito.Mockito;
 
-import static io.opentelemetry.semconv.ResourceAttributes.SERVICE_NAME;
+import static io.opentelemetry.semconv.ServiceAttributes.SERVICE_NAME;
 
 public class OpenTelemetryTestTools {
 
@@ -46,9 +46,8 @@ public class OpenTelemetryTestTools {
         spanExporter = new TestExporter();
         spanBuilderCapture = new SpanBuilderCapture();
 
-        Resource resource = Resource.getDefault().merge(
-                Resource.create(Attributes.of(SERVICE_NAME,
-                        "test-service-name")));
+        Resource resource = Resource.getDefault().merge(Resource
+                .create(Attributes.of(SERVICE_NAME, "test-service-name")));
 
         SdkTracerProvider sdkTracerProvider = SdkTracerProvider.builder()
                 .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
