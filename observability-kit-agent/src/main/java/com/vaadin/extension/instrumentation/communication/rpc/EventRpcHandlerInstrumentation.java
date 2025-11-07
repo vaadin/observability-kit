@@ -13,8 +13,6 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
-import elemental.json.JsonObject;
-
 import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.extension.conf.Configuration;
@@ -30,6 +28,7 @@ import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import tools.jackson.databind.JsonNode;
 
 /**
  * This is a Targeted instrumentation for EventRpcHandler which adds information
@@ -63,12 +62,12 @@ public class EventRpcHandlerInstrumentation implements TypeInstrumentation {
 
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Argument(0) StateNode node,
-                @Advice.Argument(1) JsonObject jsonObject,
+                @Advice.Argument(1) JsonNode invocationJson,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
 
             if (Configuration.isEnabled(TraceLevel.DEFAULT)) {
-                String eventType = jsonObject.getString("event");
+                String eventType = invocationJson.get("event").asString();
                 ElementInstrumentationInfo elementInfo = new ElementInstrumentationInfo(
                         node);
                 Element element = elementInfo.getElement();

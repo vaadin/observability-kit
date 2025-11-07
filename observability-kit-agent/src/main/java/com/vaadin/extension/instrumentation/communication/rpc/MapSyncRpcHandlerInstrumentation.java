@@ -13,8 +13,6 @@ import static io.opentelemetry.javaagent.bootstrap.Java8BytecodeBridge.currentCo
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.named;
 
-import elemental.json.JsonObject;
-
 import com.vaadin.extension.ElementInstrumentationInfo;
 import com.vaadin.extension.InstrumentationHelper;
 import com.vaadin.extension.conf.Configuration;
@@ -30,6 +28,7 @@ import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
+import tools.jackson.databind.JsonNode;
 
 /**
  * This is a targeted instrumentation for MapSyncRpcHandler which adds
@@ -64,7 +63,7 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
 
         @Advice.OnMethodEnter()
         public static void onEnter(@Advice.Argument(0) StateNode node,
-                @Advice.Argument(1) JsonObject jsonObject,
+                @Advice.Argument(1) JsonNode invocationJson,
                 @Advice.Local("otelSpan") Span span,
                 @Advice.Local("otelScope") Scope scope) {
             if (!Configuration.isEnabled(TraceLevel.DEFAULT)) {
@@ -76,9 +75,9 @@ public class MapSyncRpcHandlerInstrumentation implements TypeInstrumentation {
             final Element element = elementInfo.getElement();
 
             String property = null;
-            if (jsonObject.hasKey("property") && jsonObject.hasKey("value")) {
-                property = jsonObject.getString("property");
-                final String value = jsonObject.get("value").asString();
+            if (invocationJson.has("property") && invocationJson.has("value")) {
+                property = invocationJson.get("property").asString();
+                final String value = invocationJson.get("value").asString();
                 // skip if property or attribute is same
                 if (value.equals(element.getProperty(property, null))
                         || value.equals(element.getAttribute(property))) {
