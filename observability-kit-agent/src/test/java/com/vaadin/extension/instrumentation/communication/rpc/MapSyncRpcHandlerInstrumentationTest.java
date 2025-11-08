@@ -3,9 +3,6 @@ package com.vaadin.extension.instrumentation.communication.rpc;
 import static com.vaadin.extension.Constants.SESSION_ID;
 import static org.junit.jupiter.api.Assertions.*;
 
-import elemental.json.Json;
-import elemental.json.JsonObject;
-
 import com.vaadin.extension.conf.TraceLevel;
 import com.vaadin.extension.instrumentation.AbstractInstrumentationTest;
 import com.vaadin.flow.component.Component;
@@ -15,16 +12,21 @@ import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 class MapSyncRpcHandlerInstrumentationTest extends AbstractInstrumentationTest {
+
+    static final    ObjectMapper MAPPER = new ObjectMapper();
+
     TestComponent component;
-    JsonObject jsonObject;
+    ObjectNode jsonObject;
 
     @BeforeEach
     public void setup() {
         component = new TestComponent();
         getMockUI().add(component);
-        jsonObject = Json.createObject();
+        jsonObject = MAPPER.createObjectNode();
         jsonObject.put("type", "mSync");
         jsonObject.put("node", 128);
         jsonObject.put("feature", 1);
