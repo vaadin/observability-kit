@@ -55,7 +55,7 @@
     <properties>
         <flow.version>25.0-SNAPSHOT</flow.version>
         <hilla.version>25.0-SNAPSHOT</hilla.version>
-        <vaadin.license.checker.version>3.0.0-beta1</vaadin.license.checker.version>
+        <vaadin.license.checker.version>3.0.0-rc1</vaadin.license.checker.version>
         <spring.boot.version>4.0.0</spring.boot.version>
 
         <maven.compiler.release>21</maven.compiler.release>
