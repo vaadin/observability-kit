@@ -143,6 +143,7 @@
                                         -javaagent:${basedir}/../../observability-kit-agent/target/observability-kit-agent-${project.version}.jar
                                     </jvmArgs>
                                     <env>
+                                        <OTEL_EXPORTER_OTLP_ENDPOINT>http://127.0.0.1:4318</OTEL_EXPORTER_OTLP_ENDPOINT>
                                         <OTEL_EXPORTER_OTLP_PROTOCOL>http/protobuf</OTEL_EXPORTER_OTLP_PROTOCOL>
                                         <OTEL_METRIC_EXPORT_INTERVAL>5000</OTEL_METRIC_EXPORT_INTERVAL>
                                         <OTEL_METRICS_EXPORTER>${otel.exporter}</OTEL_METRICS_EXPORTER>
