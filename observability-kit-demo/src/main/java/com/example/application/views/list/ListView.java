@@ -9,7 +9,6 @@ import java.util.Locale;
 
 import com.example.application.views.MainLayout;
 import jakarta.annotation.security.PermitAll;
-import org.apache.commons.lang3.StringUtils;
 
 import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.datepicker.DatePicker;
@@ -132,8 +131,8 @@ public class ListView extends Div {
         clientFilter.setWidth("100%");
         clientFilter.setValueChangeMode(ValueChangeMode.EAGER);
         clientFilter.addValueChangeListener(event -> gridListDataView.addFilter(
-                client -> StringUtils.containsIgnoreCase(client.getClient(),
-                        clientFilter.getValue())));
+                client -> client.getClient().toLowerCase()
+                        .contains(clientFilter.getValue().toLowerCase())));
         filterRow.getCell(clientColumn).setComponent(clientFilter);
 
         TextField amountFilter = new TextField();
@@ -142,9 +141,9 @@ public class ListView extends Div {
         amountFilter.setWidth("100%");
         amountFilter.setValueChangeMode(ValueChangeMode.EAGER);
         amountFilter.addValueChangeListener(
-                event -> gridListDataView.addFilter(client -> StringUtils
-                        .containsIgnoreCase(Double.toString(client.getAmount()),
-                                amountFilter.getValue())));
+                event -> gridListDataView.addFilter(client -> Double
+                        .toString(client.getAmount()).toLowerCase()
+                        .contains(amountFilter.getValue().toLowerCase())));
         filterRow.getCell(amountColumn).setComponent(amountFilter);
 
         ComboBox<String> statusFilter = new ComboBox<>();
@@ -169,7 +168,7 @@ public class ListView extends Div {
             ComboBox<String> statusFilter) {
         String statusFilterValue = statusFilter.getValue();
         if (statusFilterValue != null) {
-            return StringUtils.equals(client.getStatus(), statusFilterValue);
+            return statusFilterValue.equals(client.getStatus());
         }
         return true;
     }

@@ -179,7 +179,7 @@ public class FrontendObservabilityRuntimeConfigurationIT
         return Arrays.stream(requests).map(HttpRequest::getBody)
                 .flatMap(body -> getExportTraceServiceRequest(body).stream())
                 .flatMap(r -> r.getResourceSpansList().stream())
-                .flatMap(r -> r.getInstrumentationLibrarySpansList().stream())
+                .flatMap(r -> r.getScopeSpansList().stream())
                 .flatMap(r -> r.getSpansList().stream())
                 .filter(span -> span
                         .getKind() == Span.SpanKind.SPAN_KIND_CLIENT)
