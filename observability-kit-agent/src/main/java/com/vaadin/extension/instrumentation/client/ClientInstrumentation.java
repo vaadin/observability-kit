@@ -80,10 +80,7 @@ public class ClientInstrumentation implements TypeInstrumentation {
                 Field functionField = helperClazz.getField("configHolder");
                 AtomicReference<Function<String,String>> functionHolder =
                         (AtomicReference<Function<String,String>>) functionField.get(null);
-                functionHolder.set((key) ->
-                        Configuration.configLookup != null
-                                ? Configuration.configLookup.apply(key, null)
-                                : null);
+                functionHolder.set(Configuration::getProperty);
 
                 Field consumerField = helperClazz.getField("exportHolder");
                 AtomicReference<BiConsumer<String,

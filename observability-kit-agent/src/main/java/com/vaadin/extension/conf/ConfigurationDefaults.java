@@ -77,7 +77,10 @@ public class ConfigurationDefaults
             ConfigProperties configProperties) {
         ConfigurationDefaults.configProperties = configProperties;
         ConfigurationDefaults.spanExporter = spanExporter;
-        Configuration.configLookup = configProperties::getString;
+        Configuration.initialize(
+                configProperties.getString(Constants.CONFIG_TRACE_LEVEL,
+                        TraceLevel.DEFAULT.name()),
+                configProperties::getString);
         return spanExporter;
     }
 
