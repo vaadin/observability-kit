@@ -9,7 +9,7 @@
     </parent>
 
     <artifactId>observability-kit</artifactId>
-    <version>4.0-SNAPSHOT</version>
+    <version>4.1-SNAPSHOT</version>
     <name>Observability Kit</name>
     <packaging>pom</packaging>
 
@@ -56,7 +56,7 @@
         <flow.version>25.1-SNAPSHOT</flow.version>
         <hilla.version>25.1-SNAPSHOT</hilla.version>
         <vaadin.license.checker.version>3.0.1</vaadin.license.checker.version>
-        <spring.boot.version>4.0.4</spring.boot.version>
+        <spring.boot.version>4.0.5</spring.boot.version>
 
         <maven.compiler.release>21</maven.compiler.release>
         <maven.compiler.source>${maven.compiler.release}</maven.compiler.source>
