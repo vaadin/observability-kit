@@ -1,23 +1,30 @@
 package com.vaadin.extension.conf;
 
-import com.vaadin.extension.Constants;
-
-import io.opentelemetry.javaagent.bootstrap.internal.AgentInstrumentationConfig;
+import java.util.function.Function;
 
 /**
  * Provides the effective configuration for the Vaadin observability extension.
+ * Initialized by {@code ConfigurationDefaults} from the agent classloader
+ * during auto-configuration, before any instrumentation is applied.
  */
 public class Configuration {
-    public static final TraceLevel TRACE_LEVEL = determineTraceLevel();
 
-    private static TraceLevel determineTraceLevel() {
-        String traceLevelString = AgentInstrumentationConfig.get().getString(
-                Constants.CONFIG_TRACE_LEVEL, TraceLevel.DEFAULT.name());
+    private static TraceLevel traceLevel = TraceLevel.DEFAULT;
+    private static Function<String, String> propertyLookup = key -> null;
+
+    /**
+     * Called by {@code ConfigurationDefaults} during agent initialization to
+     * provide resolved configuration values. Uses only standard Java types to
+     * avoid references to OTel SDK classes in this helper class.
+     */
+    static void initialize(String traceLevelValue,
+            Function<String, String> lookup) {
         try {
-            return TraceLevel.valueOf(traceLevelString.toUpperCase());
+            traceLevel = TraceLevel.valueOf(traceLevelValue.toUpperCase());
         } catch (IllegalArgumentException ignored) {
-            return TraceLevel.DEFAULT;
+            traceLevel = TraceLevel.DEFAULT;
         }
+        propertyLookup = lookup;
     }
 
     /**
@@ -29,6 +36,17 @@ public class Configuration {
      * @return true if the trace level is enabled, false if not
      */
     public static boolean isEnabled(TraceLevel traceLevel) {
-        return TRACE_LEVEL.includes(traceLevel);
+        return Configuration.traceLevel.includes(traceLevel);
+    }
+
+    /**
+     * Looks up a configuration property by key.
+     *
+     * @param key
+     *            the property key
+     * @return the property value, or null if not set
+     */
+    public static String getProperty(String key) {
+        return propertyLookup.apply(key);
     }
 }

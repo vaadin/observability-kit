@@ -69,9 +69,9 @@ public class VaadinObservabilityInstrumentationModule
 
     @Override
     public boolean isHelperClass(String className) {
-        // TODO: check if helper classes can be included by convention
         return className != null
-                && className.startsWith("com.vaadin.extension");
+                && className.startsWith("com.vaadin.extension")
+                && !className.startsWith("com.vaadin.extension.conf.ConfigurationDefaults");
     }
 
     private boolean classExists(String className) {
