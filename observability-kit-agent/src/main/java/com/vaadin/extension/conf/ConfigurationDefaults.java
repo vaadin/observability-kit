@@ -58,7 +58,7 @@ public class ConfigurationDefaults
 
     static final String CONFIGURATION_FILE_PROPERTY = "otel.javaagent.configuration-file";
 
-    public static ConfigProperties configProperties;
+    static ConfigProperties configProperties;
     public static SpanExporter spanExporter;
 
     @Override
@@ -77,6 +77,7 @@ public class ConfigurationDefaults
             ConfigProperties configProperties) {
         ConfigurationDefaults.configProperties = configProperties;
         ConfigurationDefaults.spanExporter = spanExporter;
+        Configuration.configLookup = configProperties::getString;
         return spanExporter;
     }
 

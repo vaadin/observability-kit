@@ -2,16 +2,24 @@ package com.vaadin.extension.conf;
 
 import com.vaadin.extension.Constants;
 
+import java.util.function.BiFunction;
+
 /**
  * Provides the effective configuration for the Vaadin observability extension.
  */
 public class Configuration {
     public static final TraceLevel TRACE_LEVEL = determineTraceLevel();
 
+    /**
+     * A function to look up configuration properties. Set by
+     * ConfigurationDefaults from the agent classloader.
+     */
+    public static volatile BiFunction<String, String, String> configLookup;
+
     private static TraceLevel determineTraceLevel() {
-        String traceLevelString = ConfigurationDefaults.configProperties != null
-                ? ConfigurationDefaults.configProperties.getString(
-                        Constants.CONFIG_TRACE_LEVEL, TraceLevel.DEFAULT.name())
+        String traceLevelString = configLookup != null
+                ? configLookup.apply(Constants.CONFIG_TRACE_LEVEL,
+                        TraceLevel.DEFAULT.name())
                 : TraceLevel.DEFAULT.name();
         try {
             return TraceLevel.valueOf(traceLevelString.toUpperCase());
