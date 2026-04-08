@@ -63,9 +63,8 @@ public class VaadinObservabilityInstrumentationModule
 
     @Override
     public ElementMatcher.Junction<ClassLoader> classLoaderMatcher() {
-        // class added in vaadin 14.2
         return hasClassesNamed(
-                "com.vaadin.flow.server.frontend.installer.NodeInstaller");
+                "com.vaadin.flow.server.VaadinServlet");
     }
 
     @Override
