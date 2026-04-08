@@ -49,6 +49,11 @@ jobs:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-maven-
+      - name: Set TB License
+        run: |
+          TB_LICENSE=${{secrets.VAADIN_PRO_KEY}}
+          mkdir -p ~/.vaadin/
+          echo '{"username":"'$(echo $TB_LICENSE | cut -d / -f1)'","proKey":"'$(echo $TB_LICENSE | cut -d / -f2)'"}' > ~/.vaadin/proKey
       - name: Build
         run: mvn clean install -B -ntp -DskipTests
       - name: Save workspace
