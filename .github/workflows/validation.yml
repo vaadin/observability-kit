@@ -1,0 +1,147 @@
+name: Observability Kit Validation
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+  merge_group:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  _HEAD_REF: ${{ github.head_ref }}
+  _REF_NAME: ${{ github.ref_name }}
+  _BASE_REF: ${{ github.event.pull_request.base.ref }}
+  _HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  _PR_NUMBER: ${{ github.event.number }}
+  JAVA_VERSION: '21'
+jobs:
+  build:
+    environment: ${{ github.event.pull_request.head.repo.fork && 'pr-tests' || '' }}
+    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Concurrency Group = ${_HEAD_REF:-$_REF_NAME}"
+      - name: Check secrets
+        run: |
+          [ -z "${{secrets.VAADIN_PRO_KEY}}" ] \
+            && echo "🚫 **VAADIN_PRO_KEY** is not defined, check that **${{github.repository}}** repo has a valid secret" \
+            | tee -a $GITHUB_STEP_SUMMARY && exit 1 || exit 0
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{env._HEAD_SHA}}
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+      - name: Set up Maven
+        uses: stCarolas/setup-maven@v5
+        with:
+          maven-version: 3.8.7
+      - uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+      - name: Set TB License
+        run: |
+          TB_LICENSE=${{secrets.VAADIN_PRO_KEY}}
+          mkdir -p ~/.vaadin/
+          echo '{"username":"'$(echo $TB_LICENSE | cut -d / -f1)'","proKey":"'$(echo $TB_LICENSE | cut -d / -f2)'"}' > ~/.vaadin/proKey
+      - name: Build
+        run: mvn clean install -B -ntp -DskipTests
+      - name: Save workspace
+        run: |
+          tar cf workspace.tar $(find . -type d -name target)
+      - uses: actions/upload-artifact@v5
+        with:
+          name: saved-workspace
+          path: workspace.tar
+  tests:
+    needs: build
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{env._HEAD_SHA}}
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+      - name: Set up Maven
+        uses: stCarolas/setup-maven@v5
+        with:
+          maven-version: 3.8.7
+      - uses: actions/cache@v5
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+      - uses: actions/download-artifact@v5
+        if: ${{ github.run_attempt == 1 }}
+        with:
+          name: saved-workspace
+      - name: Restore Workspace
+        if: ${{ github.run_attempt == 1 }}
+        run: |
+          set -x
+          tar xf workspace.tar
+      - name: Build (on retry)
+        if: ${{ github.run_attempt > 1 }}
+        run: mvn install -B -ntp -DskipTests
+      - name: Set TB License
+        run: |
+          TB_LICENSE=${{secrets.VAADIN_PRO_KEY}}
+          mkdir -p ~/.vaadin/
+          echo '{"username":"'$(echo $TB_LICENSE | cut -d / -f1)'","proKey":"'$(echo $TB_LICENSE | cut -d / -f2)'"}' > ~/.vaadin/proKey
+      - name: Run Tests
+        run: |
+          set -x -e -o pipefail
+          mvn verify -B -e -V -ntp | tee mvn-tests.out
+      - name: Package test-report files
+        if: ${{ always() }}
+        run: find . -name surefire-reports -o -name failsafe-reports -o -name error-screenshots -o -name "mvn-*.out" -o -name "jetty-start.out" | tar -czf tests-report.tgz -T -
+      - uses: actions/upload-artifact@v5
+        if: ${{ always() }}
+        with:
+          name: tests-output
+          path: tests-report.tgz
+  test-results:
+    permissions:
+      actions: write
+      issues: read
+      checks: write
+      pull-requests: write
+    if: ${{ always() }}
+    needs: [tests]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{env._HEAD_SHA}}
+      - uses: actions/download-artifact@v5
+        with:
+          name: tests-output
+      - name: Extract test reports
+        run: tar xvf tests-report.tgz
+      - name: Publish Unit Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          junit_files: '**/target/*-reports/TEST*.xml'
+          check_run_annotations: all tests, skipped tests
+      - uses: geekyeggo/delete-artifact@v5
+        with:
+          name: saved-workspace
+      - name: Set Failure Status
+        if: ${{ always() && needs.tests.result != 'success' }}
+        run: |
+          echo "🚫 THERE ARE TEST FAILURES or BEEN CANCELLED" | tee -a $GITHUB_STEP_SUMMARY
+          exit 1
