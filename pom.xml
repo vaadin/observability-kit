@@ -53,10 +53,10 @@
     </profiles>
 
     <properties>
-        <flow.version>25.1-SNAPSHOT</flow.version>
-        <hilla.version>25.1-SNAPSHOT</hilla.version>
+        <flow.version>25.2-SNAPSHOT</flow.version>
+        <hilla.version>25.2-SNAPSHOT</hilla.version>
         <vaadin.license.checker.version>3.0.2</vaadin.license.checker.version>
-        <spring.boot.version>4.0.5</spring.boot.version>
+        <spring.boot.version>4.1.0-RC1</spring.boot.version>
 
         <maven.compiler.release>21</maven.compiler.release>
         <maven.compiler.source>${maven.compiler.release}</maven.compiler.source>
@@ -70,7 +70,7 @@
         <jetty.version>11.0.26</jetty.version>
         <junit.version>5.9.2</junit.version>
         <mockito.version>5.20.0</mockito.version>
-        <testbench.version>10.0.0</testbench.version>
+        <testbench.version>10.2.0-alpha5</testbench.version>
         <maven.jar.version>3.3.0</maven.jar.version>
         <maven.war.version>3.3.2</maven.war.version>
         <maven.shade.version>3.4.1</maven.shade.version>
