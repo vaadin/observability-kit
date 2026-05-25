@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
     branches: [main]
   merge_group:
@@ -22,12 +22,13 @@ env:
   JAVA_VERSION: '21'
 jobs:
   build:
-    environment: ${{ github.event.pull_request.head.repo.fork && 'pr-tests' || '' }}
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
       - run: echo "Concurrency Group = ${_HEAD_REF:-$_REF_NAME}"
       - name: Check secrets
+        if: ${{ !github.event.pull_request.head.repo.fork }}
         run: |
           [ -z "${{secrets.VAADIN_PRO_KEY}}" ] \
             && echo "🚫 **VAADIN_PRO_KEY** is not defined, check that **${{github.repository}}** repo has a valid secret" \
@@ -65,6 +66,7 @@ jobs:
           path: workspace.tar
   tests:
     needs: build
+    if: ${{ !github.event.pull_request.head.repo.fork }}
     timeout-minutes: 30
     runs-on: ubuntu-24.04
     steps:
@@ -120,7 +122,7 @@ jobs:
       issues: read
       checks: write
       pull-requests: write
-    if: ${{ always() }}
+    if: ${{ always() && !github.event.pull_request.head.repo.fork }}
     needs: [tests]
     runs-on: ubuntu-24.04
     steps:
