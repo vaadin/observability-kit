@@ -31,8 +31,9 @@
     <properties>
         <flow.version>25.3-SNAPSHOT</flow.version>
         <micrometer.version>1.16.4</micrometer.version>
+        <servlet.api.version>6.1.0</servlet.api.version>
         <junit.version>5.11.4</junit.version>
-        <mockito.version>5.14.2</mockito.version>
+        <mockito.version>5.20.0</mockito.version>
         <vaadin.license.checker.version>3.0.1</vaadin.license.checker.version>
 
         <maven.compiler.release>21</maven.compiler.release>
