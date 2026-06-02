@@ -1,0 +1,39 @@
+# Maven
+target/
+*.versionsBackup
+.flattened-pom.xml
+
+# Vaadin / Flow generated frontend
+node_modules/
+frontend/generated/
+src/main/frontend/generated/
+src/main/bundles/
+vite.generated.ts
+types.d.ts
+.flow/
+flow-build-info.json
+
+# IDE — IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# IDE — Eclipse
+.settings/
+.classpath
+.project
+bin/
+
+# IDE — VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Superpowers specs & plans (local only, not committed)
+docs/superpowers/
