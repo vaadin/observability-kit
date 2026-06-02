@@ -47,7 +47,9 @@
         <maven.javadoc.version>3.4.1</maven.javadoc.version>
         <maven.surefire.version>3.2.5</maven.surefire.version>
         <maven.failsafe.version>3.2.5</maven.failsafe.version>
-        <maven.formatter.version>2.23.0</maven.formatter.version>
+        <spotless.plugin.version>3.5.1</spotless.plugin.version>
+        <spotless.license-header>${maven.multiModuleProjectDirectory}/eclipse/vaadin-commercial-license-header.txt</spotless.license-header>
+        <spotless.ratchetFrom/>
     </properties>
 
     <repositories>
@@ -163,14 +165,25 @@
                     <version>${maven.failsafe.version}</version>
                 </plugin>
                 <plugin>
-                    <groupId>net.revelc.code.formatter</groupId>
-                    <artifactId>formatter-maven-plugin</artifactId>
-                    <version>${maven.formatter.version}</version>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>${spotless.plugin.version}</version>
                     <configuration>
-                        <configFile>https://raw.githubusercontent.com/vaadin/flow/master/eclipse/VaadinJavaConventions.xml</configFile>
-                        <skipHtmlFormatting>true</skipHtmlFormatting>
-                        <lineEnding>LF</lineEnding>
-                        <encoding>UTF-8</encoding>
+                        <ratchetFrom>${spotless.ratchetFrom}</ratchetFrom>
+                        <java>
+                            <eclipse>
+                                <file>${maven.multiModuleProjectDirectory}/eclipse/VaadinJavaConventions.xml</file>
+                            </eclipse>
+                            <endWithNewline/>
+                            <removeUnusedImports/>
+                            <importOrder>
+                                <file>${maven.multiModuleProjectDirectory}/eclipse/flow.importorder</file>
+                            </importOrder>
+                            <forbidWildcardImports/>
+                            <licenseHeader>
+                                <file>${spotless.license-header}</file>
+                            </licenseHeader>
+                        </java>
                     </configuration>
                 </plugin>
             </plugins>
@@ -189,8 +202,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
             </plugin>
             <plugin>
-                <groupId>net.revelc.code.formatter</groupId>
-                <artifactId>formatter-maven-plugin</artifactId>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>

@@ -1,20 +1,22 @@
-/*
- * Copyright 2000-2026 Vaadin Ltd.
+/**
+ * Copyright (C) 2000-2026 Vaadin Ltd
  *
  * This program is available under Vaadin Commercial License and Service Terms.
  *
- * See <https://vaadin.com/commercial-license-and-service-terms> for the full license.
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
  */
 package com.vaadin.observability.micrometer;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+
 import com.vaadin.flow.server.SessionDestroyEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitEvent;
 import com.vaadin.flow.server.SessionInitListener;
-import io.micrometer.core.instrument.Gauge;
-import io.micrometer.core.instrument.MeterRegistry;
 
 /**
  * Tracks the number of active Vaadin sessions as a gauge. Register the same

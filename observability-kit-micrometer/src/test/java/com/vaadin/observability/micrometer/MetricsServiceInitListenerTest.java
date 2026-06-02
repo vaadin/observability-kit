@@ -1,19 +1,21 @@
-/*
- * Copyright 2000-2026 Vaadin Ltd.
+/**
+ * Copyright (C) 2000-2026 Vaadin Ltd
  *
  * This program is available under Vaadin Commercial License and Service Terms.
  *
- * See <https://vaadin.com/commercial-license-and-service-terms> for the full license.
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
  */
 package com.vaadin.observability.micrometer;
+
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
 import com.vaadin.flow.server.VaadinService;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;

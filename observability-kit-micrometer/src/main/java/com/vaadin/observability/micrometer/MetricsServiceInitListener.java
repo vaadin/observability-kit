@@ -1,16 +1,18 @@
-/*
- * Copyright 2000-2026 Vaadin Ltd.
+/**
+ * Copyright (C) 2000-2026 Vaadin Ltd
  *
  * This program is available under Vaadin Commercial License and Service Terms.
  *
- * See <https://vaadin.com/commercial-license-and-service-terms> for the full license.
+ * See <https://vaadin.com/commercial-license-and-service-terms> for the full
+ * license.
  */
 package com.vaadin.observability.micrometer;
+
+import io.micrometer.core.instrument.MeterRegistry;
 
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
-import io.micrometer.core.instrument.MeterRegistry;
 
 /**
  * Wires Observability Kit instrumentation into a {@code VaadinService} at
