@@ -33,7 +33,8 @@ class MetricsServiceInitListenerTest {
         new MetricsServiceInitListener().serviceInit(event);
 
         verify(service).addSessionInitListener(any(SessionInitListener.class));
-        verify(service).addSessionDestroyListener(any(SessionDestroyListener.class));
+        verify(service)
+                .addSessionDestroyListener(any(SessionDestroyListener.class));
     }
 
     @Test

@@ -17,7 +17,8 @@ class ObservabilityKitTest {
     @Test
     void install_storesRegistryAndSettings() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservabilitySettings settings = ObservabilitySettings.builder().build();
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .build();
 
         ObservabilityKit.install(registry, settings);
 

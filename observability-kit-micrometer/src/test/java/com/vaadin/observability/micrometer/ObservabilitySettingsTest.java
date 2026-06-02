@@ -10,7 +10,8 @@ class ObservabilitySettingsTest {
 
     @Test
     void defaults_allFeaturesEnabledExceptSessionIdTracing() {
-        ObservabilitySettings settings = ObservabilitySettings.builder().build();
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .build();
 
         assertTrue(settings.isSessions());
         assertTrue(settings.isUis());
@@ -27,11 +28,8 @@ class ObservabilitySettingsTest {
     @Test
     void builder_overridesAreApplied() {
         ObservabilitySettings settings = ObservabilitySettings.builder()
-                .sessions(false)
-                .tracesSessionId(true)
-                .routeCardinalityLimit(50)
-                .clientRatePerSession(10)
-                .build();
+                .sessions(false).tracesSessionId(true).routeCardinalityLimit(50)
+                .clientRatePerSession(10).build();
 
         assertFalse(settings.isSessions());
         assertTrue(settings.isTracesSessionId());

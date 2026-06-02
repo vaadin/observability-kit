@@ -13,12 +13,9 @@ import io.micrometer.observation.ObservationRegistry;
  */
 public final class ObservabilityKit {
 
-    private static final AtomicReference<MeterRegistry> METER_REGISTRY =
-            new AtomicReference<>();
-    private static final AtomicReference<ObservationRegistry> OBSERVATION_REGISTRY =
-            new AtomicReference<>();
-    private static final AtomicReference<ObservabilitySettings> SETTINGS =
-            new AtomicReference<>();
+    private static final AtomicReference<MeterRegistry> METER_REGISTRY = new AtomicReference<>();
+    private static final AtomicReference<ObservationRegistry> OBSERVATION_REGISTRY = new AtomicReference<>();
+    private static final AtomicReference<ObservabilitySettings> SETTINGS = new AtomicReference<>();
 
     private ObservabilityKit() {
     }

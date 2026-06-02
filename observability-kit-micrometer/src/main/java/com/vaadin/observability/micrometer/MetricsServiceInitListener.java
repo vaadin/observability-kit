@@ -38,7 +38,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
 
         VaadinService service = event.getSource();
         if (effectiveSettings.isSessions()) {
-            SessionMetricsBinder binder = new SessionMetricsBinder(meterRegistry);
+            SessionMetricsBinder binder = new SessionMetricsBinder(
+                    meterRegistry);
             service.addSessionInitListener(binder);
             service.addSessionDestroyListener(binder);
         }

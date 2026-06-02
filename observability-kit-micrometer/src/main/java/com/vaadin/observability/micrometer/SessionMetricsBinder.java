@@ -14,7 +14,8 @@ import io.micrometer.core.instrument.MeterRegistry;
  * instance as both a {@link SessionInitListener} and a
  * {@link SessionDestroyListener} on the {@code VaadinService}.
  */
-class SessionMetricsBinder implements SessionInitListener, SessionDestroyListener {
+class SessionMetricsBinder
+        implements SessionInitListener, SessionDestroyListener {
 
     private final AtomicInteger activeSessions = new AtomicInteger();
 

@@ -1,8 +1,8 @@
 package com.vaadin.observability.micrometer;
 
 /**
- * Immutable settings for Observability Kit instrumentation. Build instances with
- * {@link #builder()}.
+ * Immutable settings for Observability Kit instrumentation. Build instances
+ * with {@link #builder()}.
  */
 public final class ObservabilitySettings {
 
