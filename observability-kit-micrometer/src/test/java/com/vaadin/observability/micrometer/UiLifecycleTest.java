@@ -14,15 +14,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentEventListener;
 import com.vaadin.flow.component.DetachEvent;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.VaadinService;
+import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -148,5 +151,29 @@ class UiLifecycleTest {
         UI ui = mock(UI.class);
         b.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
         verify(ui, org.mockito.Mockito.never()).addPollListener(any());
+    }
+
+    @Test
+    void uiInitAddsMetricsCollectorElementWhenClientEnabled() {
+        // client is enabled by default
+        UI ui = mock(UI.class);
+        binder.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
+
+        ArgumentCaptor<Component[]> captor = ArgumentCaptor
+                .forClass(Component[].class);
+        verify(ui).add(captor.capture());
+        Component[] added = captor.getValue();
+        assertEquals(1, added.length);
+        assertEquals(MetricsCollectorElement.class, added[0].getClass());
+    }
+
+    @Test
+    void uiInitDoesNotAddMetricsCollectorElementWhenClientDisabled() {
+        UiMetricsBinder b = new UiMetricsBinder(new SimpleMeterRegistry(), null,
+                ObservabilitySettings.builder().client(false).build());
+        UI ui = mock(UI.class);
+        b.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
+
+        verify(ui, never()).add(any(Component[].class));
     }
 }

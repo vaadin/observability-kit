@@ -103,7 +103,7 @@ class ClientMetricsBinderTest {
                 1e-9);
     }
 
-    // --- ingest: disallowed name drops and increments dropped counter ---
+    // --- ingest: disallowed name is silently skipped ---
 
     @Test
     void ingestDisallowedNameIsDropped() {
@@ -177,8 +177,7 @@ class ClientMetricsBinderTest {
     void recordThrottledZeroDoesNotRegisterCounter() {
         binder.recordThrottled(0);
 
-        // Counter should not be pre-registered (find returns null when not
-        // registered in SimpleMeterRegistry without prior access)
+        // recordThrottled(0) must not increment the counter
         assertEquals(0.0, registry.counter(MeterNames.CLIENT_THROTTLED).count(),
                 1e-9);
     }

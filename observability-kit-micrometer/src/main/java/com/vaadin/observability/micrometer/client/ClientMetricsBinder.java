@@ -93,11 +93,11 @@ public final class ClientMetricsBinder {
             if (key.length() > MAX_TAG_KEY_LEN) {
                 continue;
             }
-            if (value.length() > MAX_TAG_VALUE_LEN) {
-                value = MeterNames.ROUTE_OTHER;
-            }
             if (MeterNames.TAG_ROUTE.equals(key)) {
                 value = templateRoute(value);
+            }
+            if (value.length() > MAX_TAG_VALUE_LEN) {
+                value = MeterNames.ROUTE_OTHER;
             }
             out.add(key);
             out.add(value);
