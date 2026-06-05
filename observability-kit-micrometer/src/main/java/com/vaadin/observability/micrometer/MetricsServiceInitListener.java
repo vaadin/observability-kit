@@ -51,6 +51,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     meterRegistry);
             service.addSessionInitListener(binder);
             service.addSessionDestroyListener(binder);
+            service.addSessionLockListener(
+                    new SessionLockMetricsBinder(meterRegistry));
         }
     }
 }

@@ -8,40 +8,56 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.util.concurrent.atomic.AtomicInteger;
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 
 import com.vaadin.flow.server.SessionDestroyEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitEvent;
 import com.vaadin.flow.server.SessionInitListener;
+import com.vaadin.flow.server.VaadinSession;
 
 /**
- * Tracks the number of active Vaadin sessions as a gauge. Register the same
- * instance as both a {@link SessionInitListener} and a
- * {@link SessionDestroyListener} on the {@code VaadinService}.
+ * Tracks session lifecycle metrics: cumulative count, currently-active count,
+ * and per-session lifetime.
  */
 class SessionMetricsBinder
         implements SessionInitListener, SessionDestroyListener {
 
-    private final AtomicInteger activeSessions = new AtomicInteger();
+    private final Counter created;
+    private final AtomicLong active = new AtomicLong();
+    private final Timer duration;
+    private final Map<VaadinSession, Long> startNanos = new ConcurrentHashMap<>();
 
     SessionMetricsBinder(MeterRegistry registry) {
-        Gauge.builder(MeterNames.SESSIONS_ACTIVE, activeSessions,
-                AtomicInteger::doubleValue)
-                .description("Number of active Vaadin sessions")
+        this.created = Counter.builder(MeterNames.SESSIONS_CREATED)
+                .register(registry);
+        Gauge.builder(MeterNames.SESSIONS_ACTIVE, active, AtomicLong::get)
+                .register(registry);
+        this.duration = Timer.builder(MeterNames.SESSIONS_DURATION)
                 .register(registry);
     }
 
     @Override
     public void sessionInit(SessionInitEvent event) {
-        activeSessions.incrementAndGet();
+        created.increment();
+        active.incrementAndGet();
+        startNanos.put(event.getSession(), System.nanoTime());
     }
 
     @Override
     public void sessionDestroy(SessionDestroyEvent event) {
-        activeSessions.decrementAndGet();
+        Long start = startNanos.remove(event.getSession());
+        active.decrementAndGet();
+        if (start != null) {
+            duration.record(Duration.ofNanos(System.nanoTime() - start));
+        }
     }
 }

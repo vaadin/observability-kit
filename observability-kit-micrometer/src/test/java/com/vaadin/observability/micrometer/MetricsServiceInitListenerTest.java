@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
+import com.vaadin.flow.server.SessionLockListener;
 import com.vaadin.flow.server.VaadinService;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -44,6 +45,7 @@ class MetricsServiceInitListenerTest {
         verify(service).addSessionInitListener(any(SessionInitListener.class));
         verify(service)
                 .addSessionDestroyListener(any(SessionDestroyListener.class));
+        verify(service).addSessionLockListener(any(SessionLockListener.class));
     }
 
     @Test
@@ -69,5 +71,6 @@ class MetricsServiceInitListenerTest {
 
         verify(service, never()).addSessionInitListener(any());
         verify(service, never()).addSessionDestroyListener(any());
+        verify(service, never()).addSessionLockListener(any());
     }
 }
