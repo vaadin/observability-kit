@@ -30,6 +30,10 @@
             <artifactId>micrometer-observation</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+        </dependency>
+        <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
             <version>${servlet.api.version}</version>

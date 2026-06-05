@@ -140,11 +140,21 @@ public final class ObservabilitySettings {
         }
 
         public Builder routeCardinalityLimit(int routeCardinalityLimit) {
+            if (routeCardinalityLimit < 1) {
+                throw new IllegalArgumentException(
+                        "routeCardinalityLimit must be >= 1, got "
+                                + routeCardinalityLimit);
+            }
             this.routeCardinalityLimit = routeCardinalityLimit;
             return this;
         }
 
         public Builder clientRatePerSession(int clientRatePerSession) {
+            if (clientRatePerSession < 0) {
+                throw new IllegalArgumentException(
+                        "clientRatePerSession must be >= 0, got "
+                                + clientRatePerSession);
+            }
             this.clientRatePerSession = clientRatePerSession;
             return this;
         }
