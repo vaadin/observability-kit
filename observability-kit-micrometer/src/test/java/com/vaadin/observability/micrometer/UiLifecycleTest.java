@@ -9,6 +9,7 @@
 package com.vaadin.observability.micrometer;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -88,17 +89,20 @@ class UiLifecycleTest {
 
     @Test
     void doesNotTrackUisWhenUisDisabled() {
-        binder = new UiMetricsBinder(registry, null, ObservabilitySettings
-                .builder().uis(false).navigation(false).build());
+        SimpleMeterRegistry freshRegistry = new SimpleMeterRegistry();
+        UiMetricsBinder disabledBinder = new UiMetricsBinder(freshRegistry,
+                null, ObservabilitySettings.builder().uis(false)
+                        .navigation(false).build());
         UI ui = mock(UI.class);
         VaadinService service = mock(VaadinService.class);
 
-        binder.uiInit(new UIInitEvent(ui, service));
+        disabledBinder.uiInit(new UIInitEvent(ui, service));
 
-        assertEquals(0.0, registry.counter(MeterNames.UI_CREATED).count(), 0.0);
-        // gauge is pre-registered at construction and stays at 0
-        assertEquals(0.0, registry.find(MeterNames.UI_ACTIVE).gauge().value(),
+        assertEquals(0.0, freshRegistry.counter(MeterNames.UI_CREATED).count(),
                 0.0);
+        // gauge is pre-registered at construction and stays at 0
+        assertEquals(0.0,
+                freshRegistry.find(MeterNames.UI_ACTIVE).gauge().value(), 0.0);
     }
 
     @Test
@@ -125,5 +129,24 @@ class UiLifecycleTest {
         verify(ui, org.mockito.Mockito.never()).addBeforeEnterListener(any());
         verify(ui, org.mockito.Mockito.never())
                 .addAfterNavigationListener(any());
+    }
+
+    @Test
+    void registersPollListenerWhenTracesEnabled() {
+        ObservationRegistry or = ObservationRegistry.create();
+        UiMetricsBinder b = new UiMetricsBinder(new SimpleMeterRegistry(), or,
+                ObservabilitySettings.builder().traces(true).build());
+        UI ui = mock(UI.class);
+        b.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
+        verify(ui).addPollListener(any());
+    }
+
+    @Test
+    void skipsPollListenerWhenTracesDisabled() {
+        UiMetricsBinder b = new UiMetricsBinder(new SimpleMeterRegistry(), null,
+                ObservabilitySettings.builder().traces(false).build());
+        UI ui = mock(UI.class);
+        b.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
+        verify(ui, org.mockito.Mockito.never()).addPollListener(any());
     }
 }
