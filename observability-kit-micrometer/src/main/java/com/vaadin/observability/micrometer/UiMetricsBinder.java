@@ -18,6 +18,8 @@ import io.micrometer.observation.ObservationRegistry;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.UIInitListener;
+import com.vaadin.observability.micrometer.client.ClientMetricsBinder;
+import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
@@ -32,6 +34,7 @@ final class UiMetricsBinder implements UIInitListener {
     private final Counter created;
     private final AtomicLong active = new AtomicLong();
     private final NavigationMetricsBinder navigationBinder;
+    private final ClientMetricsBinder clientBinder;
 
     UiMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
@@ -48,6 +51,9 @@ final class UiMetricsBinder implements UIInitListener {
                         settings,
                         new RouteTagResolver(
                                 settings.getRouteCardinalityLimit()))
+                : null;
+        this.clientBinder = settings.isClient()
+                ? new ClientMetricsBinder(registry, settings)
                 : null;
     }
 
@@ -70,6 +76,8 @@ final class UiMetricsBinder implements UIInitListener {
             ui.addPollListener(e -> RequestInteraction
                     .mark(ObservationNames.INTERACTION_POLL));
         }
-        // TODO(P2-T9): wire client metrics collector when isClient()
+        if (clientBinder != null) {
+            ui.add(new MetricsCollectorElement(clientBinder, settings));
+        }
     }
 }
