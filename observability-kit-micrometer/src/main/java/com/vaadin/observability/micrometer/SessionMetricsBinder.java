@@ -28,7 +28,7 @@ import com.vaadin.flow.server.VaadinSession;
  * Tracks session lifecycle metrics: cumulative count, currently-active count,
  * and per-session lifetime.
  */
-class SessionMetricsBinder
+final class SessionMetricsBinder
         implements SessionInitListener, SessionDestroyListener {
 
     private final Counter created;
