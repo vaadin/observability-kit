@@ -171,7 +171,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     new SessionLockMetricsBinder(registry));
         }
 
-        if (settings.isUis() || settings.isNavigation()) {
+        if (settings.isUis() || settings.isNavigation()
+                || settings.isClient()) {
             service.addUIInitListener(new UiMetricsBinder(registry,
                     observationRegistry, settings));
         }

@@ -105,10 +105,10 @@ class MetricsServiceInitListenerTest {
     }
 
     @Test
-    void skipsUiInitListenerWhenUisAndNavigationDisabled() {
+    void skipsUiInitListenerWhenUisAndNavigationAndClientDisabled() {
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().uis(false).navigation(false)
-                        .build());
+                        .client(false).build());
         VaadinService service = mock(VaadinService.class);
         ServiceInitEvent event = mock(ServiceInitEvent.class);
         when(event.getSource()).thenReturn(service);
@@ -116,6 +116,20 @@ class MetricsServiceInitListenerTest {
         new MetricsServiceInitListener().serviceInit(event);
 
         verify(service, never()).addUIInitListener(any());
+    }
+
+    @Test
+    void registersUiInitListenerWhenOnlyClientEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().uis(false).navigation(false)
+                        .client(true).build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service).addUIInitListener(any(UIInitListener.class));
     }
 
     @Test
