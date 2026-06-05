@@ -17,6 +17,7 @@ import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
 import com.vaadin.flow.server.SessionLockListener;
 import com.vaadin.flow.server.UIInitListener;
+import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -114,5 +115,48 @@ class MetricsServiceInitListenerTest {
         new MetricsServiceInitListener().serviceInit(event);
 
         verify(service, never()).addUIInitListener(any());
+    }
+
+    @Test
+    void registersRequestInterceptorWhenRequestsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(event).addVaadinRequestInterceptor(
+                any(VaadinRequestInterceptor.class));
+    }
+
+    @Test
+    void registersRequestInterceptorWhenOnlyErrorsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).errors(true)
+                        .build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(event).addVaadinRequestInterceptor(
+                any(VaadinRequestInterceptor.class));
+    }
+
+    @Test
+    void skipsRequestInterceptorWhenRequestsAndErrorsDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).errors(false)
+                        .build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(event, never()).addVaadinRequestInterceptor(any());
     }
 }

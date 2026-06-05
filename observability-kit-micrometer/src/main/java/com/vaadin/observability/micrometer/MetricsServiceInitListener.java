@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 
 import com.vaadin.flow.server.ServiceInitEvent;
+import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
 
@@ -36,6 +37,30 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         this.settings = settings;
     }
 
+    /**
+     * Hook for DI integrations to enrich the framework-level HTTP observation
+     * (e.g. Spring's {@code ServerHttpObservationFilter} span) with
+     * Vaadin-specific information so the parent HTTP span renders informatively
+     * in the trace UI. Called from {@link RequestMetricsBinder} after the
+     * Vaadin request type has been determined and before the
+     * {@code vaadin.request.<type>} child observation is started.
+     * <p>
+     * Default implementation no-ops, keeping the framework-agnostic core free
+     * of Spring imports. The Spring/Boot integration modules override this to
+     * call into their respective HTTP-observation APIs.
+     *
+     * @param request
+     *            the current Vaadin request
+     * @param requestType
+     *            the classified request type (e.g. {@code uidl},
+     *            {@code heartbeat}, {@code push}, {@code static},
+     *            {@code other})
+     */
+    protected void enrichHttpObservation(VaadinRequest request,
+            String requestType) {
+        // no-op by default
+    }
+
     @Override
     public void serviceInit(ServiceInitEvent event) {
         MeterRegistry meterRegistry = registry != null ? registry
@@ -45,6 +70,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         if (meterRegistry == null || effectiveSettings == null) {
             return;
         }
+        ObservationRegistry observationRegistry = ObservabilityKit
+                .getObservationRegistry();
 
         VaadinService service = event.getSource();
         if (effectiveSettings.isSessions()) {
@@ -57,10 +84,14 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         }
 
         if (effectiveSettings.isUis() || effectiveSettings.isNavigation()) {
-            ObservationRegistry observationRegistry = ObservabilityKit
-                    .getObservationRegistry();
             service.addUIInitListener(new UiMetricsBinder(meterRegistry,
                     observationRegistry, effectiveSettings));
+        }
+
+        if (effectiveSettings.isRequests() || effectiveSettings.isErrors()) {
+            event.addVaadinRequestInterceptor(
+                    new RequestMetricsBinder(meterRegistry, observationRegistry,
+                            effectiveSettings, this::enrichHttpObservation));
         }
     }
 }
