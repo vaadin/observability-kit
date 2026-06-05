@@ -114,7 +114,7 @@ final class RpcMetricsBinder implements RpcInvocationListener {
         observation.remove();
 
         if (obs != null) {
-            obs.lowCardinalityKeyValue(MeterNames.TAG_OUTCOME, outcome);
+            obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
             if (scope != null) {
                 scope.close();
             }
