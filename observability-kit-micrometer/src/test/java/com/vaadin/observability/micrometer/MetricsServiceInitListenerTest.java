@@ -19,6 +19,7 @@ import com.vaadin.flow.server.SessionLockListener;
 import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
+import com.vaadin.flow.server.communication.RpcInvocationListener;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -158,5 +159,46 @@ class MetricsServiceInitListenerTest {
         new MetricsServiceInitListener().serviceInit(event);
 
         verify(event, never()).addVaadinRequestInterceptor(any());
+    }
+
+    @Test
+    void registersRpcInvocationListenerWhenRequestsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service)
+                .addRpcInvocationListener(any(RpcInvocationListener.class));
+    }
+
+    @Test
+    void skipsRpcInvocationListenerWhenRequestsDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service, never()).addRpcInvocationListener(any());
+    }
+
+    @Test
+    void skipsRpcInvocationListenerWhenOnlyErrorsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).errors(true)
+                        .build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service, never()).addRpcInvocationListener(any());
     }
 }

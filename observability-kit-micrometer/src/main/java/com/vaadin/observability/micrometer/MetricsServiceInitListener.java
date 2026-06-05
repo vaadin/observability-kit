@@ -182,6 +182,11 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                             settings, this::enrichHttpObservation));
         }
 
+        if (settings.isRequests()) {
+            service.addRpcInvocationListener(new RpcMetricsBinder(registry,
+                    observationRegistry, settings));
+        }
+
         if (settings.isTraces() && observationRegistry != null) {
             event.getExecutor().ifPresent(exec -> event.setExecutor(
                     new TracingExecutor(exec, observationRegistry)));
