@@ -85,6 +85,14 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     @Override
     public void requestStart(VaadinRequest request, VaadinResponse response) {
+        // Drop any stale thread-local state left by a previous request whose
+        // requestEnd was skipped (e.g. mid-request server shutdown). Without
+        // this a pooled thread could carry errored=TRUE into the next request
+        // and misreport it as an error.
+        errored.remove();
+        sample.remove();
+        observation.remove();
+        observationScope.remove();
         // Drop any interaction marker left by a previous request on this
         // pooled thread; poll/navigation listeners re-mark during handling.
         RequestInteraction.clear();
@@ -158,10 +166,21 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             return "/";
         }
         int queryStart = referer.indexOf('?', pathStart);
-        if (queryStart < 0) {
+        int fragmentStart = referer.indexOf('#', pathStart);
+        // pathEnd is the earliest of '?' and '#' (each only if present at or
+        // after pathStart), so hash-router URLs don't inflate tag cardinality.
+        int pathEnd = -1;
+        if (queryStart >= 0 && fragmentStart >= 0) {
+            pathEnd = Math.min(queryStart, fragmentStart);
+        } else if (queryStart >= 0) {
+            pathEnd = queryStart;
+        } else if (fragmentStart >= 0) {
+            pathEnd = fragmentStart;
+        }
+        if (pathEnd < 0) {
             return referer.substring(pathStart);
         }
-        return referer.substring(pathStart, queryStart);
+        return referer.substring(pathStart, pathEnd);
     }
 
     @Override
