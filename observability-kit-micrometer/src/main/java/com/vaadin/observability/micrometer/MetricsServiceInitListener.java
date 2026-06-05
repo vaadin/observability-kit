@@ -9,6 +9,7 @@
 package com.vaadin.observability.micrometer;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinService;
@@ -53,6 +54,13 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             service.addSessionDestroyListener(binder);
             service.addSessionLockListener(
                     new SessionLockMetricsBinder(meterRegistry));
+        }
+
+        if (effectiveSettings.isUis() || effectiveSettings.isNavigation()) {
+            ObservationRegistry observationRegistry = ObservabilityKit
+                    .getObservationRegistry();
+            service.addUIInitListener(new UiMetricsBinder(meterRegistry,
+                    observationRegistry, effectiveSettings));
         }
     }
 }
