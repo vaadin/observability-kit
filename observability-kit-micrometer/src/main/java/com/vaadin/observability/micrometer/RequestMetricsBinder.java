@@ -35,9 +35,7 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * the span-friendly name ({@code vaadin.request}) used by tracing
  * handlers.</li>
  * <li>Otherwise (no obs registry / traces disabled / observation handler
- * unavailable), the binder falls back to recording the Timer directly. This
- * keeps backward compatibility for standalone deployments that haven't
- * configured Observation.</li>
+ * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
  */
 final class RequestMetricsBinder implements VaadinRequestInterceptor {

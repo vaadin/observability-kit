@@ -21,6 +21,7 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.internal.StringUtil;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 /**
@@ -87,7 +88,9 @@ public final class MetricsCollectorElement extends Component {
                         CLIENT_RESOURCE);
                 return;
             }
-            String js = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            String js = StringUtil.removeComments(
+                    new String(in.readAllBytes(), StandardCharsets.UTF_8),
+                    true);
             ui.getPage().executeJs(js);
         } catch (IOException e) {
             LoggerFactory.getLogger(MetricsCollectorElement.class)
