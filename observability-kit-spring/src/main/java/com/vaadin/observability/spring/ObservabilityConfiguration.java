@@ -141,8 +141,8 @@ public class ObservabilityConfiguration {
 
         @Override
         protected void enrichHttpObservation(VaadinRequest request,
-                String type) {
-            SpringHttpObservationEnricher.enrich(request, type);
+                String requestType) {
+            SpringHttpObservationEnricher.enrich(request, requestType);
         }
     }
 }

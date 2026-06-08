@@ -51,6 +51,8 @@ class ObservabilityConfigurationTest {
             Assertions.assertTrue(settings.isRequests());
             Assertions.assertTrue(settings.isErrors());
             Assertions.assertTrue(settings.isClient());
+            Assertions.assertTrue(settings.isTraces());
+            Assertions.assertFalse(settings.isTracesSessionId());
             Assertions.assertEquals(200, settings.getRouteCardinalityLimit());
             Assertions.assertEquals(100, settings.getClientRatePerSession());
 
