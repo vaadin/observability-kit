@@ -16,6 +16,13 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     steps:
+      - name: Check secrets
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        run: |
+          [ -z "${{secrets.VAADIN_PRO_KEY}}" ] \
+            && echo "🚫 **VAADIN_PRO_KEY** is not defined, check that **${{github.repository}}** repo has a valid secret" \
+            | tee -a $GITHUB_STEP_SUMMARY && exit 1 || exit 0
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -25,6 +32,12 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+
+      - name: Set TB License
+        run: |
+          TB_LICENSE=${{secrets.VAADIN_PRO_KEY}}
+          mkdir -p ~/.vaadin/
+          echo '{"username":"'$(echo $TB_LICENSE | cut -d / -f1)'","proKey":"'$(echo $TB_LICENSE | cut -d / -f2)'"}' > ~/.vaadin/proKey
 
       - name: Check formatting (Spotless)
         run: mvn -B -ntp spotless:check
