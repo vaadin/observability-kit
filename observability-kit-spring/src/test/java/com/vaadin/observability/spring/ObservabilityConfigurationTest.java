@@ -10,7 +10,6 @@ package com.vaadin.observability.spring;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -22,6 +21,8 @@ import org.springframework.mock.env.MockPropertySource;
 
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 class ObservabilityConfigurationTest {
 
@@ -45,19 +46,19 @@ class ObservabilityConfigurationTest {
                 TestConfig.class)) {
             ObservabilitySettings settings = ctx
                     .getBean(ObservabilitySettings.class);
-            Assertions.assertTrue(settings.isSessions());
-            Assertions.assertTrue(settings.isUis());
-            Assertions.assertTrue(settings.isNavigation());
-            Assertions.assertTrue(settings.isRequests());
-            Assertions.assertTrue(settings.isErrors());
-            Assertions.assertTrue(settings.isClient());
-            Assertions.assertTrue(settings.isTraces());
-            Assertions.assertFalse(settings.isTracesSessionId());
-            Assertions.assertEquals(200, settings.getRouteCardinalityLimit());
-            Assertions.assertEquals(100, settings.getClientRatePerSession());
+            assertThat(settings.isSessions()).isTrue();
+            assertThat(settings.isUis()).isTrue();
+            assertThat(settings.isNavigation()).isTrue();
+            assertThat(settings.isRequests()).isTrue();
+            assertThat(settings.isErrors()).isTrue();
+            assertThat(settings.isClient()).isTrue();
+            assertThat(settings.isTraces()).isTrue();
+            assertThat(settings.isTracesSessionId()).isFalse();
+            assertThat(settings.getRouteCardinalityLimit()).isEqualTo(200);
+            assertThat(settings.getClientRatePerSession()).isEqualTo(100);
 
-            Assertions.assertNotNull(
-                    ctx.getBean(MetricsServiceInitListener.class));
+            assertThat(ctx.getBean(MetricsServiceInitListener.class))
+                    .isNotNull();
         }
     }
 
@@ -77,10 +78,10 @@ class ObservabilityConfigurationTest {
 
             ObservabilitySettings settings = ctx
                     .getBean(ObservabilitySettings.class);
-            Assertions.assertFalse(settings.isSessions());
-            Assertions.assertFalse(settings.isNavigation());
-            Assertions.assertTrue(settings.isUis());
-            Assertions.assertEquals(42, settings.getRouteCardinalityLimit());
+            assertThat(settings.isSessions()).isFalse();
+            assertThat(settings.isNavigation()).isFalse();
+            assertThat(settings.isUis()).isTrue();
+            assertThat(settings.getRouteCardinalityLimit()).isEqualTo(42);
         }
     }
 
@@ -99,8 +100,8 @@ class ObservabilityConfigurationTest {
 
             ObservabilitySettings settings = ctx
                     .getBean(ObservabilitySettings.class);
-            Assertions.assertFalse(settings.isClient());
-            Assertions.assertEquals(25, settings.getClientRatePerSession());
+            assertThat(settings.isClient()).isFalse();
+            assertThat(settings.getClientRatePerSession()).isEqualTo(25);
         }
     }
 }

@@ -11,57 +11,61 @@ package com.vaadin.observability.spring;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.server.observation.ServerRequestObservationContext;
 import org.springframework.web.filter.ServerHttpObservationFilter;
 
 import com.vaadin.flow.server.VaadinRequest;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
 class SpringHttpObservationEnricherTest {
 
     @Test
     void nullRequestDoesNotThrow() {
-        Assertions.assertDoesNotThrow(
-                () -> SpringHttpObservationEnricher.enrich(null, "uidl"));
+        assertThatCode(() -> SpringHttpObservationEnricher.enrich(null, "uidl"))
+                .doesNotThrowAnyException();
     }
 
     @Test
-    void nullTypeDoesNotThrow() {
-        VaadinRequest request = Mockito.mock(VaadinRequest.class);
-        Assertions.assertDoesNotThrow(
-                () -> SpringHttpObservationEnricher.enrich(request, null));
+    void nullTypeDoesNotThrow(@Mock VaadinRequest request) {
+        assertThatCode(
+                () -> SpringHttpObservationEnricher.enrich(request, null))
+                .doesNotThrowAnyException();
     }
 
     @Test
-    void missingObservationContextDoesNotThrow() {
-        VaadinRequest request = Mockito.mock(VaadinRequest.class);
-        Mockito.when(request.getAttribute(
+    void missingObservationContextDoesNotThrow(@Mock VaadinRequest request) {
+        when(request.getAttribute(
                 ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
                 .thenReturn(null);
-        Assertions.assertDoesNotThrow(
-                () -> SpringHttpObservationEnricher.enrich(request, "uidl"));
+        assertThatCode(
+                () -> SpringHttpObservationEnricher.enrich(request, "uidl"))
+                .doesNotThrowAnyException();
     }
 
     @Test
-    void enrichmentSetsPathPatternAndContextualName() {
-        HttpServletRequest httpRequest = Mockito.mock(HttpServletRequest.class);
-        HttpServletResponse httpResponse = Mockito
-                .mock(HttpServletResponse.class);
+    void enrichmentSetsPathPatternAndContextualName(@Mock VaadinRequest request,
+            @Mock HttpServletRequest httpRequest,
+            @Mock HttpServletResponse httpResponse) {
         ServerRequestObservationContext context = new ServerRequestObservationContext(
                 httpRequest, httpResponse);
 
-        VaadinRequest request = Mockito.mock(VaadinRequest.class);
-        Mockito.when(request.getMethod()).thenReturn("POST");
-        Mockito.when(request.getAttribute(
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getAttribute(
                 ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
                 .thenReturn(context);
 
         SpringHttpObservationEnricher.enrich(request, "uidl");
 
-        Assertions.assertEquals("/vaadin/uidl", context.getPathPattern());
-        Assertions.assertEquals("http post vaadin uidl",
-                context.getContextualName());
+        assertThat(context.getPathPattern()).isEqualTo("/vaadin/uidl");
+        assertThat(context.getContextualName())
+                .isEqualTo("http post vaadin uidl");
     }
 }
