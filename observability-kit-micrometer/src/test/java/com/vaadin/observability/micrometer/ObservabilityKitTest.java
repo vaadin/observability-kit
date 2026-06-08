@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -32,6 +33,28 @@ class ObservabilityKitTest {
 
         assertSame(registry, ObservabilityKit.getMeterRegistry());
         assertSame(settings, ObservabilityKit.getSettings());
+        assertNotNull(ObservabilityKit.getObservationRegistry());
+    }
+
+    @Test
+    void install_tracesEnabled_createsObservationRegistry() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .traces(true).build();
+
+        ObservabilityKit.install(registry, settings);
+
+        assertNotNull(ObservabilityKit.getObservationRegistry());
+    }
+
+    @Test
+    void install_tracesDisabled_observationRegistryIsNull() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .traces(false).build();
+
+        ObservabilityKit.install(registry, settings);
+
         assertNull(ObservabilityKit.getObservationRegistry());
     }
 

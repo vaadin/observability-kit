@@ -8,9 +8,11 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
 /**
@@ -30,7 +32,15 @@ public final class ObservabilityKit {
 
     public static void install(MeterRegistry meterRegistry,
             ObservabilitySettings settings) {
-        install(meterRegistry, null, settings);
+        Objects.requireNonNull(meterRegistry, "meterRegistry");
+        Objects.requireNonNull(settings, "settings");
+        ObservationRegistry observationRegistry = null;
+        if (settings.isTraces()) {
+            observationRegistry = ObservationRegistry.create();
+            observationRegistry.observationConfig().observationHandler(
+                    new DefaultMeterObservationHandler(meterRegistry));
+        }
+        install(meterRegistry, observationRegistry, settings);
     }
 
     public static void install(MeterRegistry meterRegistry,

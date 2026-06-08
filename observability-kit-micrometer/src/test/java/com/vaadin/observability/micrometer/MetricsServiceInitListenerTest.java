@@ -15,7 +15,11 @@ import org.junit.jupiter.api.Test;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
+import com.vaadin.flow.server.SessionLockListener;
+import com.vaadin.flow.server.UIInitListener;
+import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
+import com.vaadin.flow.server.communication.RpcInvocationListener;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -44,6 +48,7 @@ class MetricsServiceInitListenerTest {
         verify(service).addSessionInitListener(any(SessionInitListener.class));
         verify(service)
                 .addSessionDestroyListener(any(SessionDestroyListener.class));
+        verify(service).addSessionLockListener(any(SessionLockListener.class));
     }
 
     @Test
@@ -69,5 +74,145 @@ class MetricsServiceInitListenerTest {
 
         verify(service, never()).addSessionInitListener(any());
         verify(service, never()).addSessionDestroyListener(any());
+        verify(service, never()).addSessionLockListener(any());
+    }
+
+    @Test
+    void registersUiInitListenerWhenUisEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service).addUIInitListener(any(UIInitListener.class));
+    }
+
+    @Test
+    void registersUiInitListenerWhenNavigationEnabledAndUisDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().uis(false).navigation(true)
+                        .build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service).addUIInitListener(any(UIInitListener.class));
+    }
+
+    @Test
+    void skipsUiInitListenerWhenUisAndNavigationAndClientDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().uis(false).navigation(false)
+                        .client(false).build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service, never()).addUIInitListener(any());
+    }
+
+    @Test
+    void registersUiInitListenerWhenOnlyClientEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().uis(false).navigation(false)
+                        .client(true).build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service).addUIInitListener(any(UIInitListener.class));
+    }
+
+    @Test
+    void registersRequestInterceptorWhenRequestsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(event).addVaadinRequestInterceptor(
+                any(VaadinRequestInterceptor.class));
+    }
+
+    @Test
+    void registersRequestInterceptorWhenOnlyErrorsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).errors(true)
+                        .build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(event).addVaadinRequestInterceptor(
+                any(VaadinRequestInterceptor.class));
+    }
+
+    @Test
+    void skipsRequestInterceptorWhenRequestsAndErrorsDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).errors(false)
+                        .build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(event, never()).addVaadinRequestInterceptor(any());
+    }
+
+    @Test
+    void registersRpcInvocationListenerWhenRequestsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service)
+                .addRpcInvocationListener(any(RpcInvocationListener.class));
+    }
+
+    @Test
+    void skipsRpcInvocationListenerWhenRequestsDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service, never()).addRpcInvocationListener(any());
+    }
+
+    @Test
+    void skipsRpcInvocationListenerWhenOnlyErrorsEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().requests(false).errors(true)
+                        .build());
+        VaadinService service = mock(VaadinService.class);
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service, never()).addRpcInvocationListener(any());
     }
 }

@@ -10,8 +10,10 @@ package com.vaadin.observability.micrometer;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ObservabilitySettingsTest {
@@ -31,6 +33,30 @@ class ObservabilitySettingsTest {
         assertFalse(settings.isTracesSessionId());
         assertEquals(200, settings.getRouteCardinalityLimit());
         assertEquals(100, settings.getClientRatePerSession());
+    }
+
+    @Test
+    void routeCardinalityLimit_zero_throwsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().routeCardinalityLimit(0));
+    }
+
+    @Test
+    void routeCardinalityLimit_negative_throwsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> ObservabilitySettings
+                .builder().routeCardinalityLimit(-5));
+    }
+
+    @Test
+    void clientRatePerSession_negative_throwsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().clientRatePerSession(-1));
+    }
+
+    @Test
+    void clientRatePerSession_zero_isAllowed() {
+        assertDoesNotThrow(
+                () -> ObservabilitySettings.builder().clientRatePerSession(0));
     }
 
     @Test
