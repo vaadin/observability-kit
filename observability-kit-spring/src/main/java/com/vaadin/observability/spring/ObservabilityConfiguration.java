@@ -71,7 +71,7 @@ public class ObservabilityConfiguration {
      *            maximum client-side metric events per session (default
      *            {@code 100})
      */
-    public ObservabilityConfiguration(
+    ObservabilityConfiguration(
             @Value("${vaadin.observability.sessions:true}") boolean sessions,
             @Value("${vaadin.observability.uis:true}") boolean uis,
             @Value("${vaadin.observability.navigation:true}") boolean navigation,
