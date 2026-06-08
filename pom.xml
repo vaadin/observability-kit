@@ -26,6 +26,7 @@
 
     <modules>
         <module>observability-kit-micrometer</module>
+        <module>observability-kit-spring</module>
     </modules>
 
     <properties>
@@ -34,6 +35,7 @@
         <servlet.api.version>6.1.0</servlet.api.version>
         <junit.version>5.11.4</junit.version>
         <mockito.version>5.20.0</mockito.version>
+        <spring.boot.version>4.0.5</spring.boot.version>
         <vaadin.license.checker.version>3.0.1</vaadin.license.checker.version>
 
         <maven.compiler.release>21</maven.compiler.release>
@@ -106,6 +108,13 @@
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
                 <version>${junit.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot.version}</version>
                 <scope>import</scope>
                 <type>pom</type>
             </dependency>
