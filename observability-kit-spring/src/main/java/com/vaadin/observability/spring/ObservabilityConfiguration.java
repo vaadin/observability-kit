@@ -40,10 +40,12 @@ import com.vaadin.observability.micrometer.ObservabilitySettings;
 @Configuration
 public class ObservabilityConfiguration {
 
+    private final ObservabilitySettings settings;
+
     /**
-     * Builds an {@link ObservabilitySettings} bean from
-     * {@code vaadin.observability.*} properties. All properties are optional
-     * and fall back to sensible defaults.
+     * Binds {@code vaadin.observability.*} properties (all optional, each with
+     * a sensible default) and builds the {@link ObservabilitySettings} used by
+     * the instrumentation.
      *
      * @param sessions
      *            whether to track session metrics (default {@code true})
@@ -68,10 +70,8 @@ public class ObservabilityConfiguration {
      * @param clientRatePerSession
      *            maximum client-side metric events per session (default
      *            {@code 100})
-     * @return the configured {@link ObservabilitySettings}
      */
-    @Bean
-    public ObservabilitySettings observabilitySettings(
+    public ObservabilityConfiguration(
             @Value("${vaadin.observability.sessions:true}") boolean sessions,
             @Value("${vaadin.observability.uis:true}") boolean uis,
             @Value("${vaadin.observability.navigation:true}") boolean navigation,
@@ -82,31 +82,39 @@ public class ObservabilityConfiguration {
             @Value("${vaadin.observability.route-cardinality-limit:200}") int routeCardinalityLimit,
             @Value("${vaadin.observability.client:true}") boolean client,
             @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession) {
-        return ObservabilitySettings.builder().sessions(sessions).uis(uis)
-                .navigation(navigation).requests(requests).errors(errors)
-                .traces(traces).tracesSessionId(tracesSessionId)
+        this.settings = ObservabilitySettings.builder().sessions(sessions)
+                .uis(uis).navigation(navigation).requests(requests)
+                .errors(errors).traces(traces).tracesSessionId(tracesSessionId)
                 .routeCardinalityLimit(routeCardinalityLimit).client(client)
                 .clientRatePerSession(clientRatePerSession).build();
     }
 
     /**
-     * Creates the {@link MetricsServiceInitListener} bean that wires
-     * instrumentation into the Vaadin service.
+     * Exposes the {@link ObservabilitySettings} bound from
+     * {@code vaadin.observability.*} as a bean.
+     *
+     * @return the configured settings
+     */
+    @Bean
+    ObservabilitySettings observabilitySettings() {
+        return settings;
+    }
+
+    /**
+     * Creates the Spring-aware {@link MetricsServiceInitListener} bean that
+     * wires instrumentation into the Vaadin service.
      *
      * @param registry
      *            the Micrometer meter registry, must be present in the context
      * @param observationRegistry
      *            optional Micrometer observation registry; picked up if a bean
      *            is present
-     * @param settings
-     *            the observability settings bean
      * @return a Spring-aware {@link MetricsServiceInitListener}
      */
     @Bean
-    public MetricsServiceInitListener metricsServiceInitListener(
+    MetricsServiceInitListener metricsServiceInitListener(
             MeterRegistry registry,
-            ObjectProvider<ObservationRegistry> observationRegistry,
-            ObservabilitySettings settings) {
+            ObjectProvider<ObservationRegistry> observationRegistry) {
         return new SpringMetricsServiceInitListener(registry,
                 observationRegistry.getIfAvailable(), settings);
     }

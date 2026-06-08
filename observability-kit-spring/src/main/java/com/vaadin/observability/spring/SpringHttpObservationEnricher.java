@@ -25,7 +25,7 @@ import com.vaadin.flow.server.VaadinRequest;
  * base module) so Spring's HTTP observation classes can be imported directly
  * and we don't need reflection.
  */
-public final class SpringHttpObservationEnricher {
+final class SpringHttpObservationEnricher {
 
     private SpringHttpObservationEnricher() {
     }
@@ -41,7 +41,7 @@ public final class SpringHttpObservationEnricher {
      *            the classified request type (e.g. {@code uidl}), may be
      *            {@code null}
      */
-    public static void enrich(VaadinRequest request, String type) {
+    static void enrich(VaadinRequest request, String type) {
         if (request == null || type == null) {
             return;
         }
