@@ -39,3 +39,6 @@ Thumbs.db
 docs/superpowers/
 *.bundle
 **/src/main/frontend/generated
+
+# Claude Code tooling (worktrees, local settings)
+.claude/
