@@ -14,6 +14,7 @@
   <modules>
     <module>observability-kit-test-common</module>
     <module>observability-kit-tests-micrometer</module>
+    <module>observability-kit-tests-spring</module>
   </modules>
 
   <dependencyManagement>
