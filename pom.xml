@@ -27,6 +27,7 @@
     <modules>
         <module>observability-kit-micrometer</module>
         <module>observability-kit-spring</module>
+        <module>observability-kit-starter</module>
     </modules>
 
     <properties>
