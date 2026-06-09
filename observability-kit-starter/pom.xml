@@ -31,12 +31,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
-        <!-- Brings Boot's Micrometer metrics auto-configuration
-             (MetricsAutoConfiguration, CompositeMeterRegistryAutoConfiguration)
-             so the kit is a real Micrometer starter: a MeterRegistry is wired
-             out of the box and the Vaadin instrumentation activates. The
-             concrete registry backend (Prometheus, OTLP, ...) and Actuator
-             endpoint exposure remain the application's choice. -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-micrometer-metrics</artifactId>
