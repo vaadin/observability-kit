@@ -77,7 +77,7 @@ public class ObservabilityConfiguration {
             @Value("${vaadin.observability.requests:true}") boolean requests,
             @Value("${vaadin.observability.errors:true}") boolean errors,
             @Value("${vaadin.observability.traces:true}") boolean traces,
-            @Value("${vaadin.observability.traces.session-id:false}") boolean tracesSessionId,
+            @Value("${vaadin.observability.traces-session-id:false}") boolean tracesSessionId,
             @Value("${vaadin.observability.route-cardinality-limit:200}") int routeCardinalityLimit,
             @Value("${vaadin.observability.client:true}") boolean client,
             @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession) {
