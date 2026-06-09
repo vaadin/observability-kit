@@ -37,3 +37,5 @@ Thumbs.db
 
 # Superpowers specs & plans (local only, not committed)
 docs/superpowers/
+*.bundle
+**/src/main/frontend/generated
