@@ -17,11 +17,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.assertj.core.api.Assertions;
-
 import com.vaadin.flow.component.html.testbench.SpanElement;
 import com.vaadin.observability.tests.common.AbstractIT;
 import com.vaadin.testbench.BrowserTest;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Drives a Spring Boot + {@code observability-kit-starter} app in Chrome and
@@ -44,19 +44,18 @@ public class BootMetricsIT extends AbstractIT {
     @BrowserTest
     public void viewLoadDrivesMetricsExposedViaActuator() throws IOException {
         SpanElement greeting = $(SpanElement.class).id("greeting");
-        Assertions.assertThat(greeting.getText())
-                .isEqualTo("Hello micrometer boot");
+        assertThat(greeting.getText()).isEqualTo("Hello micrometer boot");
 
         String body = fetchPrometheus();
 
-        Assertions.assertThat(meterValue(body, "vaadin_sessions_total"))
+        assertThat(meterValue(body, "vaadin_sessions_total"))
                 .as("vaadin_sessions_total").isGreaterThanOrEqualTo(1.0);
-        Assertions.assertThat(meterValue(body, "vaadin_ui_total"))
-                .as("vaadin_ui_total").isGreaterThanOrEqualTo(1.0);
-        Assertions.assertThat(meterValue(body, "vaadin_sessions_active"))
+        assertThat(meterValue(body, "vaadin_ui_total")).as("vaadin_ui_total")
+                .isGreaterThanOrEqualTo(1.0);
+        assertThat(meterValue(body, "vaadin_sessions_active"))
                 .as("vaadin_sessions_active").isGreaterThanOrEqualTo(1.0);
-        Assertions.assertThat(body)
-                .as("vaadin_request_duration_seconds present")
+        assertThat(body).withFailMessage(
+                "expected a vaadin_request_duration_seconds sample in the Prometheus scrape")
                 .contains("vaadin_request_duration_seconds");
     }
 
@@ -65,7 +64,7 @@ public class BootMetricsIT extends AbstractIT {
                 .create(getRootURL() + "/actuator/prometheus").toURL()
                 .openConnection();
         conn.setRequestMethod("GET");
-        Assertions.assertThat(conn.getResponseCode()).isEqualTo(200);
+        assertThat(conn.getResponseCode()).isEqualTo(200);
         StringBuilder out = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
                 conn.getInputStream(), StandardCharsets.UTF_8))) {
