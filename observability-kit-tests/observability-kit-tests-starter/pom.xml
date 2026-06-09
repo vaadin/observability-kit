@@ -67,7 +67,7 @@
     <!-- Test dependencies -->
     <dependency>
       <groupId>com.vaadin</groupId>
-      <artifactId>observability-kit-test-common</artifactId>
+      <artifactId>observability-kit-tests-common</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
