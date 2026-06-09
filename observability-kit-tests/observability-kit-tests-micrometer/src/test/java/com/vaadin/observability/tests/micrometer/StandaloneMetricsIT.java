@@ -6,7 +6,7 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package com.vaadin.observability.micrometer.tests;
+package com.vaadin.observability.tests.micrometer;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Assertions;
 
 import com.vaadin.flow.component.html.testbench.SpanElement;
+import com.vaadin.observability.tests.common.AbstractIT;
 import com.vaadin.testbench.BrowserTest;
 
 /**

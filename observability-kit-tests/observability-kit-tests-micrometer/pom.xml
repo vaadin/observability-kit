@@ -3,10 +3,10 @@
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>com.vaadin</groupId>
-    <artifactId>observability-kit-micrometer-test</artifactId>
+    <artifactId>observability-kit-tests</artifactId>
     <version>5.0-SNAPSHOT</version>
   </parent>
-  <artifactId>observability-kit-micrometer-tests</artifactId>
+  <artifactId>observability-kit-tests-micrometer</artifactId>
 
   <packaging>war</packaging>
   <name>Test Vaadin Micrometer integration on a real Jetty deployment</name>
@@ -16,6 +16,12 @@
       <groupId>com.vaadin</groupId>
       <artifactId>observability-kit-micrometer</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>observability-kit-test-common</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>com.vaadin</groupId>

@@ -6,7 +6,7 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package com.vaadin.observability.micrometer.tests;
+package com.vaadin.observability.tests.common;
 
 import java.lang.management.ManagementFactory;
 
@@ -33,7 +33,8 @@ import com.vaadin.testbench.TestBench;
  * test before each test method.
  */
 @Execution(ExecutionMode.SAME_THREAD)
-abstract class AbstractIT extends BrowserTestBase implements DriverSupplier {
+public abstract class AbstractIT extends BrowserTestBase
+        implements DriverSupplier {
 
     static final int SERVER_PORT = Integer.getInteger("serverPort", 8080);
 

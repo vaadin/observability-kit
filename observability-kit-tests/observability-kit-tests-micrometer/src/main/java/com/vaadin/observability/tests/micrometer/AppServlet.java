@@ -6,7 +6,7 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package com.vaadin.observability.micrometer.tests;
+package com.vaadin.observability.tests.micrometer;
 
 import jakarta.servlet.annotation.WebServlet;
 
