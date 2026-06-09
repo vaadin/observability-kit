@@ -28,9 +28,9 @@ import com.vaadin.testbench.Parameters;
 import com.vaadin.testbench.TestBench;
 
 /**
- * Base class for the Micrometer integration tests. Spins up a headless Chrome
- * driver (or connects to a hub when configured) and navigates to the view under
- * test before each test method.
+ * Base class for Observability Kit integration tests. Spins up a headless
+ * Chrome driver (or connects to a hub when configured) and navigates to the
+ * view under test before each test method.
  */
 @Execution(ExecutionMode.SAME_THREAD)
 public abstract class AbstractIT extends BrowserTestBase
