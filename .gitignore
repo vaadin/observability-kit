@@ -38,4 +38,4 @@ Thumbs.db
 # Superpowers specs & plans (local only, not committed)
 docs/superpowers/
 *.bundle
-observability-kit-micrometer-test/observability-kit-micrometer-tests/src/main/frontend/generated
+**/src/main/frontend/generated

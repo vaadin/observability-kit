@@ -233,7 +233,7 @@
                 </property>
             </activation>
             <modules>
-                <module>observability-kit-micrometer-test</module>
+                <module>observability-kit-tests</module>
             </modules>
         </profile>
     </profiles>
