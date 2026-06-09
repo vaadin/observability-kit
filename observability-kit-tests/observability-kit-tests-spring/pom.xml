@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.vaadin</groupId>
+    <artifactId>observability-kit-tests</artifactId>
+    <version>5.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>observability-kit-tests-spring</artifactId>
+
+  <packaging>war</packaging>
+  <name>Test Vaadin Observability Kit on a plain-Spring (non-Boot) Jetty deployment</name>
+  <description>
+    Integration test that wires observability-kit-spring into a plain Spring MVC WAR
+    (no Spring Boot) and verifies session / UI / request metrics are recorded.
+  </description>
+
+  <dependencies>
+    <!-- Kit Spring integration (plain, no Boot on its tree) -->
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>observability-kit-spring</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- Plain Spring MVC for the WAR bootstrap -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-webmvc</artifactId>
+    </dependency>
+    <!-- Micrometer (observability-kit-spring brings it transitively, declared
+         here as direct dep so the MetricsServlet compile does not rely on
+         transitive resolution order) -->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-core</artifactId>
+    </dependency>
+    <!-- Vaadin Flow -->
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>flow-server</artifactId>
+      <version>${flow.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>flow-client</artifactId>
+      <version>${flow.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>flow-html-components</artifactId>
+      <version>${flow.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>${servlet.api.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Test dependencies -->
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>observability-kit-tests-common</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>vaadin-testbench-core-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>flow-html-components-testbench</artifactId>
+      <version>${flow.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.seleniumhq.selenium</groupId>
+      <artifactId>selenium-java</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <defaultGoal>jetty:run</defaultGoal>
+    <plugins>
+      <!-- Build the Vaadin frontend bundle at compile phase so Jetty can
+           serve it during integration tests. -->
+      <plugin>
+        <groupId>com.vaadin</groupId>
+        <artifactId>flow-maven-plugin</artifactId>
+        <version>${flow.version}</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>prepare-frontend</goal>
+              <goal>build-frontend</goal>
+            </goals>
+            <phase>compile</phase>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Run Jetty around integration tests -->
+      <plugin>
+        <groupId>org.eclipse.jetty.ee10</groupId>
+        <artifactId>jetty-ee10-maven-plugin</artifactId>
+        <!-- Pin to 12.1.8: 12.1.9 has a Windows synth-path URI bug
+             (jetty/jetty.project#15135) -->
+        <version>12.1.8</version>
+        <configuration>
+          <!-- Unique stop port/key so the Jetty shutdown handshake does not
+               collide with the observability-kit-tests-micrometer module.
+               The HTTP listen port stays Jetty's default 8080; the reactor
+               runs the IT modules sequentially, never concurrently. -->
+          <stopPort>8090</stopPort>
+          <stopKey>observability-kit-spring</stopKey>
+          <stopWait>5</stopWait>
+        </configuration>
+        <executions>
+          <execution>
+            <id>start-jetty</id>
+            <goals>
+              <goal>start</goal>
+            </goals>
+            <phase>pre-integration-test</phase>
+          </execution>
+          <execution>
+            <id>stop-jetty</id>
+            <goals>
+              <goal>stop</goal>
+            </goals>
+            <phase>post-integration-test</phase>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Run the *IT browser tests against the running Jetty. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Enforce that no Spring Boot dependency sneaks in; this WAR must
+           remain plain Spring. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <execution>
+            <id>enforce-no-spring-boot</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <phase>validate</phase>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <!-- Plain-Spring project: no Spring Boot dependencies allowed -->
+                    <exclude>org.springframework.boot</exclude>
+                  </excludes>
+                </bannedDependencies>
+              </rules>
+              <fail>true</fail>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

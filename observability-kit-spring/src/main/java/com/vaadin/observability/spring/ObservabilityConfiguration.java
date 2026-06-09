@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
@@ -78,7 +77,7 @@ public class ObservabilityConfiguration {
             @Value("${vaadin.observability.requests:true}") boolean requests,
             @Value("${vaadin.observability.errors:true}") boolean errors,
             @Value("${vaadin.observability.traces:true}") boolean traces,
-            @Value("${vaadin.observability.traces.session-id:false}") boolean tracesSessionId,
+            @Value("${vaadin.observability.traces-session-id:false}") boolean tracesSessionId,
             @Value("${vaadin.observability.route-cardinality-limit:200}") int routeCardinalityLimit,
             @Value("${vaadin.observability.client:true}") boolean client,
             @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession) {
@@ -119,38 +118,4 @@ public class ObservabilityConfiguration {
                 observationRegistry.getIfAvailable(), settings);
     }
 
-    /**
-     * Spring-aware subclass that skips the default Observation handler
-     * registration: in Spring/Boot setups the framework already registers a
-     * {@code DefaultMeterObservationHandler} on the shared
-     * {@link ObservationRegistry} (via Boot's
-     * {@code ObservationAutoConfiguration} or the user's own
-     * {@code @Configuration}), so re-registering here would double-emit Timers.
-     * It also delegates HTTP observation enrichment to
-     * {@link SpringHttpObservationEnricher}.
-     */
-    static class SpringMetricsServiceInitListener
-            extends MetricsServiceInitListener {
-
-        SpringMetricsServiceInitListener(MeterRegistry registry,
-                ObservationRegistry observationRegistry,
-                ObservabilitySettings settings) {
-            super(registry, observationRegistry, settings);
-        }
-
-        @Override
-        protected void installDefaultObservationHandlers(
-                ObservationRegistry observationRegistry,
-                MeterRegistry registry) {
-            // No-op: Spring Boot Actuator's ObservationAutoConfiguration
-            // registers DefaultMeterObservationHandler; re-registering would
-            // double-emit Timers.
-        }
-
-        @Override
-        protected void enrichHttpObservation(VaadinRequest request,
-                String requestType) {
-            SpringHttpObservationEnricher.enrich(request, requestType);
-        }
-    }
 }

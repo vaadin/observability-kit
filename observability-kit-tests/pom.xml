@@ -6,13 +6,16 @@
     <artifactId>observability-kit</artifactId>
     <version>5.0-SNAPSHOT</version>
   </parent>
-  <artifactId>observability-kit-micrometer-test</artifactId>
+  <artifactId>observability-kit-tests</artifactId>
 
   <packaging>pom</packaging>
-  <name>Integration tests for Observability-kit Micrometer integration</name>
+  <name>Integration tests for Observability-kit</name>
 
   <modules>
-    <module>observability-kit-micrometer-tests</module>
+    <module>observability-kit-tests-common</module>
+    <module>observability-kit-tests-micrometer</module>
+    <module>observability-kit-tests-spring</module>
+    <module>observability-kit-tests-starter</module>
   </modules>
 
   <dependencyManagement>
