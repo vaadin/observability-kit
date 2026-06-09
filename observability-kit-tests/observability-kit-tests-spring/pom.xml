@@ -119,8 +119,10 @@
              (jetty/jetty.project#15135) -->
         <version>12.1.8</version>
         <configuration>
-          <!-- Unique port/key so this module can run alongside the
-               observability-kit-tests-micrometer module. -->
+          <!-- Unique stop port/key so the Jetty shutdown handshake does not
+               collide with the observability-kit-tests-micrometer module.
+               The HTTP listen port stays Jetty's default 8080; the reactor
+               runs the IT modules sequentially, never concurrently. -->
           <stopPort>8090</stopPort>
           <stopKey>observability-kit-spring</stopKey>
           <stopWait>5</stopWait>
