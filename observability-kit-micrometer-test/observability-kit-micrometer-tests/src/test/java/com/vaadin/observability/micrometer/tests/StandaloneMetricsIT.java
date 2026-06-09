@@ -27,7 +27,7 @@ import com.vaadin.testbench.BrowserTest;
  * vaadin-micrometer binders moved the corresponding meters, scraped through a
  * plain HTTP {@code GET /metrics}.
  */
-public class VaadinMicrometerIT extends AbstractIT {
+public class StandaloneMetricsIT extends AbstractIT {
 
     @Override
     protected String getTestPath() {

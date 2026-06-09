@@ -224,4 +224,17 @@
         </plugins>
     </build>
 
+    <profiles>
+        <profile>
+            <id>it-tests</id>
+            <activation>
+                <property>
+                    <name>!skipIt</name>
+                </property>
+            </activation>
+            <modules>
+                <module>observability-kit-micrometer-test</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>
