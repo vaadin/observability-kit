@@ -83,12 +83,37 @@ class ObservabilityAutoConfigurationTest {
     /**
      * Without a MeterRegistry bean, the MetricsServiceInitListener should not
      * be registered (gated by @ConditionalOnBean(MeterRegistry.class)). The
-     * ObservabilitySettings bean may still be present.
+     * ObservabilitySettings bean is NOT gated on a MeterRegistry, so it must
+     * still be present.
      */
     @Test
     void noMeterRegistry_doesNotRegisterListener() {
-        contextRunner.run(context -> assertThat(context)
-                .doesNotHaveBean(MetricsServiceInitListener.class));
+        contextRunner.run(context -> {
+            assertThat(context)
+                    .doesNotHaveBean(MetricsServiceInitListener.class);
+            assertThat(context).hasSingleBean(ObservabilitySettings.class);
+        });
+    }
+
+    /**
+     * User-supplied ObservabilitySettings bean: our auto-configured settings
+     * bean should back off (@ConditionalOnMissingBean), and the custom bean
+     * should be used.
+     */
+    @Test
+    void userSuppliedSettings_autoConfigBacksOff() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class,
+                        SimpleMeterRegistry::new)
+                .withBean(ObservabilitySettings.class,
+                        () -> ObservabilitySettings.builder().sessions(false)
+                                .build())
+                .run(context -> {
+                    assertThat(context)
+                            .hasSingleBean(ObservabilitySettings.class);
+                    assertThat(context.getBean(ObservabilitySettings.class)
+                            .isSessions()).isFalse();
+                });
     }
 
     /**
@@ -98,7 +123,9 @@ class ObservabilityAutoConfigurationTest {
      */
     @Test
     void userSuppliedListener_autoConfigBacksOff() {
-        MetricsServiceInitListener customListener = new MetricsServiceInitListener();
+        MetricsServiceInitListener customListener = new MetricsServiceInitListener(
+                new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
         contextRunner
                 .withBean("custom", MetricsServiceInitListener.class,
                         () -> customListener)

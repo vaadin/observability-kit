@@ -49,7 +49,7 @@ public class ObservabilityAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(MeterRegistry.class)
-    @ConditionalOnMissingBean
+    @ConditionalOnMissingBean(MetricsServiceInitListener.class)
     MetricsServiceInitListener metricsServiceInitListener(
             MeterRegistry registry,
             ObjectProvider<ObservationRegistry> observationRegistry,
