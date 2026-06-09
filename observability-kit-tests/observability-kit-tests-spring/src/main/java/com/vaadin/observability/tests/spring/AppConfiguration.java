@@ -20,7 +20,8 @@ import com.vaadin.observability.spring.ObservabilityConfiguration;
 /**
  * Plain Spring (non-Boot) configuration that imports the Observability Kit
  * Spring wiring and provides a {@link MeterRegistry}. Component-scans the test
- * package so the views and the metrics servlet are picked up.
+ * package for Spring-managed beans; the {@code @WebServlet} metrics servlet is
+ * registered by the servlet container, not by Spring.
  */
 @Configuration
 @ComponentScan
