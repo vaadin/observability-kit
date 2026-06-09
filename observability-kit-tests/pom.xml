@@ -13,6 +13,7 @@
 
   <modules>
     <module>observability-kit-micrometer-tests</module>
+    <module>observability-kit-micrometer-spring-tests</module>
   </modules>
 
   <dependencyManagement>
