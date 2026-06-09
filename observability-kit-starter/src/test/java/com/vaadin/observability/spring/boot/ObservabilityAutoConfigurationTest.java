@@ -8,9 +8,12 @@
  */
 package com.vaadin.observability.spring.boot;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
+import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
@@ -39,6 +42,25 @@ class ObservabilityAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context)
                             .hasSingleBean(ObservabilitySettings.class);
+                    assertThat(context)
+                            .hasSingleBean(MetricsServiceInitListener.class);
+                });
+    }
+
+    /**
+     * Real-starter behavior: with Boot's Micrometer metrics auto-configuration
+     * on the classpath (as the starter pulls it in) and no manually supplied
+     * registry, a {@link MeterRegistry} is wired out of the box and our
+     * listener activates on top of it.
+     */
+    @Test
+    void metricsAutoConfigurationPresent_wiresRegistryAndListener() {
+        contextRunner
+                .withConfiguration(
+                        AutoConfigurations.of(MetricsAutoConfiguration.class,
+                                CompositeMeterRegistryAutoConfiguration.class))
+                .run(context -> {
+                    assertThat(context).hasSingleBean(MeterRegistry.class);
                     assertThat(context)
                             .hasSingleBean(MetricsServiceInitListener.class);
                 });

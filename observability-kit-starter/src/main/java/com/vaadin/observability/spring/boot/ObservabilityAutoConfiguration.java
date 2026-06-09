@@ -17,6 +17,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
+import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 
 import com.vaadin.flow.server.VaadinService;
@@ -28,13 +30,20 @@ import com.vaadin.observability.spring.SpringMetricsServiceInitListener;
  * Auto-configures the Observability Kit {@link MetricsServiceInitListener} when
  * a {@link MeterRegistry} is present in the Spring context.
  * <p>
+ * The starter pulls in Boot's Micrometer metrics auto-configuration, so a
+ * {@link MeterRegistry} is wired out of the box and this listener activates
+ * without further setup; the application only chooses the registry backend
+ * (Prometheus, OTLP, ...) and whether to expose Actuator endpoints. Ordered
+ * after {@link MetricsAutoConfiguration} and
+ * {@link CompositeMeterRegistryAutoConfiguration} so that registry is visible
+ * when this runs.
+ * <p>
  * Activation is gated by the {@code vaadin.observability.enabled} property
  * (default {@code true}); the listener is also skipped when the user supplies
  * their own {@link MetricsServiceInitListener} bean.
  */
-@AutoConfiguration(afterName = {
-        "org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration",
-        "org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration" })
+@AutoConfiguration(after = { MetricsAutoConfiguration.class,
+        CompositeMeterRegistryAutoConfiguration.class })
 @ConditionalOnClass({ MeterRegistry.class, VaadinService.class })
 @ConditionalOnProperty(prefix = "vaadin.observability", name = "enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(ObservabilityProperties.class)
