@@ -51,7 +51,7 @@
         <maven.javadoc.version>3.4.1</maven.javadoc.version>
         <maven.surefire.version>3.2.5</maven.surefire.version>
         <maven.failsafe.version>3.2.5</maven.failsafe.version>
-        <maven.war.version>3.4.0</maven.war.version>
+        <maven.war.version>3.5.1</maven.war.version>
         <spotless.plugin.version>3.5.1</spotless.plugin.version>
         <spotless.license-header>${maven.multiModuleProjectDirectory}/eclipse/vaadin-commercial-license-header.txt</spotless.license-header>
         <spotless.ratchetFrom/>
