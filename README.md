@@ -131,7 +131,8 @@ class ObservabilityConfig {
 
 ### Standalone (without Spring)
 
-Add the core module and install the kit once at startup, before the
+Add the core module and install the kit at servlet-context startup — for example
+from a `ServletContextListener` — so the registry is in place before the
 `VaadinService` initializes:
 
 ```xml
@@ -143,8 +144,16 @@ Add the core module and install the kit once at startup, before the
 ```
 
 ```java
-MeterRegistry registry = new SimpleMeterRegistry();
-ObservabilityKit.install(registry, ObservabilitySettings.builder().build());
+@WebListener
+public class ObservabilitySetup implements ServletContextListener {
+
+    @Override
+    public void contextInitialized(ServletContextEvent event) {
+        MeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilityKit.install(registry,
+                ObservabilitySettings.builder().build());
+    }
+}
 ```
 
 ## Configuration
