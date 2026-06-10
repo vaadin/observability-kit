@@ -1,6 +1,6 @@
 # Vaadin Observability Kit
 
-Production telemetry for [Vaadin Flow](https://vaadin.com) applications, built on
+Production telemetry for [Vaadin Flow](https://vaadin.com) applications, using
 [Micrometer](https://micrometer.io). The kit instruments the Vaadin runtime —
 sessions, UIs, navigation, requests, errors and real browser-side timing — and
 records everything into your application's `MeterRegistry`, so it shows up in
