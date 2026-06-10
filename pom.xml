@@ -51,6 +51,7 @@
         <maven.javadoc.version>3.4.1</maven.javadoc.version>
         <maven.surefire.version>3.2.5</maven.surefire.version>
         <maven.failsafe.version>3.2.5</maven.failsafe.version>
+        <maven.war.version>3.5.1</maven.war.version>
         <spotless.plugin.version>3.5.1</spotless.plugin.version>
         <spotless.license-header>${maven.multiModuleProjectDirectory}/eclipse/vaadin-commercial-license-header.txt</spotless.license-header>
         <spotless.ratchetFrom/>
@@ -180,6 +181,15 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${maven.failsafe.version}</version>
+                </plugin>
+                <plugin>
+                    <!-- vaadin-parent pins maven-war-plugin to 2.2, whose old
+                         Plexus runtime fails on Java 17+ ("Cannot access
+                         defaults field of Properties"). Override with a
+                         current version. -->
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-war-plugin</artifactId>
+                    <version>${maven.war.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>com.diffplug.spotless</groupId>
