@@ -37,7 +37,10 @@ class MetricsServiceInitListenerTracesTest {
                 new SimpleMeterRegistry(), obs,
                 ObservabilitySettings.builder().build());
 
-        VaadinService service = Mockito.mock(VaadinService.class);
+        VaadinService service = Mockito.mock(VaadinService.class,
+                Mockito.RETURNS_DEEP_STUBS);
+        Mockito.when(service.getDeploymentConfiguration().isProductionMode())
+                .thenReturn(true);
         ServiceInitEvent event = new ServiceInitEvent(service);
         Executor original = Runnable::run;
         event.setExecutor(original);
@@ -57,7 +60,10 @@ class MetricsServiceInitListenerTracesTest {
                 new SimpleMeterRegistry(), obs,
                 ObservabilitySettings.builder().traces(false).build());
 
-        VaadinService service = Mockito.mock(VaadinService.class);
+        VaadinService service = Mockito.mock(VaadinService.class,
+                Mockito.RETURNS_DEEP_STUBS);
+        Mockito.when(service.getDeploymentConfiguration().isProductionMode())
+                .thenReturn(true);
         ServiceInitEvent event = new ServiceInitEvent(service);
         Executor original = Runnable::run;
         event.setExecutor(original);
@@ -74,7 +80,10 @@ class MetricsServiceInitListenerTracesTest {
                 new SimpleMeterRegistry(), null,
                 ObservabilitySettings.builder().build());
 
-        VaadinService service = Mockito.mock(VaadinService.class);
+        VaadinService service = Mockito.mock(VaadinService.class,
+                Mockito.RETURNS_DEEP_STUBS);
+        Mockito.when(service.getDeploymentConfiguration().isProductionMode())
+                .thenReturn(true);
         ServiceInitEvent event = new ServiceInitEvent(service);
         Executor original = Runnable::run;
         event.setExecutor(original);
