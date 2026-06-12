@@ -21,6 +21,16 @@
             <groupId>com.vaadin</groupId>
             <artifactId>flow-server</artifactId>
         </dependency>
+        <!--
+            Dev-only: provides the DevToolsMessageHandler SPI used by the
+            Copilot metrics panel. Optional so it is never pulled onto an
+            application's production runtime classpath.
+        -->
+        <dependency>
+            <groupId>com.vaadin</groupId>
+            <artifactId>vaadin-dev-server</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
