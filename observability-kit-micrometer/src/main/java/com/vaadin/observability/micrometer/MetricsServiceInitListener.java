@@ -14,6 +14,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
+import com.vaadin.flow.function.DeploymentConfiguration;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
@@ -155,7 +156,20 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         ObservationRegistry or = observationRegistry != null
                 ? observationRegistry
                 : ObservabilityKit.getObservationRegistry();
+        // Record the bound registry so the dev-mode Copilot metrics panel can
+        // read the live meters regardless of deployment type.
+        ObservabilityKit.setActiveMeterRegistry(r);
         bind(event, r, or, s);
+        DeploymentConfiguration configuration = event.getSource()
+                .getDeploymentConfiguration();
+        boolean productionMode = configuration != null
+                ? configuration.isProductionMode()
+                : true;
+        if (!productionMode) {
+            event.getSource()
+                    .addUIInitListener(uiEvent -> ObservabilityDevToolsClient
+                            .inject(uiEvent.getUI()));
+        }
     }
 
     void bind(ServiceInitEvent event, MeterRegistry registry,
