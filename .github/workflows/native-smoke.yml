@@ -1,0 +1,110 @@
+name: Native Image Smoke Test
+
+# Builds the observability-kit-starter test application as a GraalVM native
+# image and runs the existing BootMetricsIT browser test against the native
+# server. This verifies the starter survives AOT / closed-world compilation:
+# the ServiceLoader-discovered MetricsServiceInitListener must still be
+# instantiated and the vaadin.* meters must still reach the Prometheus endpoint.
+#
+# Native builds are slow (~10-20 min) and need GraalVM, so this does not run on
+# every push. It runs nightly, on demand, and on PRs that touch the kit sources
+# or the native build wiring.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:17 UTC nightly — off the top of the hour to avoid scheduler congestion.
+    - cron: '17 3 * * *'
+  pull_request:
+    paths:
+      - 'observability-kit-micrometer/src/**'
+      - 'observability-kit-spring/src/**'
+      - 'observability-kit-starter/src/**'
+      - 'observability-kit-tests/observability-kit-tests-starter/**'
+      - '.github/workflows/native-smoke.yml'
+
+concurrency:
+  group: native-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-smoke:
+    name: Build native image and verify metrics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets
+        if: ${{ !github.event.pull_request.head.repo.fork }}
+        run: |
+          [ -z "${{secrets.VAADIN_PRO_KEY}}" ] \
+            && echo "🚫 **VAADIN_PRO_KEY** is not defined, check that **${{github.repository}}** repo has a valid secret" \
+            | tee -a $GITHUB_STEP_SUMMARY && exit 1 || exit 0
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM 21
+        uses: graalvm/setup-graalvm@v1
+        with:
+          distribution: graalvm
+          java-version: '21'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: maven
+
+      - name: Set TB License
+        run: |
+          TB_LICENSE=${{secrets.VAADIN_PRO_KEY}}
+          mkdir -p ~/.vaadin/
+          echo '{"username":"'$(echo $TB_LICENSE | cut -d / -f1)'","proKey":"'$(echo $TB_LICENSE | cut -d / -f2)'"}' > ~/.vaadin/proKey
+
+      # Install the kit modules (micrometer, spring, starter) to the local repo.
+      # skipITs keeps the observability-kit-tests reactor out of this build.
+      - name: Install kit modules
+        run: mvn -B -ntp -DskipTests -DskipITs install -pl observability-kit-starter -am
+
+      # Build the test app as a native image (production frontend + Spring AOT +
+      # native-image). `package` stops before the integration-test phase, so the
+      # JVM start/stop executions do not fire here.
+      - name: Build native image
+        run: >
+          mvn -B -ntp -Pproduction,native -DskipTests package
+          -pl observability-kit-tests/observability-kit-tests-common,observability-kit-tests/observability-kit-tests-starter
+
+      - name: Start native server
+        working-directory: observability-kit-tests/observability-kit-tests-starter
+        run: |
+          ./target/observability-kit-tests-starter \
+            -Dvaadin.productionMode=true --server.port=8080 \
+            > native-server.log 2>&1 &
+          echo "NATIVE_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for server
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/actuator/prometheus > /dev/null; then
+              echo "Native server is up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "🚫 Native server did not become ready within 60s"
+          exit 1
+
+      # Run the existing browser IT against the native server. Failsafe is
+      # invoked directly so it uses the already-running native binary instead of
+      # booting the JVM app via the start/stop executions.
+      - name: Run smoke test against native server
+        run: >
+          mvn -B -ntp -pl observability-kit-tests/observability-kit-tests-starter
+          failsafe:integration-test failsafe:verify -DserverPort=8080
+
+      - name: Stop native server
+        if: always()
+        run: '[ -n "$NATIVE_PID" ] && kill "$NATIVE_PID" || true'
+
+      - name: Upload native server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-server-log
+          path: observability-kit-tests/observability-kit-tests-starter/native-server.log
+          if-no-files-found: ignore
