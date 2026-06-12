@@ -23,6 +23,10 @@
   // Last snapshot received from the server, shared so a freshly opened panel
   // can render immediately before its first refresh round-trips.
   var latest = null;
+  // Per-meter ring buffer of recent trend values, keyed by name+tags. Survives
+  // panel close/reopen (module scope) so the sparkline keeps its history.
+  var history = {};
+  var HISTORY_MAX = 20;
 
   function num(value, decimals) {
     if (typeof value !== 'number' || !isFinite(value)) {
@@ -44,6 +48,81 @@
         return k + '=' + tags[k];
       })
       .join(', ');
+  }
+
+  // Stable identity for a meter across polls (name + its tag values).
+  function meterKey(meter) {
+    return meter.name + '|' + formatTags(meter.tags);
+  }
+
+  // The single scalar plotted in the sparkline for this meter.
+  function trendValue(meter) {
+    if (typeof meter.mean === 'number') {
+      return meter.mean;
+    }
+    if (typeof meter.value === 'number') {
+      return meter.value;
+    }
+    if (typeof meter.count === 'number') {
+      return meter.count;
+    }
+    if (meter.measurements && meter.measurements.length) {
+      return meter.measurements[0].value;
+    }
+    return null;
+  }
+
+  // Append this poll's trend value to each meter's ring buffer.
+  function recordHistory(meters) {
+    (meters || []).forEach(function (meter) {
+      var v = trendValue(meter);
+      if (typeof v !== 'number' || !isFinite(v)) {
+        return;
+      }
+      var key = meterKey(meter);
+      var buf = history[key] || (history[key] = []);
+      buf.push(v);
+      if (buf.length > HISTORY_MAX) {
+        buf.shift();
+      }
+    });
+  }
+
+  // Inline SVG sparkline for a series of values.
+  function sparkline(values) {
+    if (!values || values.length < 2) {
+      return '';
+    }
+    var w = 84;
+    var h = 18;
+    var pad = 2;
+    var min = Math.min.apply(null, values);
+    var max = Math.max.apply(null, values);
+    var range = max - min || 1;
+    var n = values.length;
+    var pts = values
+      .map(function (v, i) {
+        var x = pad + (i / (n - 1)) * (w - 2 * pad);
+        var y = h - pad - ((v - min) / range) * (h - 2 * pad);
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      })
+      .join(' ');
+    return (
+      '<svg width="' +
+      w +
+      '" height="' +
+      h +
+      '" viewBox="0 0 ' +
+      w +
+      ' ' +
+      h +
+      '" style="display:block;color:var(--lumo-primary-color,#1676f3)">' +
+      '<polyline points="' +
+      pts +
+      '" fill="none" stroke="currentColor" stroke-width="1.25" ' +
+      'stroke-linejoin="round" stroke-linecap="round"/>' +
+      '</svg>'
+    );
   }
 
   // Renders a meter's value cell from the type-aware fields sent by the server.
@@ -110,6 +189,7 @@
     handleMessage(message) {
       if (message && message.command === COMMAND_METRICS) {
         latest = message.data;
+        recordHistory(latest.meters);
         this.render();
         return true;
       }
@@ -139,11 +219,14 @@
             : '');
         return (
           '<tr style="border-bottom:1px solid rgba(128,128,128,.15)">' +
-          '<td style="padding:5px 8px;vertical-align:top">' +
+          '<td style="padding:5px 8px;vertical-align:top;word-break:break-word">' +
           nameCell +
           '</td>' +
           '<td style="padding:5px 8px;vertical-align:top;white-space:nowrap;font-variant-numeric:tabular-nums">' +
           formatMeterValue(meter) +
+          '</td>' +
+          '<td style="padding:5px 8px;vertical-align:middle;width:84px">' +
+          sparkline(history[meterKey(meter)]) +
           '</td>' +
           '</tr>'
         );
@@ -163,6 +246,7 @@
       '<thead><tr style="text-align:left;color:#888;border-bottom:1px solid rgba(128,128,128,.3)">' +
       '<th style="padding:4px 8px">Meter</th>' +
       '<th style="padding:4px 8px">Value</th>' +
+      '<th style="padding:4px 8px">Trend</th>' +
       '</tr></thead>' +
       '<tbody>' +
       rows +
@@ -194,8 +278,8 @@
         position: {
           top: 80,
           left: 80,
-          width: 540,
-          height: 440
+          width: 720,
+          height: 460
         },
         toolbarOptions: {
           iconKey: 'barChart',
