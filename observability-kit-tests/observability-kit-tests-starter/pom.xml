@@ -177,7 +177,6 @@
       <id>native</id>
       <properties>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
-        <java.version>25</java.version>
       </properties>
       <build>
         <plugins>
