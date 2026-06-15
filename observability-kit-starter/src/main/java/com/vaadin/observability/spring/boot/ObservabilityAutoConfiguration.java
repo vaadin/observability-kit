@@ -8,9 +8,12 @@
  */
 package com.vaadin.observability.spring.boot;
 
+import javax.sql.DataSource;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -20,6 +23,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
 import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Role;
 
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
@@ -65,5 +69,21 @@ public class ObservabilityAutoConfiguration {
             ObservabilitySettings settings) {
         return new SpringMetricsServiceInitListener(registry,
                 observationRegistry.getIfAvailable(), settings);
+    }
+
+    /**
+     * Wraps {@link DataSource} beans to record {@code vaadin.db.fetch.rows}.
+     * Opt-in via {@code vaadin.observability.database=true} since it reaches
+     * outside the Vaadin runtime and adds a small per-row cost. Declared as an
+     * infrastructure-role {@code static} method so the post-processor is
+     * created early enough to wrap the {@code DataSource}.
+     */
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    @ConditionalOnClass(DataSource.class)
+    @ConditionalOnProperty(prefix = "vaadin.observability", name = "database", havingValue = "true")
+    static DataSourceFetchMetricsBeanPostProcessor dataSourceFetchMetricsBeanPostProcessor(
+            ObjectProvider<MeterRegistry> meterRegistry) {
+        return new DataSourceFetchMetricsBeanPostProcessor(meterRegistry);
     }
 }

@@ -22,6 +22,7 @@ public final class ObservabilitySettings {
     private final boolean client;
     private final boolean traces;
     private final boolean tracesSessionId;
+    private final boolean database;
     private final int routeCardinalityLimit;
     private final int clientRatePerSession;
 
@@ -34,6 +35,7 @@ public final class ObservabilitySettings {
         this.client = builder.client;
         this.traces = builder.traces;
         this.tracesSessionId = builder.tracesSessionId;
+        this.database = builder.database;
         this.routeCardinalityLimit = builder.routeCardinalityLimit;
         this.clientRatePerSession = builder.clientRatePerSession;
     }
@@ -74,6 +76,10 @@ public final class ObservabilitySettings {
         return tracesSessionId;
     }
 
+    public boolean isDatabase() {
+        return database;
+    }
+
     public int getRouteCardinalityLimit() {
         return routeCardinalityLimit;
     }
@@ -93,6 +99,7 @@ public final class ObservabilitySettings {
         private boolean client = true;
         private boolean traces = true;
         private boolean tracesSessionId = false;
+        private boolean database = false;
         private int routeCardinalityLimit = 200;
         private int clientRatePerSession = 100;
 
@@ -136,6 +143,11 @@ public final class ObservabilitySettings {
 
         public Builder tracesSessionId(boolean tracesSessionId) {
             this.tracesSessionId = tracesSessionId;
+            return this;
+        }
+
+        public Builder database(boolean database) {
+            this.database = database;
             return this;
         }
 

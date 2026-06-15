@@ -179,6 +179,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.requests` | `true` | Server-side request and RPC timing. |
 | `vaadin.observability.errors` | `true` | Error counters. |
 | `vaadin.observability.client` | `true` | Browser-side timing collected from the client. |
+| `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route (Spring Boot starter only). |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the session id as a span attribute. |
 | `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. |
@@ -218,6 +219,29 @@ ObservabilitySettings.builder()
 | `vaadin.client.errors` | Counter | Errors reported by the browser. |
 | `vaadin.client.dropped` | Counter | Client samples dropped before recording. |
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
+| `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
+
+## Database fetch size
+
+With the Spring Boot starter you can have the kit watch how many rows your
+queries return, without touching application code. Enable it with:
+
+```properties
+vaadin.observability.database=true
+```
+
+Every `DataSource` bean is then wrapped so each JDBC `ResultSet` reports its row
+count into the `vaadin.db.fetch.rows` distribution summary, **tagged by the
+Vaadin `route`** that triggered the fetch — so you can see which view issues the
+large reads. Watch the p95/p99 of that summary, and alert on it in your metrics
+backend (for example a Prometheus rule on `vaadin_db_fetch_rows`) to catch
+runaway result sets in production.
+
+This is off by default: it reaches outside the Vaadin runtime into the
+persistence layer and adds a small per-row cost. It covers all JDBC access
+(Spring Data, `JdbcTemplate`, raw JDBC) that flows through a managed
+`DataSource`; row counting is best-effort and attributes to `_unknown` when no
+view is active (for example background tasks).
 
 ## Tracing
 
