@@ -38,22 +38,13 @@
       <version>${flow.version}</version>
     </dependency>
 
-    <!-- Spring Boot web (Jetty, not Tomcat) -->
+    <!-- Spring Boot web (Tomcat) -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-starter-tomcat</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-jetty</artifactId>
-    </dependency>
 
+    </dependency>
+    
     <!-- Actuator + Prometheus registry -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -186,6 +177,7 @@
       <id>native</id>
       <properties>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
+        <java.version>25</java.version>
       </properties>
       <build>
         <plugins>
