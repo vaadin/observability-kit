@@ -60,6 +60,14 @@ public class DatabaseFetchMetricsIT extends AbstractIT {
         assertThat(labeledValue(body, "vaadin_db_fetch_rows_max", "db"))
                 .as("vaadin_db_fetch_rows_max{route=\"db\"}")
                 .isGreaterThanOrEqualTo(NumbersInitializer.TOTAL);
+        // Each query also opens a vaadin.db.query observation (the span shown
+        // in
+        // Jaeger when a tracing bridge is present); even without a bridge the
+        // Observation API produces a route-tagged duration timer, so its count
+        // must reflect the two queries we issued from the db view.
+        assertThat(labeledValue(body, "vaadin_db_query_seconds_count", "db"))
+                .as("vaadin_db_query_seconds_count{route=\"db\"}")
+                .isGreaterThanOrEqualTo(2.0);
     }
 
     private void waitUntilResult(String expected) {

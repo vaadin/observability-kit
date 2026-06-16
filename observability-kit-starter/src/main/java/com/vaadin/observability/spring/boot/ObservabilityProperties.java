@@ -30,6 +30,7 @@ public class ObservabilityProperties {
     private boolean traces = true;
     private boolean tracesSessionId = false;
     private boolean database = false;
+    private boolean databaseStatement = false;
     private int routeCardinalityLimit = 200;
     private int clientRatePerSession = 100;
 
@@ -113,6 +114,14 @@ public class ObservabilityProperties {
         this.database = database;
     }
 
+    public boolean isDatabaseStatement() {
+        return databaseStatement;
+    }
+
+    public void setDatabaseStatement(boolean databaseStatement) {
+        this.databaseStatement = databaseStatement;
+    }
+
     public int getRouteCardinalityLimit() {
         return routeCardinalityLimit;
     }
@@ -141,7 +150,8 @@ public class ObservabilityProperties {
         return ObservabilitySettings.builder().sessions(sessions).uis(uis)
                 .navigation(navigation).requests(requests).errors(errors)
                 .client(client).traces(traces).tracesSessionId(tracesSessionId)
-                .database(database).routeCardinalityLimit(routeCardinalityLimit)
+                .database(database).databaseStatement(databaseStatement)
+                .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession).build();
     }
 }

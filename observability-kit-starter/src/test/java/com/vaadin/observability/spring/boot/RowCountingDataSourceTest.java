@@ -14,12 +14,18 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationHandler;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Test;
 
 import com.vaadin.observability.micrometer.MeterNames;
+import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -46,7 +52,7 @@ class RowCountingDataSourceTest {
         when(resultSet.next()).thenReturn(true, true, true, false);
 
         DataSource ds = new RowCountingDataSource(delegate,
-                new DatabaseFetchMetrics(registry));
+                new DatabaseFetchMetrics(registry), null);
         try (Connection c = ds.getConnection();
                 Statement s = c.createStatement();
                 ResultSet rs = s.executeQuery("select 1")) {
@@ -77,7 +83,7 @@ class RowCountingDataSourceTest {
         when(resultSet.next()).thenReturn(true, false);
 
         DataSource ds = new RowCountingDataSource(delegate,
-                new DatabaseFetchMetrics(registry));
+                new DatabaseFetchMetrics(registry), null);
         try (Connection c = ds.getConnection();
                 PreparedStatement ps = c.prepareStatement("select 1");
                 ResultSet rs = ps.executeQuery()) {
@@ -89,5 +95,56 @@ class RowCountingDataSourceTest {
         assertThat(
                 registry.find(MeterNames.DB_FETCH_ROWS).summary().totalAmount())
                 .isEqualTo(1.0);
+    }
+
+    @Test
+    void query_emitsSpanWithRowCountAndStatement() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement prepared = mock(PreparedStatement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(prepared);
+        when(prepared.executeQuery()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(true, true, false);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = new ArrayList<>();
+        observationRegistry.observationConfig()
+                .observationHandler(new ObservationHandler<>() {
+                    @Override
+                    public boolean supportsContext(Observation.Context c) {
+                        return true;
+                    }
+
+                    @Override
+                    public void onStop(Observation.Context c) {
+                        stopped.add(c);
+                    }
+                });
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true));
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement("SELECT * FROM x");
+                ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                // drain
+            }
+        }
+
+        assertThat(stopped).singleElement().satisfies(context -> {
+            assertThat(context.getName()).isEqualTo(ObservationNames.DB_QUERY);
+            assertThat(context
+                    .getHighCardinalityKeyValue(ObservationNames.KEY_DB_ROWS)
+                    .getValue()).isEqualTo("2");
+            assertThat(context.getHighCardinalityKeyValue(
+                    ObservationNames.KEY_DB_STATEMENT).getValue())
+                    .isEqualTo("SELECT * FROM x");
+            assertThat(context
+                    .getLowCardinalityKeyValue(ObservationNames.KEY_ROUTE)
+                    .getValue()).isEqualTo(MeterNames.ROUTE_UNKNOWN);
+        });
     }
 }

@@ -43,10 +43,13 @@ final class RowCountingDataSource implements DataSource {
 
     private final DataSource delegate;
     private final DatabaseFetchMetrics metrics;
+    private final DatabaseQuerySpans spans;
 
-    RowCountingDataSource(DataSource delegate, DatabaseFetchMetrics metrics) {
+    RowCountingDataSource(DataSource delegate, DatabaseFetchMetrics metrics,
+            DatabaseQuerySpans spans) {
         this.delegate = delegate;
         this.metrics = metrics;
+        this.spans = spans;
     }
 
     @Override
@@ -70,7 +73,7 @@ final class RowCountingDataSource implements DataSource {
                 new ConnectionHandler(connection));
     }
 
-    private Statement wrapStatement(Statement statement) {
+    private Statement wrapStatement(Statement statement, String sql) {
         if (statement == null) {
             return null;
         }
@@ -81,17 +84,18 @@ final class RowCountingDataSource implements DataSource {
                         : Statement.class;
         return (Statement) Proxy.newProxyInstance(
                 Statement.class.getClassLoader(), new Class<?>[] { iface },
-                new StatementHandler(statement));
+                new StatementHandler(statement, sql));
     }
 
-    private ResultSet wrapResultSet(ResultSet resultSet) {
+    private ResultSet wrapResultSet(ResultSet resultSet,
+            DatabaseQuerySpans.QuerySpan span) {
         if (resultSet == null) {
             return null;
         }
         return (ResultSet) Proxy.newProxyInstance(
                 ResultSet.class.getClassLoader(),
                 new Class<?>[] { ResultSet.class },
-                new ResultSetHandler(resultSet));
+                new ResultSetHandler(resultSet, span));
     }
 
     /**
@@ -119,7 +123,12 @@ final class RowCountingDataSource implements DataSource {
             Object result = RowCountingDataSource.invoke(connection, method,
                     args);
             if (result instanceof Statement statement) {
-                return wrapStatement(statement);
+                // prepareStatement/prepareCall carry the SQL up front; plain
+                // createStatement does not (its SQL arrives at executeQuery).
+                String sql = method.getName().startsWith("prepare")
+                        && args != null && args.length > 0
+                        && args[0] instanceof String s ? s : null;
+                return wrapStatement(statement, sql);
             }
             return result;
         }
@@ -127,30 +136,71 @@ final class RowCountingDataSource implements DataSource {
 
     private final class StatementHandler implements InvocationHandler {
         private final Statement statement;
+        /** SQL from prepareStatement/prepareCall, null for plain statements. */
+        private final String preparedSql;
+        /** Span for the most recent query, kept for the close() leak guard. */
+        private DatabaseQuerySpans.QuerySpan pending;
 
-        StatementHandler(Statement statement) {
+        StatementHandler(Statement statement, String preparedSql) {
             this.statement = statement;
+            this.preparedSql = preparedSql;
         }
 
         @Override
         public Object invoke(Object proxy, Method method, Object[] args)
                 throws Throwable {
-            Object result = RowCountingDataSource.invoke(statement, method,
-                    args);
+            String name = method.getName();
+            // Start the span before executing so it brackets the DB round trip;
+            // it is stopped when the returned result set closes.
+            DatabaseQuerySpans.QuerySpan span = spans != null
+                    && name.equals("executeQuery") ? spans.start(sqlFor(args))
+                            : null;
+            Object result;
+            try {
+                result = RowCountingDataSource.invoke(statement, method, args);
+            } catch (Throwable t) {
+                if (span != null) {
+                    span.stop(-1);
+                }
+                throw t;
+            }
             if (result instanceof ResultSet resultSet) {
-                return wrapResultSet(resultSet);
+                if (span != null) {
+                    pending = span;
+                }
+                return wrapResultSet(resultSet, span);
+            }
+            if (span != null) {
+                // executeQuery returned no result set (unusual) — don't leak.
+                span.stop(-1);
+            }
+            if (name.equals("close") && pending != null) {
+                // Result set never closed: close the span so it isn't orphaned.
+                pending.stop(-1);
+                pending = null;
             }
             return result;
+        }
+
+        private String sqlFor(Object[] args) {
+            if (args != null && args.length > 0
+                    && args[0] instanceof String s) {
+                return s;
+            }
+            return preparedSql;
         }
     }
 
     private final class ResultSetHandler implements InvocationHandler {
         private final ResultSet resultSet;
+        private final DatabaseQuerySpans.QuerySpan span;
         private long rows;
         private boolean recorded;
 
-        ResultSetHandler(ResultSet resultSet) {
+        ResultSetHandler(ResultSet resultSet,
+                DatabaseQuerySpans.QuerySpan span) {
             this.resultSet = resultSet;
+            this.span = span;
         }
 
         @Override
@@ -176,6 +226,9 @@ final class RowCountingDataSource implements DataSource {
             if (!recorded) {
                 recorded = true;
                 metrics.recordFetch(rows);
+                if (span != null) {
+                    span.stop(rows);
+                }
             }
         }
     }

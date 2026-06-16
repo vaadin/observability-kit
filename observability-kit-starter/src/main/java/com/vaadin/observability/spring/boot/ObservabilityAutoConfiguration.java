@@ -83,7 +83,10 @@ public class ObservabilityAutoConfiguration {
     @ConditionalOnClass(DataSource.class)
     @ConditionalOnProperty(prefix = "vaadin.observability", name = "database", havingValue = "true")
     static DataSourceFetchMetricsBeanPostProcessor dataSourceFetchMetricsBeanPostProcessor(
-            ObjectProvider<MeterRegistry> meterRegistry) {
-        return new DataSourceFetchMetricsBeanPostProcessor(meterRegistry);
+            ObjectProvider<MeterRegistry> meterRegistry,
+            ObjectProvider<ObservationRegistry> observationRegistry,
+            ObjectProvider<ObservabilitySettings> settings) {
+        return new DataSourceFetchMetricsBeanPostProcessor(meterRegistry,
+                observationRegistry, settings);
     }
 }
