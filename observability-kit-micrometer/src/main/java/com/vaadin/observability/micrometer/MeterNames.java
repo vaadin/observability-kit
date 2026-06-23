@@ -63,6 +63,27 @@ public final class MeterNames {
     /** Tag key: RPC invocation type. */
     public static final String TAG_TYPE = "type";
 
+    /**
+     * Counter: UIDL message recovery events observed on incoming requests.
+     * Tagged by {@link #TAG_TYPE} with {@link #RESYNC_TYPE_RESEND} or
+     * {@link #RESYNC_TYPE_RESYNC}.
+     */
+    public static final String RESYNC = "vaadin.resync";
+
+    /**
+     * {@link #TAG_TYPE} value for a duplicate message the client re-sent
+     * because it never received the previous response; the server replays its
+     * cached response.
+     */
+    public static final String RESYNC_TYPE_RESEND = "resend";
+
+    /**
+     * {@link #TAG_TYPE} value for a full client-requested resynchronization
+     * (the client gave up waiting for a missing server message and asked for a
+     * full UI-state rebuild).
+     */
+    public static final String RESYNC_TYPE_RESYNC = "resync";
+
     private MeterNames() {
     }
 }

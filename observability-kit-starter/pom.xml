@@ -40,6 +40,15 @@
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
+        <!-- Needed at compile time to reference the servlet Filter registered
+             by ResyncDetectionFilter; provided by the servlet container at
+             runtime. -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>${servlet.api.version}</version>
+            <scope>provided</scope>
+        </dependency>
 
         <!-- Test -->
         <dependency>

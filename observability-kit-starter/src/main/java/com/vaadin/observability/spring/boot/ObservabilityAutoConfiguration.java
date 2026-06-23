@@ -19,11 +19,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
 import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.Ordered;
 
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+import com.vaadin.observability.micrometer.ResyncDetectionFilter;
 import com.vaadin.observability.spring.SpringMetricsServiceInitListener;
 
 /**
@@ -65,5 +68,25 @@ public class ObservabilityAutoConfiguration {
             ObservabilitySettings settings) {
         return new SpringMetricsServiceInitListener(registry,
                 observationRegistry.getIfAvailable(), settings);
+    }
+
+    /**
+     * Registers the prototype {@link ResyncDetectionFilter}, which observes
+     * UIDL message resends and client-requested resynchronizations by
+     * inspecting incoming UIDL request bodies. Runs at highest precedence so
+     * the body is buffered before any other filter consumes it, and gated by
+     * {@code vaadin.observability.resync} (default {@code true}).
+     */
+    @Bean
+    @ConditionalOnBean(MeterRegistry.class)
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(prefix = "vaadin.observability", name = "resync", havingValue = "true", matchIfMissing = true)
+    FilterRegistrationBean<ResyncDetectionFilter> resyncDetectionFilter(
+            MeterRegistry registry) {
+        FilterRegistrationBean<ResyncDetectionFilter> registration = new FilterRegistrationBean<>(
+                new ResyncDetectionFilter(registry));
+        registration.addUrlPatterns("/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
     }
 }

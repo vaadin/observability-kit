@@ -27,6 +27,7 @@ public class ObservabilityProperties {
     private boolean requests = true;
     private boolean errors = true;
     private boolean client = true;
+    private boolean resync = true;
     private boolean traces = true;
     private boolean tracesSessionId = false;
     private int routeCardinalityLimit = 200;
@@ -88,6 +89,14 @@ public class ObservabilityProperties {
         this.client = client;
     }
 
+    public boolean isResync() {
+        return resync;
+    }
+
+    public void setResync(boolean resync) {
+        this.resync = resync;
+    }
+
     public boolean isTraces() {
         return traces;
     }
@@ -131,7 +140,8 @@ public class ObservabilityProperties {
     public ObservabilitySettings toSettings() {
         return ObservabilitySettings.builder().sessions(sessions).uis(uis)
                 .navigation(navigation).requests(requests).errors(errors)
-                .client(client).traces(traces).tracesSessionId(tracesSessionId)
+                .client(client).resync(resync).traces(traces)
+                .tracesSessionId(tracesSessionId)
                 .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession).build();
     }
