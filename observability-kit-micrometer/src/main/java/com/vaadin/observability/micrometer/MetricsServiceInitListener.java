@@ -13,6 +13,8 @@ import java.util.Objects;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
@@ -43,6 +45,9 @@ import com.vaadin.observability.micrometer.trace.TracingExecutor;
  * across {@code UI.access(...)} boundaries.
  */
 public class MetricsServiceInitListener implements VaadinServiceInitListener {
+
+    private static final Logger LOGGER = LoggerFactory
+            .getLogger(MetricsServiceInitListener.class);
 
     private final MeterRegistry meterRegistry;
     private final ObservationRegistry observationRegistry;
@@ -150,6 +155,16 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         ObservabilitySettings s = settings != null ? settings
                 : ObservabilityKit.getSettings();
         if (r == null || s == null) {
+            return;
+        }
+        boolean productionMode = event.getSource().getDeploymentConfiguration()
+                .isProductionMode();
+        if (!ObservabilityLicense.isLicensed(productionMode)) {
+            LOGGER.warn(
+                    "No valid {} license found. Observability Kit instrumentation "
+                            + "will not be registered and no telemetry will be collected. "
+                            + "See https://vaadin.com/commercial-license-and-service-terms",
+                    ObservabilityLicense.PRODUCT_NAME);
             return;
         }
         ObservationRegistry or = observationRegistry != null
