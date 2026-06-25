@@ -60,6 +60,19 @@ public final class ObservationNames {
     /** Observation/span name for a server-side RPC invocation. */
     public static final String RPC = "vaadin.rpc";
 
+    /** Observation/span name for a single JDBC query execution. */
+    public static final String DB_QUERY = "vaadin.db.query";
+
+    /** Span attribute: number of rows read from the query's result set. */
+    public static final String KEY_DB_ROWS = "db.rows";
+
+    /**
+     * Span attribute: the (parameterized) SQL statement. Only attached when
+     * statement capture is explicitly enabled, as it is higher cardinality and
+     * may be sensitive.
+     */
+    public static final String KEY_DB_STATEMENT = "db.statement";
+
     private ObservationNames() {
     }
 }
