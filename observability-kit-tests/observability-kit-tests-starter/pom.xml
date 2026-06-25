@@ -211,7 +211,7 @@
               <classesDirectory>${project.build.outputDirectory}</classesDirectory>
               <imageName>observability-kit-tests-starter</imageName>
               <mainClass>com.vaadin.observability.tests.starter.Application</mainClass>
-              <!-- Pull in upstream (Spring, Jetty, Micrometer, ...) reachability
+              <!-- Pull in upstream (Spring, Tomcat, Micrometer, ...) reachability
                    metadata so we only have to worry about the kit's own code. -->
               <metadataRepository>
                 <enabled>true</enabled>
