@@ -28,6 +28,7 @@ import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,7 +80,10 @@ class MetricsServiceInitListenerLicenseTest {
             new MetricsServiceInitListener().serviceInit(event);
         }
 
-        verify(service).addUIInitListener(any(UIInitListener.class));
+        // Two UI init listeners in development mode: the UiMetricsBinder and
+        // the dev-tools Copilot panel injector (the latter is skipped in
+        // production - see productionMode_registersWithoutCheckingLicense).
+        verify(service, times(2)).addUIInitListener(any(UIInitListener.class));
         verify(event).addVaadinRequestInterceptor(
                 any(VaadinRequestInterceptor.class));
     }
