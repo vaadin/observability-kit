@@ -72,18 +72,26 @@
     return null;
   }
 
-  // Append this poll's trend value to each meter's ring buffer.
+  // Append this poll's trend value to each meter's ring buffer, and drop
+  // history for meters no longer reported so the map can't grow unbounded.
   function recordHistory(meters) {
+    var live = {};
     (meters || []).forEach(function (meter) {
+      var key = meterKey(meter);
+      live[key] = true;
       var v = trendValue(meter);
       if (typeof v !== 'number' || !isFinite(v)) {
         return;
       }
-      var key = meterKey(meter);
       var buf = history[key] || (history[key] = []);
       buf.push(v);
       if (buf.length > HISTORY_MAX) {
         buf.shift();
+      }
+    });
+    Object.keys(history).forEach(function (key) {
+      if (!live[key]) {
+        delete history[key];
       }
     });
   }
