@@ -25,6 +25,10 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.dom.Element;
+import com.vaadin.flow.dom.ElementFactory;
 import com.vaadin.flow.server.communication.RpcInvocationEvent;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
@@ -35,6 +39,7 @@ class RpcMetricsBinderTest {
 
         final List<String> names = new ArrayList<>();
         final List<Map<String, String>> tags = new ArrayList<>();
+        final List<Map<String, String>> highCardinalityTags = new ArrayList<>();
         final AtomicBoolean errored = new AtomicBoolean();
         Observation.Context lastContext;
 
@@ -47,6 +52,11 @@ class RpcMetricsBinderTest {
                 snap.put(kv.getKey(), kv.getValue());
             }
             tags.add(snap);
+            Map<String, String> highSnap = new HashMap<>();
+            for (KeyValue kv : ctx.getHighCardinalityKeyValues()) {
+                highSnap.put(kv.getKey(), kv.getValue());
+            }
+            highCardinalityTags.add(highSnap);
             if (ctx.getError() != null) {
                 errored.set(true);
             }
@@ -233,5 +243,140 @@ class RpcMetricsBinderTest {
                 "second invocation should record success outcome");
         Assertions.assertEquals(1L, successTimer.count(),
                 "error state must not bleed into next invocation");
+    }
+
+    @Test
+    void observationPathAddsEventNameAsHighCardinalitySpanAttribute() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(simpleRegistry))
+                .observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        Mockito.when(event.getType()).thenReturn("event");
+        Mockito.when(event.getName()).thenReturn("click");
+
+        binder.invocationStarted(event);
+        binder.invocationEnded(event);
+
+        Assertions.assertEquals("click",
+                recorder.highCardinalityTags.get(0)
+                        .get(ObservationNames.KEY_EVENT_NAME),
+                "span should carry the invocation name as a high-cardinality attribute");
+
+        // The event name must not leak into the Timer tags.
+        Assertions.assertFalse(
+                recorder.tags.get(0)
+                        .containsKey(ObservationNames.KEY_EVENT_NAME),
+                "event name must not be a low-cardinality Timer tag");
+        Timer timer = simpleRegistry.find(MeterNames.RPC_DURATION)
+                .tag(MeterNames.TAG_TYPE, "event")
+                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
+                .timer();
+        Assertions.assertNotNull(timer,
+                "Timer tags should remain type + outcome only");
+        Assertions.assertEquals(1L, timer.count());
+    }
+
+    @Test
+    void observationPathOmitsEventNameWhenNull() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(simpleRegistry))
+                .observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        Mockito.when(event.getType()).thenReturn("event");
+        Mockito.when(event.getName()).thenReturn(null);
+
+        binder.invocationStarted(event);
+        binder.invocationEnded(event);
+
+        Assertions.assertFalse(
+                recorder.highCardinalityTags.get(0)
+                        .containsKey(ObservationNames.KEY_EVENT_NAME),
+                "no event name attribute should be added when getName() is null");
+    }
+
+    @Test
+    void observationPathAddsComponentClassWhenNodeResolves() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(simpleRegistry))
+                .observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        // Build a real UI with an attached component so the binder can resolve
+        // the component class from the target node id.
+        UI ui = new UI();
+        Element element = ElementFactory.createDiv();
+        Component component = new Component(element) {
+        };
+        ui.getElement().appendChild(element);
+        int nodeId = element.getNode().getId();
+
+        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        Mockito.when(event.getType()).thenReturn("event");
+        Mockito.when(event.getUI()).thenReturn(ui);
+        Mockito.when(event.getNodeId()).thenReturn(nodeId);
+
+        binder.invocationStarted(event);
+        binder.invocationEnded(event);
+
+        Assertions.assertEquals(component.getClass().getName(),
+                recorder.highCardinalityTags.get(0)
+                        .get(ObservationNames.KEY_COMPONENT),
+                "span should carry the targeted component class as a high-cardinality attribute");
+        Assertions.assertFalse(
+                recorder.tags.get(0)
+                        .containsKey(ObservationNames.KEY_COMPONENT),
+                "component class must not be a low-cardinality Timer tag");
+    }
+
+    @Test
+    void observationPathOmitsComponentWhenNodeIdNegative() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(simpleRegistry))
+                .observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        Mockito.when(event.getType()).thenReturn("event");
+        Mockito.when(event.getNodeId()).thenReturn(-1);
+
+        binder.invocationStarted(event);
+        binder.invocationEnded(event);
+
+        Assertions.assertFalse(
+                recorder.highCardinalityTags.get(0)
+                        .containsKey(ObservationNames.KEY_COMPONENT),
+                "no component attribute should be added when the invocation targets no node");
     }
 }

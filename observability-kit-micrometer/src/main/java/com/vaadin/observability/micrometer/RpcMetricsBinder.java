@@ -8,11 +8,18 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.Optional;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.dom.Element;
+import com.vaadin.flow.internal.StateNode;
+import com.vaadin.flow.internal.StateTree;
 import com.vaadin.flow.server.communication.RpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
@@ -33,9 +40,16 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
  * <p>
- * Tags: {@code type} (RPC invocation type) and {@code outcome}
- * ({@code success}/{@code error}). The invocation name and node ID are
- * deliberately omitted because they are high-cardinality.
+ * Timer tags (low cardinality): {@code type} (RPC invocation type) and
+ * {@code outcome} ({@code success}/{@code error}). The invocation name and node
+ * ID are deliberately omitted from the Timer tags because they are
+ * high-cardinality.
+ * <p>
+ * When tracing is enabled, the span additionally carries the invocation name
+ * ({@link ObservationNames#KEY_EVENT_NAME}) and the targeted component class
+ * ({@link ObservationNames#KEY_COMPONENT}) as high-cardinality key-values.
+ * These attach to the span only and never become Timer tags, so they enrich
+ * traces without affecting metric cardinality.
  */
 final class RpcMetricsBinder implements RpcInvocationListener {
 
@@ -79,11 +93,57 @@ final class RpcMetricsBinder implements RpcInvocationListener {
                     .createNotStarted(MeterNames.RPC_DURATION,
                             observationRegistry)
                     .contextualName(ObservationNames.RPC + "." + type)
-                    .lowCardinalityKeyValue(MeterNames.TAG_TYPE, type).start();
+                    .lowCardinalityKeyValue(MeterNames.TAG_TYPE, type);
+
+            // Span-only enrichment: the invocation name (e.g. the DOM event
+            // name) and the targeted component class. Added as high-cardinality
+            // key-values so they never leak into the Timer tags.
+            String name = event.getName();
+            if (name != null) {
+                obs.highCardinalityKeyValue(ObservationNames.KEY_EVENT_NAME,
+                        name);
+            }
+            resolveComponentType(event)
+                    .ifPresent(component -> obs.highCardinalityKeyValue(
+                            ObservationNames.KEY_COMPONENT, component));
+
+            obs.start();
             observation.set(obs);
             observationScope.set(obs.openScope());
         } else {
             sample.set(Timer.start(registry));
+        }
+    }
+
+    /**
+     * Resolves the class name of the {@link Component} the invocation targets,
+     * by looking up the target {@code StateNode} in the UI's state tree and
+     * walking up to the nearest enclosing component. Returns
+     * {@link Optional#empty()} if the invocation does not target a node, the
+     * node is no longer attached, or no component can be resolved.
+     */
+    private static Optional<String> resolveComponentType(
+            RpcInvocationEvent event) {
+        int nodeId = event.getNodeId();
+        if (nodeId < 0) {
+            return Optional.empty();
+        }
+        UI ui = event.getUI();
+        if (ui == null) {
+            return Optional.empty();
+        }
+        try {
+            StateTree tree = ui.getInternals().getStateTree();
+            StateNode node = tree.getNodeById(nodeId);
+            if (node == null) {
+                return Optional.empty();
+            }
+            return Element.get(node).getComponent()
+                    .map(component -> component.getClass().getName());
+        } catch (RuntimeException e) {
+            // Resolution is best-effort enrichment; never let it break the
+            // invocation or the surrounding span.
+            return Optional.empty();
         }
     }
 
