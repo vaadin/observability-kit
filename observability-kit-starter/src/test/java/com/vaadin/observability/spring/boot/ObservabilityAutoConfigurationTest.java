@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.spring.boot;
 
+import javax.sql.DataSource;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -20,6 +22,7 @@ import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * Unit tests for {@link ObservabilityAutoConfiguration} using
@@ -135,6 +138,41 @@ class ObservabilityAutoConfigurationTest {
                             .hasSingleBean(ObservabilitySettings.class);
                     assertThat(context.getBean(ObservabilitySettings.class)
                             .isSessions()).isFalse();
+                });
+    }
+
+    /**
+     * Database monitoring is opt-in: with the default property a DataSource
+     * bean is left untouched and the post-processor is not registered.
+     */
+    @Test
+    void databaseMonitoringDisabledByDefault_dataSourceNotWrapped() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withBean(DataSource.class, () -> mock(DataSource.class))
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(
+                            DataSourceFetchMetricsBeanPostProcessor.class);
+                    assertThat(context.getBean(DataSource.class))
+                            .isNotInstanceOf(RowCountingDataSource.class);
+                });
+    }
+
+    /**
+     * With {@code vaadin.observability.database=true} the post-processor is
+     * registered and wraps the application's DataSource bean.
+     */
+    @Test
+    void databaseMonitoringEnabled_dataSourceWrapped() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withBean(DataSource.class, () -> mock(DataSource.class))
+                .withPropertyValues("vaadin.observability.database=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(
+                            DataSourceFetchMetricsBeanPostProcessor.class);
+                    assertThat(context.getBean(DataSource.class))
+                            .isInstanceOf(RowCountingDataSource.class);
                 });
     }
 
