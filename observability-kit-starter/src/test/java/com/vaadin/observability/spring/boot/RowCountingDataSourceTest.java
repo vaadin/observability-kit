@@ -147,4 +147,136 @@ class RowCountingDataSourceTest {
                     .getValue()).isEqualTo(MeterNames.ROUTE_UNKNOWN);
         });
     }
+
+    @Test
+    void generatedKeys_areNotCounted() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        ResultSet query = mock(ResultSet.class);
+        ResultSet keys = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.executeQuery(anyString())).thenReturn(query);
+        when(statement.getGeneratedKeys()).thenReturn(keys);
+        when(query.next()).thenReturn(true, true, true, false);
+        when(keys.next()).thenReturn(true, false);
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry), null);
+        try (Connection c = ds.getConnection();
+                Statement s = c.createStatement()) {
+            try (ResultSet rs = s.executeQuery("select 1")) {
+                while (rs.next()) {
+                    // drain
+                }
+            }
+            // Auto-generated keys are an auxiliary result set, not a query
+            // result, so iterating them must not affect the fetch distribution.
+            try (ResultSet rs = s.getGeneratedKeys()) {
+                while (rs.next()) {
+                    // drain
+                }
+            }
+        }
+
+        DistributionSummary summary = registry.find(MeterNames.DB_FETCH_ROWS)
+                .summary();
+        assertThat(summary.count()).isEqualTo(1);
+        assertThat(summary.totalAmount()).isEqualTo(3.0);
+    }
+
+    @Test
+    void executeThenGetResultSet_recordsRowsAndEmitsSpan() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.execute(anyString())).thenReturn(true);
+        when(statement.getResultSet()).thenReturn(resultSet);
+        when(resultSet.next()).thenReturn(true, true, false);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = new ArrayList<>();
+        observationRegistry.observationConfig()
+                .observationHandler(new ObservationHandler<>() {
+                    @Override
+                    public boolean supportsContext(Observation.Context c) {
+                        return true;
+                    }
+
+                    @Override
+                    public void onStop(Observation.Context c) {
+                        stopped.add(c);
+                    }
+                });
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true));
+        try (Connection c = ds.getConnection();
+                Statement s = c.createStatement()) {
+            s.execute("SELECT * FROM x");
+            try (ResultSet rs = s.getResultSet()) {
+                while (rs.next()) {
+                    // drain
+                }
+            }
+        }
+
+        assertThat(
+                registry.find(MeterNames.DB_FETCH_ROWS).summary().totalAmount())
+                .isEqualTo(2.0);
+        assertThat(stopped).singleElement().satisfies(context -> assertThat(
+                context.getHighCardinalityKeyValue(ObservationNames.KEY_DB_ROWS)
+                        .getValue())
+                .isEqualTo("2"));
+    }
+
+    @Test
+    void reExecuting_doesNotOrphanPreviousSpan() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement prepared = mock(PreparedStatement.class);
+        ResultSet first = mock(ResultSet.class);
+        ResultSet second = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(prepared);
+        when(prepared.executeQuery()).thenReturn(first, second);
+        when(second.next()).thenReturn(true, false);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = new ArrayList<>();
+        observationRegistry.observationConfig()
+                .observationHandler(new ObservationHandler<>() {
+                    @Override
+                    public boolean supportsContext(Observation.Context c) {
+                        return true;
+                    }
+
+                    @Override
+                    public void onStop(Observation.Context c) {
+                        stopped.add(c);
+                    }
+                });
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true));
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement("select 1")) {
+            // Re-execute before the first result set is closed; the driver
+            // implicitly closes it, so the first span must still be stopped.
+            ps.executeQuery();
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    // drain
+                }
+            }
+        }
+
+        assertThat(stopped).hasSize(2);
+    }
 }

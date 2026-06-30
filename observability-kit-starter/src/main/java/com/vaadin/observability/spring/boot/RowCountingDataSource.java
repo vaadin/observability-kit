@@ -28,11 +28,18 @@ import java.util.logging.Logger;
  * A {@link DataSource} wrapper that counts the rows read from every
  * {@link ResultSet} and reports each count to {@link DatabaseFetchMetrics}.
  * <p>
- * Connections, statements and result sets are wrapped with JDK dynamic proxies
- * that delegate every call straight through, intercepting only the few methods
- * that produce a {@link ResultSet} (to wrap it) and the result set's own
- * {@code next()}/{@code close()} (to count rows and emit the metric). No
+ * Connections and statements are wrapped with JDK dynamic proxies that delegate
+ * every call straight through, intercepting only the methods that produce a
+ * query {@link ResultSet} (to wrap it). The result set itself is wrapped with a
+ * hand-written {@link CountingResultSet} delegate — not a proxy — so the hot
+ * path ({@code next()} and per-column getters) makes direct calls without
+ * reflection, counting rows and emitting the metric on {@code close()}. No
  * third-party JDBC-proxy library is involved.
+ * <p>
+ * Only the result sets of {@code executeQuery()} and {@code execute()} (fetched
+ * via {@code getResultSet()}) are counted. Auxiliary result sets such as
+ * {@code getGeneratedKeys()} are left untouched so their tiny row counts do not
+ * skew the fetch distribution.
  * <p>
  * Counting is best-effort: a result set whose {@code close()} is never called
  * (an unusual driver/usage) is simply not recorded, and row scrolling via
@@ -92,10 +99,7 @@ final class RowCountingDataSource implements DataSource {
         if (resultSet == null) {
             return null;
         }
-        return (ResultSet) Proxy.newProxyInstance(
-                ResultSet.class.getClassLoader(),
-                new Class<?>[] { ResultSet.class },
-                new ResultSetHandler(resultSet, span));
+        return new CountingResultSet(resultSet, span, metrics);
     }
 
     /**
@@ -138,7 +142,12 @@ final class RowCountingDataSource implements DataSource {
         private final Statement statement;
         /** SQL from prepareStatement/prepareCall, null for plain statements. */
         private final String preparedSql;
-        /** Span for the most recent query, kept for the close() leak guard. */
+        /**
+         * Span for the in-flight query, not yet stopped. Stopped when its
+         * result set closes, when the statement is re-executed (the driver
+         * implicitly closes the prior result set), or by the close() leak
+         * guard.
+         */
         private DatabaseQuerySpans.QuerySpan pending;
 
         StatementHandler(Statement statement, String preparedSql) {
@@ -150,36 +159,73 @@ final class RowCountingDataSource implements DataSource {
         public Object invoke(Object proxy, Method method, Object[] args)
                 throws Throwable {
             String name = method.getName();
-            // Start the span before executing so it brackets the DB round trip;
-            // it is stopped when the returned result set closes.
-            DatabaseQuerySpans.QuerySpan span = spans != null
-                    && name.equals("executeQuery") ? spans.start(sqlFor(args))
-                            : null;
+            // executeQuery returns the result set directly; execute returns a
+            // boolean and the result set is fetched later via getResultSet.
+            boolean producesQuery = name.equals("executeQuery")
+                    || name.equals("execute");
+            // A new execution implicitly closes any result set still open on
+            // this statement, so stop the previous span first — its result-set
+            // close never reaches our proxy, and it would otherwise be
+            // orphaned.
+            if (producesQuery && pending != null) {
+                pending.stop(-1);
+                pending = null;
+            }
+            // Start the span before executing so it brackets the DB round trip.
+            DatabaseQuerySpans.QuerySpan span = spans != null && producesQuery
+                    ? spans.start(sqlFor(args))
+                    : null;
+            if (span != null) {
+                pending = span;
+            }
             Object result;
             try {
                 result = RowCountingDataSource.invoke(statement, method, args);
             } catch (Throwable t) {
                 if (span != null) {
                     span.stop(-1);
+                    pending = null;
                 }
                 throw t;
             }
-            if (result instanceof ResultSet resultSet) {
-                if (span != null) {
-                    pending = span;
+            switch (name) {
+            case "executeQuery" -> {
+                if (result instanceof ResultSet resultSet) {
+                    return wrapResultSet(resultSet, pending);
                 }
-                return wrapResultSet(resultSet, span);
+                // No result set (unusual) — don't leak the span.
+                stopPending();
             }
-            if (span != null) {
-                // executeQuery returned no result set (unusual) — don't leak.
-                span.stop(-1);
+            case "execute" -> {
+                // A false return means an update, not a query: close the span
+                // now, since no result set will be fetched.
+                if (Boolean.FALSE.equals(result)) {
+                    stopPending();
+                }
             }
-            if (name.equals("close") && pending != null) {
-                // Result set never closed: close the span so it isn't orphaned.
+            case "getResultSet" -> {
+                if (result instanceof ResultSet resultSet) {
+                    return wrapResultSet(resultSet, pending);
+                }
+            }
+            case "close" -> {
+                // Result set never closed: stop the span so it isn't orphaned.
+                stopPending();
+            }
+            default -> {
+                // getGeneratedKeys() and other ResultSet-returning methods are
+                // intentionally not wrapped — their rows are not query results
+                // and would skew the fetch distribution.
+            }
+            }
+            return result;
+        }
+
+        private void stopPending() {
+            if (pending != null) {
                 pending.stop(-1);
                 pending = null;
             }
-            return result;
         }
 
         private String sqlFor(Object[] args) {
@@ -188,48 +234,6 @@ final class RowCountingDataSource implements DataSource {
                 return s;
             }
             return preparedSql;
-        }
-    }
-
-    private final class ResultSetHandler implements InvocationHandler {
-        private final ResultSet resultSet;
-        private final DatabaseQuerySpans.QuerySpan span;
-        private long rows;
-        private boolean recorded;
-
-        ResultSetHandler(ResultSet resultSet,
-                DatabaseQuerySpans.QuerySpan span) {
-            this.resultSet = resultSet;
-            this.span = span;
-        }
-
-        @Override
-        public Object invoke(Object proxy, Method method, Object[] args)
-                throws Throwable {
-            Object result = RowCountingDataSource.invoke(resultSet, method,
-                    args);
-            switch (method.getName()) {
-            case "next" -> {
-                if (Boolean.TRUE.equals(result)) {
-                    rows++;
-                }
-            }
-            case "close" -> record();
-            default -> {
-                // pass-through
-            }
-            }
-            return result;
-        }
-
-        private void record() {
-            if (!recorded) {
-                recorded = true;
-                metrics.recordFetch(rows);
-                if (span != null) {
-                    span.stop(rows);
-                }
-            }
         }
     }
 

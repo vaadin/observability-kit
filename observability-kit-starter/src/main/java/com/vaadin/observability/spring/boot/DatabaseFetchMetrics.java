@@ -8,6 +8,9 @@
  */
 package com.vaadin.observability.spring.boot;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 
@@ -22,6 +25,13 @@ import com.vaadin.observability.micrometer.VaadinTelemetryContext;
 final class DatabaseFetchMetrics {
 
     private final MeterRegistry registry;
+    /**
+     * One summary per route, so the percentile-configured builder is not
+     * rebuilt on every fetch. Routes are already bounded by the cardinality
+     * limit (see {@code RouteTagResolver}), so this map cannot grow without
+     * bound.
+     */
+    private final Map<String, DistributionSummary> summaries = new ConcurrentHashMap<>();
 
     DatabaseFetchMetrics(MeterRegistry registry) {
         this.registry = registry;
@@ -38,10 +48,14 @@ final class DatabaseFetchMetrics {
         if (rows < 0) {
             return;
         }
-        DistributionSummary.builder(MeterNames.DB_FETCH_ROWS)
+        summaries.computeIfAbsent(VaadinTelemetryContext.currentRoute(),
+                this::newSummary).record(rows);
+    }
+
+    private DistributionSummary newSummary(String route) {
+        return DistributionSummary.builder(MeterNames.DB_FETCH_ROWS)
                 .description("Rows read from a JDBC result set")
-                .tag(MeterNames.TAG_ROUTE,
-                        VaadinTelemetryContext.currentRoute())
-                .publishPercentiles(0.95, 0.99).register(registry).record(rows);
+                .tag(MeterNames.TAG_ROUTE, route).publishPercentiles(0.95, 0.99)
+                .register(registry);
     }
 }
