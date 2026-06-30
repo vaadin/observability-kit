@@ -32,6 +32,16 @@ public final class ObservationNames {
     public static final String KEY_UI_ID = "ui.id";
     public static final String KEY_CLIENT_LOCATION = "vaadin.client.location";
 
+    /**
+     * No interaction applies (non-UIDL requests, or a UIDL request before a
+     * poll/navigation listener marks it). Kept as an explicit value so every
+     * {@code vaadin.request.duration} Timer carries the
+     * {@link #KEY_INTERACTION} tag key: Prometheus rejects same-named meters
+     * whose tag-key sets differ, so the key must be present on all requests,
+     * not just the ones that resolve to a concrete interaction.
+     */
+    public static final String INTERACTION_NONE = "none";
+
     /** A poll request triggered by a configured poll interval. */
     public static final String INTERACTION_POLL = "poll";
 

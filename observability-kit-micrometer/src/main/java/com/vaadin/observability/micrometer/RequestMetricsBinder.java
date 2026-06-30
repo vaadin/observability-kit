@@ -113,6 +113,13 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                     .lowCardinalityKeyValue(
                             ObservationNames.KEY_CLIENT_LOCATION,
                             clientLocation(request))
+                    // Always emit the interaction key so every
+                    // vaadin.request.duration Timer shares one tag-key set
+                    // (Prometheus rejects same-named meters with differing
+                    // keys). UIDL requests override this in requestEnd once a
+                    // poll/navigation listener has resolved the real kind.
+                    .lowCardinalityKeyValue(ObservationNames.KEY_INTERACTION,
+                            ObservationNames.INTERACTION_NONE)
                     .start();
             observation.set(obs);
             observationScope.set(obs.openScope());
