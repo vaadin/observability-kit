@@ -55,6 +55,16 @@
       <artifactId>micrometer-registry-prometheus</artifactId>
     </dependency>
 
+    <!-- JDBC + embedded H2, to exercise vaadin.db.fetch.rows end to end -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+    </dependency>
+
     <!-- Test dependencies -->
     <dependency>
       <groupId>com.vaadin</groupId>
@@ -126,6 +136,14 @@
             <goals>
               <goal>start</goal>
             </goals>
+            <configuration>
+              <!-- Enable the JDBC/H2 demo (DatabaseView, vaadin.db.fetch.rows)
+                   for the JVM browser ITs. The native build never activates
+                   this profile, so its image stays free of the DB stack. -->
+              <profiles>
+                <profile>db-demo</profile>
+              </profiles>
+            </configuration>
           </execution>
           <execution>
             <id>post-integration-test</id>

@@ -60,6 +60,13 @@ public final class MeterNames {
     /** Timer: server-side RPC invocation duration. */
     public static final String RPC_DURATION = "vaadin.rpc.duration";
 
+    /**
+     * DistributionSummary: number of rows read from a JDBC {@code ResultSet},
+     * tagged by {@link #TAG_ROUTE} of the Vaadin view that triggered the fetch.
+     * Recorded only when database monitoring is enabled.
+     */
+    public static final String DB_FETCH_ROWS = "vaadin.db.fetch.rows";
+
     /** Tag key: RPC invocation type. */
     public static final String TAG_TYPE = "type";
 

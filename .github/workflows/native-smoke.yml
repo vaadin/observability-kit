@@ -89,13 +89,17 @@ jobs:
           echo "🚫 Native server did not become ready within 60s"
           exit 1
 
-      # Run the existing browser IT against the native server. Failsafe is
-      # invoked directly so it uses the already-running native binary instead of
-      # booting the JVM app via the start/stop executions.
+      # Run the BootMetricsIT browser test against the native server. Failsafe
+      # is invoked directly so it uses the already-running native binary instead
+      # of booting the JVM app via the start/stop executions. The run is pinned
+      # to BootMetricsIT on purpose: other ITs here (e.g. DatabaseFetchMetricsIT)
+      # need the db-demo profile, which the native image deliberately omits, so
+      # they would fail against this server.
       - name: Run smoke test against native server
         run: >
           mvn -B -ntp -pl observability-kit-tests/observability-kit-tests-starter
           failsafe:integration-test failsafe:verify -DserverPort=8080
+          -Dit.test=BootMetricsIT
 
       - name: Stop native server
         if: always()

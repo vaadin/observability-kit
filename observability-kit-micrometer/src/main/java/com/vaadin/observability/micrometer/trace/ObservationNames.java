@@ -32,6 +32,16 @@ public final class ObservationNames {
     public static final String KEY_UI_ID = "ui.id";
     public static final String KEY_CLIENT_LOCATION = "vaadin.client.location";
 
+    /**
+     * No interaction applies (non-UIDL requests, or a UIDL request before a
+     * poll/navigation listener marks it). Kept as an explicit value so every
+     * {@code vaadin.request.duration} Timer carries the
+     * {@link #KEY_INTERACTION} tag key: Prometheus rejects same-named meters
+     * whose tag-key sets differ, so the key must be present on all requests,
+     * not just the ones that resolve to a concrete interaction.
+     */
+    public static final String INTERACTION_NONE = "none";
+
     /** A poll request triggered by a configured poll interval. */
     public static final String INTERACTION_POLL = "poll";
 
@@ -59,6 +69,19 @@ public final class ObservationNames {
 
     /** Observation/span name for a server-side RPC invocation. */
     public static final String RPC = "vaadin.rpc";
+
+    /** Observation/span name for a single JDBC query execution. */
+    public static final String DB_QUERY = "vaadin.db.query";
+
+    /** Span attribute: number of rows read from the query's result set. */
+    public static final String KEY_DB_ROWS = "db.rows";
+
+    /**
+     * Span attribute: the (parameterized) SQL statement. Only attached when
+     * statement capture is explicitly enabled, as it is higher cardinality and
+     * may be sensitive.
+     */
+    public static final String KEY_DB_STATEMENT = "db.statement";
 
     private ObservationNames() {
     }
