@@ -15,6 +15,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
+import com.vaadin.observability.micrometer.insights.ErrorExemplarBuffer;
+
 /**
  * Programmatic bootstrap for standalone (non-Spring) deployments. Call
  * {@link #install(MeterRegistry, ObservabilitySettings)} once at startup; the
@@ -35,6 +37,13 @@ public final class ObservabilityKit {
      * by the dev-mode Copilot metrics panel to read the live meters.
      */
     private static final AtomicReference<MeterRegistry> ACTIVE_METER_REGISTRY = new AtomicReference<>();
+
+    /**
+     * The error exemplar buffer instrumentation was bound to, recorded at
+     * {@code serviceInit} time like {@link #ACTIVE_METER_REGISTRY}. Read by the
+     * insights endpoint.
+     */
+    private static final AtomicReference<ErrorExemplarBuffer> ACTIVE_ERROR_EXEMPLARS = new AtomicReference<>();
 
     private ObservabilityKit() {
     }
@@ -83,6 +92,25 @@ public final class ObservabilityKit {
         return ACTIVE_METER_REGISTRY.get();
     }
 
+    /**
+     * Records the error exemplar buffer instrumentation was bound to. Called
+     * from {@code MetricsServiceInitListener} for all deployment types.
+     */
+    static void setActiveErrorExemplars(ErrorExemplarBuffer buffer) {
+        ACTIVE_ERROR_EXEMPLARS.set(buffer);
+    }
+
+    /**
+     * The error exemplar buffer instrumentation is currently recording into, or
+     * {@code null} if error backtracking has not been bound. Read by the
+     * insights endpoint.
+     *
+     * @return the active error exemplar buffer, or {@code null}
+     */
+    public static ErrorExemplarBuffer getActiveErrorExemplars() {
+        return ACTIVE_ERROR_EXEMPLARS.get();
+    }
+
     static ObservationRegistry getObservationRegistry() {
         return OBSERVATION_REGISTRY.get();
     }
@@ -97,5 +125,6 @@ public final class ObservabilityKit {
         OBSERVATION_REGISTRY.set(null);
         SETTINGS.set(null);
         ACTIVE_METER_REGISTRY.set(null);
+        ACTIVE_ERROR_EXEMPLARS.set(null);
     }
 }

@@ -20,6 +20,8 @@ import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
+import com.vaadin.observability.micrometer.insights.ErrorBacktrackCollector;
+import com.vaadin.observability.micrometer.insights.ErrorExemplarBuffer;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
 /**
@@ -209,6 +211,16 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         if (settings.isRequests()) {
             service.addRpcInvocationListener(new RpcMetricsBinder(registry,
                     observationRegistry, settings));
+        }
+
+        if (settings.isErrors()) {
+            // Retain failed user interactions so the insights endpoint can
+            // backtrack user-reported errors to a replicable interaction.
+            ErrorExemplarBuffer exemplars = new ErrorExemplarBuffer(
+                    ErrorExemplarBuffer.DEFAULT_CAPACITY);
+            service.addRpcInvocationListener(
+                    new ErrorBacktrackCollector(exemplars));
+            ObservabilityKit.setActiveErrorExemplars(exemplars);
         }
 
         if (settings.isTraces() && observationRegistry != null) {
