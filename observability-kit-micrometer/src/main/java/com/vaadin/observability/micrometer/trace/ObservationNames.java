@@ -82,6 +82,20 @@ public final class ObservationNames {
      * may be sensitive.
      */
     public static final String KEY_DB_STATEMENT = "db.statement";
+    /**
+     * High-cardinality span attribute: the human-readable invocation name (DOM
+     * event name, invoked method name, navigation location, ...). Span-only; it
+     * is never added as a Timer tag because of its cardinality.
+     */
+    public static final String KEY_EVENT_NAME = "vaadin.rpc.event";
+
+    /**
+     * High-cardinality span attribute: the class name of the Vaadin
+     * {@code Component} that the invocation targets, when it can be resolved
+     * from the target node. Span-only; it is never added as a Timer tag because
+     * of its cardinality.
+     */
+    public static final String KEY_COMPONENT = "vaadin.rpc.component";
 
     private ObservationNames() {
     }
