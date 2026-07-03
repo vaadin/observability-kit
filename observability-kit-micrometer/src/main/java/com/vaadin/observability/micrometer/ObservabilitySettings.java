@@ -20,6 +20,7 @@ public final class ObservabilitySettings {
     private final boolean requests;
     private final boolean errors;
     private final boolean client;
+    private final boolean resync;
     private final boolean traces;
     private final boolean tracesSessionId;
     private final boolean database;
@@ -34,6 +35,7 @@ public final class ObservabilitySettings {
         this.requests = builder.requests;
         this.errors = builder.errors;
         this.client = builder.client;
+        this.resync = builder.resync;
         this.traces = builder.traces;
         this.tracesSessionId = builder.tracesSessionId;
         this.database = builder.database;
@@ -70,6 +72,11 @@ public final class ObservabilitySettings {
         return client;
     }
 
+    /** Whether to observe UIDL message resends and resynchronizations. */
+    public boolean isResync() {
+        return resync;
+    }
+
     public boolean isTraces() {
         return traces;
     }
@@ -103,6 +110,7 @@ public final class ObservabilitySettings {
         private boolean requests = true;
         private boolean errors = true;
         private boolean client = true;
+        private boolean resync = true;
         private boolean traces = true;
         private boolean tracesSessionId = false;
         private boolean database = false;
@@ -140,6 +148,11 @@ public final class ObservabilitySettings {
 
         public Builder client(boolean client) {
             this.client = client;
+            return this;
+        }
+
+        public Builder resync(boolean resync) {
+            this.resync = resync;
             return this;
         }
 
