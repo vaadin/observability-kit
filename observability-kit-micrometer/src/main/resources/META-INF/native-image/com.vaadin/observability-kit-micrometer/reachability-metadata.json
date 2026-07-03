@@ -1,0 +1,10 @@
+{
+  "resources": [
+    {
+      "glob": "observability-kit.properties"
+    },
+    {
+      "glob": "META-INF/frontend/VaadinMetricsClient.js"
+    }
+  ]
+}

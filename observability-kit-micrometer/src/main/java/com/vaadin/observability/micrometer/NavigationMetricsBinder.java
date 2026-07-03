@@ -70,6 +70,12 @@ final class NavigationMetricsBinder
         UI ui = event.getUI();
         String route = routes.tagFor(event.getNavigationTarget());
         ComponentUtil.setData(ui, ROUTE_KEY, route);
+        // Persist the route up front (before the view renders) so
+        // out-of-runtime
+        // instrumentation (e.g. the DataSource fetch-size proxy) attributes
+        // even
+        // construction-time queries on this request thread to the target view.
+        VaadinTelemetryContext.setCurrentRoute(ui, route);
         if (useObservation()) {
             // Tell the enclosing request span this UIDL request navigated.
             RequestInteraction.mark(ObservationNames.INTERACTION_NAVIGATION);
