@@ -16,6 +16,7 @@ import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
@@ -138,7 +139,7 @@ final class RpcMetricsBinder implements RpcInvocationListener {
             if (node == null) {
                 return Optional.empty();
             }
-            return Element.get(node).getComponent()
+            return ComponentUtil.findParentComponent(Element.get(node))
                     .map(component -> component.getClass().getName());
         } catch (RuntimeException e) {
             // Resolution is best-effort enrichment; never let it break the

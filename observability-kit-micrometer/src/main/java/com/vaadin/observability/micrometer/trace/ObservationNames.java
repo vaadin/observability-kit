@@ -87,7 +87,7 @@ public final class ObservationNames {
      * event name, invoked method name, navigation location, ...). Span-only; it
      * is never added as a Timer tag because of its cardinality.
      */
-    public static final String KEY_EVENT_NAME = "vaadin.rpc.event_name";
+    public static final String KEY_EVENT_NAME = "vaadin.rpc.event";
 
     /**
      * High-cardinality span attribute: the class name of the Vaadin

@@ -354,6 +354,46 @@ class RpcMetricsBinderTest {
     }
 
     @Test
+    void observationPathResolvesEnclosingComponentForSubElement() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(simpleRegistry))
+                .observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        // Build a component whose root has a nested sub-element that is not
+        // itself mapped to a component. An RPC targeting the sub-element must
+        // resolve to the enclosing component by walking up the element tree.
+        UI ui = new UI();
+        Element root = ElementFactory.createDiv();
+        Component component = new Component(root) {
+        };
+        Element subElement = ElementFactory.createSpan();
+        root.appendChild(subElement);
+        ui.getElement().appendChild(root);
+        int nodeId = subElement.getNode().getId();
+
+        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        Mockito.when(event.getType()).thenReturn("event");
+        Mockito.when(event.getUI()).thenReturn(ui);
+        Mockito.when(event.getNodeId()).thenReturn(nodeId);
+
+        binder.invocationStarted(event);
+        binder.invocationEnded(event);
+
+        Assertions.assertEquals(component.getClass().getName(),
+                recorder.highCardinalityTags.get(0)
+                        .get(ObservationNames.KEY_COMPONENT),
+                "span should resolve the enclosing component for a sub-element target");
+    }
+
+    @Test
     void observationPathOmitsComponentWhenNodeIdNegative() {
         SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
         ObservationRegistry observationRegistry = ObservationRegistry.create();
