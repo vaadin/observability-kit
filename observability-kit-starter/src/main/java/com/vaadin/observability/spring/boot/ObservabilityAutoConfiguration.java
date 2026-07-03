@@ -30,8 +30,8 @@ import org.springframework.core.Ordered;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
-import com.vaadin.observability.micrometer.ResyncDetectionFilter;
 import com.vaadin.observability.spring.SpringMetricsServiceInitListener;
+import com.vaadin.observability.spring.SpringResyncDetectionFilter;
 
 /**
  * Auto-configures the Observability Kit {@link MetricsServiceInitListener} when
@@ -75,20 +75,20 @@ public class ObservabilityAutoConfiguration {
     }
 
     /**
-     * Registers the prototype {@link ResyncDetectionFilter}, which observes
-     * UIDL message resends and client-requested resynchronizations by
-     * inspecting incoming UIDL request bodies. Runs at highest precedence so
-     * the body is buffered before any other filter consumes it, and gated by
+     * Registers the prototype {@link SpringResyncDetectionFilter}, which
+     * observes UIDL message resends and client-requested resynchronizations by
+     * inspecting UIDL request bodies. Runs at highest precedence so it wraps
+     * the request before any other filter consumes the body, and gated by
      * {@code vaadin.observability.resync} (default {@code true}).
      */
     @Bean
     @ConditionalOnBean(MeterRegistry.class)
     @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "vaadin.observability", name = "resync", havingValue = "true", matchIfMissing = true)
-    FilterRegistrationBean<ResyncDetectionFilter> resyncDetectionFilter(
+    FilterRegistrationBean<SpringResyncDetectionFilter> resyncDetectionFilter(
             MeterRegistry registry) {
-        FilterRegistrationBean<ResyncDetectionFilter> registration = new FilterRegistrationBean<>(
-                new ResyncDetectionFilter(registry));
+        FilterRegistrationBean<SpringResyncDetectionFilter> registration = new FilterRegistrationBean<>(
+                new SpringResyncDetectionFilter(registry));
         registration.addUrlPatterns("/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return registration;

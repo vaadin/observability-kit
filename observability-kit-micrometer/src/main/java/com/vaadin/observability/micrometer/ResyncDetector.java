@@ -37,6 +37,13 @@ import com.vaadin.flow.shared.ApplicationConstants;
  * {@code lastProcessedClientToServerId + 1}).</li>
  * </ul>
  * <p>
+ * This is an approximation of Flow's own test. Flow only replays a cached
+ * response when {@code clientId == lastProcessedClientToServerId} <em>and</em>
+ * the message hash matches, discarding still-older ids as out-of-order. The
+ * message hash is not exposed to the kit, so we cannot discriminate on it and
+ * count every {@code clientId <= previous} as a resend; this may over-report
+ * relative to what Flow actually replays.
+ * <p>
  * The detector is stateless: the caller supplies the previously seen
  * {@code clientId} and stores the {@link Result#lastClientId()} returned here
  * (e.g. as an HTTP session attribute keyed by UI id), so there is no unbounded

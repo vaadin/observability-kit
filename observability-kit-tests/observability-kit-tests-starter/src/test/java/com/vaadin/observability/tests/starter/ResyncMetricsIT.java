@@ -35,12 +35,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>
  * Flow's own resend/resync recovery is invisible to listener SPIs (it is caught
  * internally in {@code UidlRequestHandler}). The kit reconstructs the signal in
- * {@code ResyncDetectionFilter} by inspecting the incoming UIDL body, so this
- * test replays forged UIDL POSTs through the real servlet filter chain: the
- * filter classifies and counts them before Flow ever validates them. A real
- * browser load first establishes the HTTP session whose cookie the replayed
- * requests reuse, so the filter's per-UI {@code clientId} state persists across
- * the duplicate.
+ * {@code ResyncDetectionFilter} by inspecting the UIDL body, so this test
+ * replays forged UIDL POSTs through the real servlet filter chain: the filter
+ * wraps each request, lets Flow read the body, then classifies and counts from
+ * the bytes Flow consumed. A real browser load first establishes the HTTP
+ * session whose cookie the replayed requests reuse, so the filter's per-UI
+ * {@code clientId} state persists across the duplicate.
  *
  * <p>
  * The Micrometer counter {@code vaadin.resync} is exposed by Prometheus as

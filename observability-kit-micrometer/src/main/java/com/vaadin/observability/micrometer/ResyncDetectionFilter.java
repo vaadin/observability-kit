@@ -21,31 +21,47 @@ import java.io.IOException;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import com.vaadin.flow.server.communication.UidlRequestHandler;
-import com.vaadin.flow.shared.ApplicationConstants;
 
 /**
- * Servlet filter that observes UIDL message resends and resynchronization
- * requests (prototype, kit-only, no Flow changes).
+ * Portable, framework-agnostic servlet filter that observes UIDL message
+ * resends and resynchronization requests (prototype, kit-only, no Flow
+ * changes). It depends only on the servlet API and Micrometer, so it is meant
+ * for plain (non-Spring) deployments; a Spring application does not need this
+ * class and should use {@code SpringResyncDetectionFilter} instead.
+ * <p>
+ * <b>Registering it in a plain servlet app.</b> There is no auto-configuration
+ * outside Spring, so register the filter yourself against every request. It
+ * should run early (before anything else consumes the request body). For
+ * example, in a {@code ServletContextListener} or
+ * {@code ServletContainerInitializer}:
+ *
+ * <pre>{@code
+ * FilterRegistration.Dynamic reg = servletContext.addFilter(
+ *         "vaadinResyncDetection", new ResyncDetectionFilter(meterRegistry));
+ * // isMatchAfter=false so it precedes already-registered filters
+ * reg.addMappingForUrlPatterns(null, false, "/*");
+ * }</pre>
+ *
+ * or the equivalent {@code <filter>}/{@code <filter-mapping>} in
+ * {@code web.xml}. The {@code MeterRegistry} is whichever instance the
+ * application records into.
  * <p>
  * Flow recovers from lost responses entirely inside {@link UidlRequestHandler}
  * by catching {@code ClientResentPayloadException} (replay the cached response)
  * and {@code ResynchronizationRequiredException} (rebuild the UI state);
  * neither surfaces to any Flow listener SPI the kit uses. This filter
- * reconstructs the same signal from the incoming request by buffering the UIDL
- * body (via {@link CachedBodyHttpServletRequest} so Flow can still read it) and
- * handing it to a {@link ResyncDetector}.
+ * reconstructs the same signal by buffering the UIDL body (via
+ * {@link CachedBodyHttpServletRequest} so Flow can still read it) and handing
+ * it to a {@link ResyncInspector}.
  * <p>
- * Per-UI state (the last {@code clientId} seen) is kept as an HTTP session
- * attribute keyed by UI id, so it is bounded by and cleaned up with the
- * session. Instrumentation never fails the request: any error while inspecting
- * is swallowed.
+ * Because it has no Spring APIs available it buffers the body eagerly; the
+ * Spring variant instead captures the bytes lazily as Flow reads them and only
+ * counts requests Flow actually consumed. Instrumentation never fails the
+ * request: any error while inspecting is swallowed.
  */
 public final class ResyncDetectionFilter implements Filter {
 
-    private static final String LAST_CLIENT_ID_ATTR_PREFIX = ResyncDetectionFilter.class
-            .getName() + ".lastClientId.";
-
-    private final ResyncDetector detector;
+    private final ResyncInspector inspector;
 
     /**
      * Creates the filter recording into the given registry.
@@ -54,13 +70,14 @@ public final class ResyncDetectionFilter implements Filter {
      *            the meter registry, not {@code null}
      */
     public ResyncDetectionFilter(MeterRegistry registry) {
-        this.detector = new ResyncDetector(registry);
+        this.inspector = new ResyncInspector(registry);
     }
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response,
             FilterChain chain) throws IOException, ServletException {
-        if (!(request instanceof HttpServletRequest http) || !isUidl(http)) {
+        if (!(request instanceof HttpServletRequest http)
+                || !ResyncInspector.isUidl(http)) {
             chain.doFilter(request, response);
             return;
         }
@@ -68,47 +85,13 @@ public final class ResyncDetectionFilter implements Filter {
         CachedBodyHttpServletRequest wrapped = new CachedBodyHttpServletRequest(
                 http);
         try {
-            inspect(wrapped);
+            HttpSession session = wrapped.getSession(false);
+            Object mutex = session != null ? session : this;
+            inspector.inspect(wrapped.getCachedBody(), session,
+                    ResyncInspector.uiId(wrapped), mutex);
         } catch (RuntimeException instrumentationFailure) {
             // Never break a request because of observability.
         }
         chain.doFilter(wrapped, response);
-    }
-
-    private void inspect(CachedBodyHttpServletRequest request) {
-        HttpSession session = request.getSession(false);
-        String attr = LAST_CLIENT_ID_ATTR_PREFIX + uiId(request);
-        int previous = ResyncDetector.NO_CLIENT_ID;
-        if (session != null
-                && session.getAttribute(attr) instanceof Integer stored) {
-            previous = stored;
-        }
-
-        ResyncDetector.Result result = detector.inspect(request.getCachedBody(),
-                previous);
-
-        if (session != null) {
-            session.setAttribute(attr, result.lastClientId());
-        }
-    }
-
-    private static String uiId(HttpServletRequest request) {
-        String id = request.getParameter(ApplicationConstants.UI_ID_PARAMETER);
-        return id != null ? id : "-";
-    }
-
-    /**
-     * A UIDL request is a POST whose query string carries {@code v-r=uidl}.
-     * Checking the query string (rather than {@code getParameter}) avoids
-     * triggering body parsing on the original request.
-     */
-    private static boolean isUidl(HttpServletRequest request) {
-        if (!"POST".equalsIgnoreCase(request.getMethod())) {
-            return false;
-        }
-        String query = request.getQueryString();
-        return query != null
-                && query.contains(ApplicationConstants.REQUEST_TYPE_PARAMETER
-                        + "=" + ApplicationConstants.REQUEST_TYPE_UIDL);
     }
 }
