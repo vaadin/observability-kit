@@ -8,20 +8,14 @@
  */
 package com.vaadin.observability.micrometer.client;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-
-import org.slf4j.LoggerFactory;
 
 import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.internal.StringUtil;
+import com.vaadin.observability.micrometer.ClientResourceLoader;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 /**
@@ -55,7 +49,8 @@ public final class MetricsCollectorElement extends Component {
 
     @Override
     protected void onAttach(AttachEvent event) {
-        ensureClientLoaded(event.getUI());
+        ClientResourceLoader.loadOnce(event.getUI(), CLIENT_INIT_KEY,
+                CLIENT_RESOURCE, MetricsCollectorElement.class);
     }
 
     @ClientCallable
@@ -72,29 +67,6 @@ public final class MetricsCollectorElement extends Component {
             binder.ingest(samples.subList(0, granted));
         } else {
             binder.ingest(samples);
-        }
-    }
-
-    private static void ensureClientLoaded(UI ui) {
-        if (ComponentUtil.getData(ui, CLIENT_INIT_KEY) != null) {
-            return;
-        }
-        ComponentUtil.setData(ui, CLIENT_INIT_KEY, Boolean.TRUE);
-        ClassLoader loader = MetricsCollectorElement.class.getClassLoader();
-        try (InputStream in = loader.getResourceAsStream(CLIENT_RESOURCE)) {
-            if (in == null) {
-                LoggerFactory.getLogger(MetricsCollectorElement.class).warn(
-                        "observability-kit client resource not found: {}",
-                        CLIENT_RESOURCE);
-                return;
-            }
-            String js = StringUtil.removeComments(
-                    new String(in.readAllBytes(), StandardCharsets.UTF_8),
-                    true);
-            ui.getPage().executeJs(js);
-        } catch (IOException e) {
-            LoggerFactory.getLogger(MetricsCollectorElement.class)
-                    .warn("Could not load observability-kit client code", e);
         }
     }
 }

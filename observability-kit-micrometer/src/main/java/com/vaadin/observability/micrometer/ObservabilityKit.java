@@ -27,6 +27,15 @@ public final class ObservabilityKit {
     private static final AtomicReference<ObservationRegistry> OBSERVATION_REGISTRY = new AtomicReference<>();
     private static final AtomicReference<ObservabilitySettings> SETTINGS = new AtomicReference<>();
 
+    /**
+     * The registry instrumentation was actually bound to, recorded at
+     * {@code serviceInit} time. Unlike {@link #METER_REGISTRY} (only populated
+     * by {@link #install} in standalone deployments) this is set for every
+     * deployment type, including Spring where the registry arrives via DI. Used
+     * by the dev-mode Copilot metrics panel to read the live meters.
+     */
+    private static final AtomicReference<MeterRegistry> ACTIVE_METER_REGISTRY = new AtomicReference<>();
+
     private ObservabilityKit() {
     }
 
@@ -55,6 +64,25 @@ public final class ObservabilityKit {
         return METER_REGISTRY.get();
     }
 
+    /**
+     * Records the registry instrumentation was bound to. Called from
+     * {@code MetricsServiceInitListener} for all deployment types.
+     */
+    static void setActiveMeterRegistry(MeterRegistry registry) {
+        ACTIVE_METER_REGISTRY.set(registry);
+    }
+
+    /**
+     * The registry instrumentation is currently publishing to, or {@code null}
+     * if instrumentation has not been bound. Read by the dev-mode Copilot
+     * metrics panel.
+     *
+     * @return the active meter registry, or {@code null}
+     */
+    public static MeterRegistry getActiveMeterRegistry() {
+        return ACTIVE_METER_REGISTRY.get();
+    }
+
     static ObservationRegistry getObservationRegistry() {
         return OBSERVATION_REGISTRY.get();
     }
@@ -68,5 +96,6 @@ public final class ObservabilityKit {
         METER_REGISTRY.set(null);
         OBSERVATION_REGISTRY.set(null);
         SETTINGS.set(null);
+        ACTIVE_METER_REGISTRY.set(null);
     }
 }
