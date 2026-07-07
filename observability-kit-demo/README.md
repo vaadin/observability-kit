@@ -1,17 +1,23 @@
-# Observability Kit Demo: error backtracking
+# Observability Kit Demo: interaction backtracking
 
-A user reports *"I clicked this button and got an error"* and Observability Kit
-backtracks it to a replicable interaction, consumable by a human or an AI
-agent, with no external observability stack. The insights are served by the
-kit's `/actuator/vaadin/observability` endpoint; this module is a plain
-end-user application that only depends on `observability-kit-starter`.
+A user reports *"I clicked this button and got an error"* (or *"...and it hung
+forever"*) and Observability Kit backtracks it to a replicable interaction,
+consumable by a human or an AI agent, with no external observability stack.
+The insights are served by the kit's `/actuator/vaadin/observability`
+endpoint; this module is a plain end-user application that only depends on
+`observability-kit-starter`.
 
 ## The scenario
 
-The app is a small orders view. Every order has a **Ship** button. Shipping
-order **#1042** fails with a `NullPointerException` planted in
-`OrderShippingService` (a missing warehouse allocation). All other orders ship
-fine. The user report is just: *"I clicked Ship and got an error."*
+The app is a small orders view. Every order has a **Ship** button, with two
+problems planted in `OrderShippingService`:
+
+- shipping order **#1042** fails with a `NullPointerException` (missing
+  warehouse allocation): *"I clicked Ship and got an error"*;
+- shipping order **#1041** succeeds but blocks for ~3 seconds (synchronous
+  call to a legacy warehouse system): *"I clicked Ship and it hung forever"*.
+
+All other orders ship fine and instantly.
 
 ## Run the demo
 
@@ -22,15 +28,16 @@ mvn spring-boot:run -pl :observability-kit-demo
 ```
 
 1. Open <http://localhost:8080/orders>.
-2. Click **Ship** on order #1042: an error notification appears. Click it a
-   couple of times, and ship another order successfully for contrast.
-3. Read the insight:
+2. Click **Ship** on order #1042: an error notification appears. Click **Ship**
+   on order #1041: it works, but takes seconds. Ship another order for
+   contrast.
+3. Read the insights:
 
 ```bash
 curl -s http://localhost:8080/actuator/vaadin/observability | jq
 ```
 
-You get one insight (not N stack traces in a log), for example:
+You get one insight per problem (not N stack traces in a log), for example:
 
 ```json
 {
@@ -39,27 +46,48 @@ You get one insight (not N stack traces in a log), for example:
     {
       "id": "user-interaction-error",
       "severity": "error",
-      "summary": "User interaction 'click' on NativeButton failed with NullPointerException (2 occurrences)",
+      "category": "reliability",
+      "summary": "User interaction 'click' on Button failed with NullPointerException (2 occurrences)",
       "evidence": {
         "route": "orders",
-        "component": "com.vaadin.flow.component.html.NativeButton",
+        "component": "com.vaadin.flow.component.button.Button",
         "event": "click",
         "exception": "java.lang.NullPointerException",
-        "applicationFrame": "com.vaadin.observability.demo.OrderShippingService.ship(OrderShippingService.java:30)"
+        "applicationFrame": "com.vaadin.observability.demo.OrderShippingService.ship(OrderShippingService.java:36)"
       },
       "replay": [
         "Open route '/orders'",
-        "Locate component NativeButton",
+        "Locate component Button",
         "Trigger a 'click' event on it",
         "Expect NullPointerException: ..."
       ],
       "suggestion": "Inspect com.vaadin.observability.demo.OrderShippingService.ship(...)..."
+    },
+    {
+      "id": "slow-user-interaction",
+      "severity": "warning",
+      "category": "performance",
+      "summary": "User interaction 'click' on Button took up to 3004 ms, over the 1000 ms UX budget (1 occurrence)",
+      "evidence": {
+        "route": "orders",
+        "component": "com.vaadin.flow.component.button.Button",
+        "event": "click",
+        "maxDurationMs": 3004,
+        "thresholdMs": 1000
+      },
+      "replay": [
+        "Open route '/orders'",
+        "Locate component Button",
+        "Trigger a 'click' event on it",
+        "Expect the UI to stay unresponsive for roughly 3004 ms"
+      ],
+      "suggestion": "The 'click' handler in Button blocks the request for up to 3004 ms..."
     }
   ]
 }
 ```
 
-4. Let an AI agent turn the insight into a fix, see below.
+4. Let an AI agent turn the insights into fixes, see below.
 
 ## Consume the insights with an AI agent
 
@@ -71,14 +99,15 @@ installed, run it from the application repository (this repo for the demo) and
 let it read the endpoint:
 
 ```bash
-claude "A user reported: 'I clicked a button and got an error'. Fetch
-http://localhost:8080/actuator/vaadin/observability, read the insights,
-find the root cause in this codebase and propose a fix."
+claude "Users reported: 'I clicked a button and got an error' and 'shipping
+hangs forever'. Fetch http://localhost:8080/actuator/vaadin/observability,
+read the insights, find the root causes in this codebase and propose fixes."
 ```
 
 Claude Code fetches the JSON, follows `evidence.applicationFrame` to
-`OrderShippingService.ship`, spots the missing null check and proposes the
-patch, including a regression test if you ask for one.
+`OrderShippingService`, spots the missing null check and the blocking legacy
+call, and proposes the patches, including regression tests if you ask for
+them.
 
 If the endpoint is not reachable from the agent (for example, insights pulled
 from a production host), pipe the JSON in instead:
@@ -86,7 +115,7 @@ from a production host), pipe the JSON in instead:
 ```bash
 curl -s https://myapp.example.com/actuator/vaadin/observability \
   | claude -p "Here are production insights from Vaadin Observability Kit. \
-Diagnose the reported errors and propose fixes in this codebase."
+Diagnose the reported problems and propose fixes in this codebase."
 ```
 
 The same works with any agent that can read a URL or stdin (GitHub Copilot
@@ -100,9 +129,9 @@ The feature itself ships in the kit:
 
 | Piece | Class | Module |
 |---|---|---|
-| Failed-interaction capture | `insights.ErrorBacktrackCollector` (hooks Flow's `RpcInvocationListener`) | `observability-kit-micrometer` |
-| Bounded exemplar storage | `insights.ErrorExemplarBuffer` | `observability-kit-micrometer` |
-| Grouping + JSON contract | `insights.InsightsService` | `observability-kit-micrometer` |
+| Interaction capture (errors + over-budget durations) | `insights.InteractionExemplarCollector` (hooks Flow's `RpcInvocationListener`) | `observability-kit-micrometer` |
+| Bounded exemplar storage | `insights.ExemplarBuffer` | `observability-kit-micrometer` |
+| Insight rules + JSON contract | `insights.InsightsService` | `observability-kit-micrometer` |
 | `/actuator/vaadin/observability` endpoint | `VaadinObservabilityEndpoint` | `observability-kit-starter` |
 
 Everything is production-mode capable: it relies only on hooks that Flow
