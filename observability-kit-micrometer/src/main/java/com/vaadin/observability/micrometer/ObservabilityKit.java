@@ -15,7 +15,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
-import com.vaadin.observability.micrometer.insights.ErrorExemplarBuffer;
+import com.vaadin.observability.micrometer.insights.ExemplarBuffer;
 
 /**
  * Programmatic bootstrap for standalone (non-Spring) deployments. Call
@@ -39,11 +39,11 @@ public final class ObservabilityKit {
     private static final AtomicReference<MeterRegistry> ACTIVE_METER_REGISTRY = new AtomicReference<>();
 
     /**
-     * The error exemplar buffer instrumentation was bound to, recorded at
-     * {@code serviceInit} time like {@link #ACTIVE_METER_REGISTRY}. Read by the
-     * insights endpoint.
+     * The interaction exemplar buffer instrumentation was bound to, recorded
+     * at {@code serviceInit} time like {@link #ACTIVE_METER_REGISTRY}. Read by
+     * the insights endpoint.
      */
-    private static final AtomicReference<ErrorExemplarBuffer> ACTIVE_ERROR_EXEMPLARS = new AtomicReference<>();
+    private static final AtomicReference<ExemplarBuffer> ACTIVE_EXEMPLARS = new AtomicReference<>();
 
     private ObservabilityKit() {
     }
@@ -93,22 +93,22 @@ public final class ObservabilityKit {
     }
 
     /**
-     * Records the error exemplar buffer instrumentation was bound to. Called
-     * from {@code MetricsServiceInitListener} for all deployment types.
+     * Records the interaction exemplar buffer instrumentation was bound to.
+     * Called from {@code MetricsServiceInitListener} for all deployment types.
      */
-    static void setActiveErrorExemplars(ErrorExemplarBuffer buffer) {
-        ACTIVE_ERROR_EXEMPLARS.set(buffer);
+    static void setActiveExemplars(ExemplarBuffer buffer) {
+        ACTIVE_EXEMPLARS.set(buffer);
     }
 
     /**
-     * The error exemplar buffer instrumentation is currently recording into, or
-     * {@code null} if error backtracking has not been bound. Read by the
-     * insights endpoint.
+     * The interaction exemplar buffer instrumentation is currently recording
+     * into, or {@code null} if interaction backtracking has not been bound.
+     * Read by the insights endpoint.
      *
-     * @return the active error exemplar buffer, or {@code null}
+     * @return the active interaction exemplar buffer, or {@code null}
      */
-    public static ErrorExemplarBuffer getActiveErrorExemplars() {
-        return ACTIVE_ERROR_EXEMPLARS.get();
+    public static ExemplarBuffer getActiveExemplars() {
+        return ACTIVE_EXEMPLARS.get();
     }
 
     static ObservationRegistry getObservationRegistry() {
@@ -125,6 +125,6 @@ public final class ObservabilityKit {
         OBSERVATION_REGISTRY.set(null);
         SETTINGS.set(null);
         ACTIVE_METER_REGISTRY.set(null);
-        ACTIVE_ERROR_EXEMPLARS.set(null);
+        ACTIVE_EXEMPLARS.set(null);
     }
 }

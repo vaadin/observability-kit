@@ -18,7 +18,7 @@ import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;
 import org.springframework.boot.actuate.endpoint.annotation.Selector;
 
 import com.vaadin.observability.micrometer.ObservabilityKit;
-import com.vaadin.observability.micrometer.insights.ErrorExemplarBuffer;
+import com.vaadin.observability.micrometer.insights.ExemplarBuffer;
 import com.vaadin.observability.micrometer.insights.InsightsService;
 
 /**
@@ -43,8 +43,7 @@ public class VaadinObservabilityEndpoint {
             // Unknown selector: null renders as 404.
             return null;
         }
-        ErrorExemplarBuffer exemplars = ObservabilityKit
-                .getActiveErrorExemplars();
+        ExemplarBuffer exemplars = ObservabilityKit.getActiveExemplars();
         if (exemplars == null) {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("schemaVersion", 1);

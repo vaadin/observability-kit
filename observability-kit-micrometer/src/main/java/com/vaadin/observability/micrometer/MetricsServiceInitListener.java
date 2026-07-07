@@ -20,8 +20,8 @@ import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
-import com.vaadin.observability.micrometer.insights.ErrorBacktrackCollector;
-import com.vaadin.observability.micrometer.insights.ErrorExemplarBuffer;
+import com.vaadin.observability.micrometer.insights.ExemplarBuffer;
+import com.vaadin.observability.micrometer.insights.InteractionExemplarCollector;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
 /**
@@ -213,14 +213,15 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     observationRegistry, settings));
         }
 
-        if (settings.isErrors()) {
-            // Retain failed user interactions so the insights endpoint can
-            // backtrack user-reported errors to a replicable interaction.
-            ErrorExemplarBuffer exemplars = new ErrorExemplarBuffer(
-                    ErrorExemplarBuffer.DEFAULT_CAPACITY);
+        if (settings.isErrors() || settings.isRequests()) {
+            // Retain failed and over-UX-budget user interactions so the
+            // insights endpoint can backtrack user reports ("I clicked this
+            // and got an error / it was slow") to a replicable interaction.
+            ExemplarBuffer exemplars = new ExemplarBuffer(
+                    ExemplarBuffer.DEFAULT_CAPACITY);
             service.addRpcInvocationListener(
-                    new ErrorBacktrackCollector(exemplars));
-            ObservabilityKit.setActiveErrorExemplars(exemplars);
+                    new InteractionExemplarCollector(exemplars, settings));
+            ObservabilityKit.setActiveExemplars(exemplars);
         }
 
         if (settings.isTraces() && observationRegistry != null) {
