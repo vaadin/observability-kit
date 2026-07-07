@@ -13,22 +13,22 @@ import java.util.Deque;
 import java.util.List;
 
 /**
- * Bounded in-memory ring buffer of error exemplars. Oldest entries are evicted
- * first; memory use is hard-capped by {@code capacity}.
+ * Bounded in-memory ring buffer of interaction exemplars. Oldest entries are
+ * evicted first; memory use is hard-capped by {@code capacity}.
  */
-public class ErrorExemplarBuffer {
+public class ExemplarBuffer {
 
     /** Default hard cap on retained exemplars. */
     public static final int DEFAULT_CAPACITY = 100;
 
     private final int capacity;
-    private final Deque<ErrorExemplar> exemplars = new ArrayDeque<>();
+    private final Deque<InteractionExemplar> exemplars = new ArrayDeque<>();
 
-    public ErrorExemplarBuffer(int capacity) {
+    public ExemplarBuffer(int capacity) {
         this.capacity = capacity;
     }
 
-    public synchronized void add(ErrorExemplar exemplar) {
+    public synchronized void add(InteractionExemplar exemplar) {
         if (exemplars.size() == capacity) {
             exemplars.removeFirst();
         }
@@ -36,7 +36,7 @@ public class ErrorExemplarBuffer {
     }
 
     /** Returns a snapshot, newest first. */
-    public synchronized List<ErrorExemplar> snapshot() {
+    public synchronized List<InteractionExemplar> snapshot() {
         return exemplars.reversed().stream().toList();
     }
 }
