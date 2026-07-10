@@ -39,9 +39,9 @@ public final class ObservabilityKit {
     private static final AtomicReference<MeterRegistry> ACTIVE_METER_REGISTRY = new AtomicReference<>();
 
     /**
-     * The interaction exemplar buffer instrumentation was bound to, recorded
-     * at {@code serviceInit} time like {@link #ACTIVE_METER_REGISTRY}. Read by
-     * the insights endpoint.
+     * The interaction exemplar buffer instrumentation was bound to, recorded at
+     * {@code serviceInit} time like {@link #ACTIVE_METER_REGISTRY}. Read by the
+     * insights endpoint.
      */
     private static final AtomicReference<ExemplarBuffer> ACTIVE_EXEMPLARS = new AtomicReference<>();
 

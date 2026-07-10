@@ -32,8 +32,8 @@ class InteractionExemplarCollectorTest {
 
     private static ObservabilitySettings settings(boolean errors,
             boolean requests) {
-        return ObservabilitySettings.builder().errors(errors)
-                .requests(requests).build();
+        return ObservabilitySettings.builder().errors(errors).requests(requests)
+                .build();
     }
 
     /** A UI with one attached component, plus a mocked event targeting it. */
@@ -52,8 +52,7 @@ class InteractionExemplarCollectorTest {
         Mockito.when(event.getType()).thenReturn("event");
         Mockito.when(event.getName()).thenReturn("click");
         Mockito.when(event.getUI()).thenReturn(ui);
-        Mockito.when(event.getNodeId())
-                .thenReturn(element.getNode().getId());
+        Mockito.when(event.getNodeId()).thenReturn(element.getNode().getId());
         return new Target(ui, component, event);
     }
 

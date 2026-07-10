@@ -26,10 +26,10 @@ class InsightsServiceTest {
     private static InteractionExemplar error(Instant when, String component,
             String exception, String frame) {
         return new InteractionExemplar(when, "orders", component, "click",
-                "event", InteractionExemplar.OUTCOME_ERROR, 5,
-                exception, exception + " message", frame,
-                List.of(frame, "framework.Frame.call(Frame.java:1)"),
-                "session", 0);
+                "event", InteractionExemplar.OUTCOME_ERROR, 5, exception,
+                exception + " message", frame,
+                List.of(frame, "framework.Frame.call(Frame.java:1)"), "session",
+                0);
     }
 
     private static InteractionExemplar slow(Instant when, String component,
@@ -45,8 +45,8 @@ class InsightsServiceTest {
     }
 
     private Map<String, Object> insightWithId(String id) {
-        return insights().stream()
-                .filter(i -> id.equals(i.get("id"))).findFirst().orElseThrow(
+        return insights().stream().filter(i -> id.equals(i.get("id")))
+                .findFirst().orElseThrow(
                         () -> new AssertionError("no insight with id " + id));
     }
 
@@ -67,8 +67,7 @@ class InsightsServiceTest {
 
     @Test
     void failedInteractionProducesErrorInsight() {
-        buffer.add(error(Instant.now(),
-                "com.example.OrdersView",
+        buffer.add(error(Instant.now(), "com.example.OrdersView",
                 "java.lang.NullPointerException",
                 "com.example.OrderService.ship(OrderService.java:30)"));
 
@@ -86,7 +85,8 @@ class InsightsServiceTest {
         Assertions.assertEquals(1, evidence.get("occurrences"));
 
         Assertions.assertTrue(
-                insight.get("summary").toString().contains("NullPointerException"),
+                insight.get("summary").toString()
+                        .contains("NullPointerException"),
                 "summary should name the exception by simple name");
         Assertions.assertNotNull(insight.get("replay"));
         Assertions.assertNotNull(insight.get("suggestion"));
@@ -134,7 +134,8 @@ class InsightsServiceTest {
         buffer.add(error(Instant.now(), "com.example.OrdersView",
                 "java.lang.NullPointerException", "com.example.A.x(A.java:1)"));
         buffer.add(error(Instant.now(), "com.example.OrdersView",
-                "java.lang.IllegalStateException", "com.example.B.y(B.java:2)"));
+                "java.lang.IllegalStateException",
+                "com.example.B.y(B.java:2)"));
 
         long errorInsights = insights().stream()
                 .filter(i -> "user-interaction-error".equals(i.get("id")))
@@ -164,8 +165,8 @@ class InsightsServiceTest {
                 "com.example.OrderService.ship(OrderService.java:30)"));
         buffer.add(slow(Instant.now(), "com.example.OrdersView", OVER_BUDGET));
 
-        List<String> ids = insights().stream()
-                .map(i -> i.get("id").toString()).toList();
+        List<String> ids = insights().stream().map(i -> i.get("id").toString())
+                .toList();
         Assertions.assertTrue(ids.contains("user-interaction-error"));
         Assertions.assertTrue(ids.contains("slow-user-interaction"));
         Assertions.assertEquals(2, ids.size());

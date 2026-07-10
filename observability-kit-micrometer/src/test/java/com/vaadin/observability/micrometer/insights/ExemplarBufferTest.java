@@ -45,8 +45,7 @@ class ExemplarBufferTest {
 
         List<InteractionExemplar> snapshot = buffer.snapshot();
 
-        Assertions.assertEquals(2, snapshot.size(),
-                "capacity is a hard cap");
+        Assertions.assertEquals(2, snapshot.size(), "capacity is a hard cap");
         Assertions.assertEquals(List.of("third", "second"),
                 snapshot.stream().map(InteractionExemplar::route).toList(),
                 "oldest entry should have been evicted");

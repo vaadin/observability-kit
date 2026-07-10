@@ -48,8 +48,8 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
 
     /**
      * Stack frames from these packages are infrastructure, not application
-     * code; the first frame NOT matching a prefix is reported as the likely
-     * bug location.
+     * code; the first frame NOT matching a prefix is reported as the likely bug
+     * location.
      */
     private static final List<String> FRAMEWORK_PREFIXES = List.of("java.",
             "jdk.", "sun.", "jakarta.", "org.springframework.", "org.apache.",

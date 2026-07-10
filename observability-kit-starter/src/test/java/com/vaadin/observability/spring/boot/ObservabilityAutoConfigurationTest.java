@@ -177,8 +177,8 @@ class ObservabilityAutoConfigurationTest {
     }
 
     /**
-     * With Spring Boot Actuator on the classpath (an optional dependency of
-     * the starter, present here at test scope) the insights endpoint bean is
+     * With Spring Boot Actuator on the classpath (an optional dependency of the
+     * starter, present here at test scope) the insights endpoint bean is
      * registered.
      */
     @Test

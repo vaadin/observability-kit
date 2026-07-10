@@ -206,8 +206,8 @@ class MetricsServiceInitListenerTest {
                 listeners.stream().anyMatch(l -> l instanceof RpcMetricsBinder),
                 "requests enabled should register the RpcMetricsBinder");
         Assertions.assertTrue(
-                listeners.stream()
-                        .anyMatch(l -> l instanceof InteractionExemplarCollector),
+                listeners.stream().anyMatch(
+                        l -> l instanceof InteractionExemplarCollector),
                 "requests enabled should register the interaction collector");
     }
 
@@ -221,8 +221,8 @@ class MetricsServiceInitListenerTest {
         List<RpcInvocationListener> listeners = registeredRpcListeners();
 
         Assertions.assertTrue(
-                listeners.stream()
-                        .anyMatch(l -> l instanceof InteractionExemplarCollector),
+                listeners.stream().anyMatch(
+                        l -> l instanceof InteractionExemplarCollector),
                 "errors enabled should register the interaction collector");
         Assertions.assertTrue(
                 listeners.stream()

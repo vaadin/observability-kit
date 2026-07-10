@@ -19,10 +19,10 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * Turns raw interaction exemplars into insights, and renders the payload
- * served at {@code /actuator/vaadin/observability}. Exemplars are grouped so
- * that N users hitting the same problem produce ONE insight with N
- * occurrences; each insight type is a rule over the shared exemplar buffer:
+ * Turns raw interaction exemplars into insights, and renders the payload served
+ * at {@code /actuator/vaadin/observability}. Exemplars are grouped so that N
+ * users hitting the same problem produce ONE insight with N occurrences; each
+ * insight type is a rule over the shared exemplar buffer:
  * <ul>
  * <li>{@code user-interaction-error}: failed interactions, grouped by (route,
  * component, event, exception);</li>
@@ -32,8 +32,8 @@ import java.util.stream.Collectors;
  * </ul>
  * The output is a stable, AI-agent-readable contract: an agent with access to
  * the application codebase can open {@code evidence.applicationFrame} (or the
- * component's event handler), verify the problem and propose a fix; a human
- * can follow {@code replay} to reproduce.
+ * component's event handler), verify the problem and propose a fix; a human can
+ * follow {@code replay} to reproduce.
  */
 public class InsightsService {
 
@@ -56,15 +56,13 @@ public class InsightsService {
     private List<Map<String, Object>> insights() {
         List<InteractionExemplar> all = buffer.snapshot();
         List<Map<String, Object>> insights = new ArrayList<>();
-        groups(all,
-                e -> InteractionExemplar.OUTCOME_ERROR.equals(e.outcome()),
+        groups(all, e -> InteractionExemplar.OUTCOME_ERROR.equals(e.outcome()),
                 e -> String.join("|", nullSafe(e.route()),
                         nullSafe(e.component()), nullSafe(e.event()),
                         nullSafe(e.exceptionType())))
                 .forEach(group -> insights.add(errorInsight(group)));
-        groups(all,
-                e -> InteractionExemplar.OUTCOME_SUCCESS.equals(e.outcome())
-                        && e.durationMs() >= InteractionExemplarCollector.UX_BUDGET_MS,
+        groups(all, e -> InteractionExemplar.OUTCOME_SUCCESS.equals(e.outcome())
+                && e.durationMs() >= InteractionExemplarCollector.UX_BUDGET_MS,
                 e -> String.join("|", nullSafe(e.route()),
                         nullSafe(e.component()), nullSafe(e.event())))
                 .forEach(group -> insights.add(slowInsight(group)));
@@ -75,9 +73,8 @@ public class InsightsService {
             List<InteractionExemplar> exemplars,
             Predicate<InteractionExemplar> rule,
             Function<InteractionExemplar, String> key) {
-        return List.copyOf(exemplars.stream().filter(rule)
-                .collect(Collectors.groupingBy(key, LinkedHashMap::new,
-                        Collectors.toList()))
+        return List.copyOf(exemplars.stream().filter(rule).collect(Collectors
+                .groupingBy(key, LinkedHashMap::new, Collectors.toList()))
                 .values());
     }
 
@@ -130,8 +127,8 @@ public class InsightsService {
     private static Map<String, Object> slowInsight(
             List<InteractionExemplar> group) {
         InteractionExemplar latest = group.get(0);
-        long maxMs = group.stream()
-                .mapToLong(InteractionExemplar::durationMs).max().orElse(-1);
+        long maxMs = group.stream().mapToLong(InteractionExemplar::durationMs)
+                .max().orElse(-1);
 
         Map<String, Object> insight = new LinkedHashMap<>();
         insight.put("id", "slow-user-interaction");
@@ -174,8 +171,7 @@ public class InsightsService {
     private static Map<String, Object> commonEvidence(
             List<InteractionExemplar> group) {
         InteractionExemplar latest = group.get(0);
-        Instant firstSeen = group.stream()
-                .map(InteractionExemplar::timestamp)
+        Instant firstSeen = group.stream().map(InteractionExemplar::timestamp)
                 .min(Comparator.naturalOrder()).orElseThrow();
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("route", latest.route());
