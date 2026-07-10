@@ -177,6 +177,19 @@ class ObservabilityAutoConfigurationTest {
     }
 
     /**
+     * With Spring Boot Actuator on the classpath (an optional dependency of
+     * the starter, present here at test scope) the insights endpoint bean is
+     * registered.
+     */
+    @Test
+    void actuatorPresent_registersInsightsEndpoint() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .run(context -> assertThat(context)
+                        .hasSingleBean(VaadinObservabilityEndpoint.class));
+    }
+
+    /**
      * User-supplied MetricsServiceInitListener bean: our auto-configured
      * listener should back off (@ConditionalOnMissingBean), and the custom bean
      * should be used.

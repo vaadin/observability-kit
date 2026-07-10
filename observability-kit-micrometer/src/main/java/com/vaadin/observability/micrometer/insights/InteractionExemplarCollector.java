@@ -62,6 +62,7 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
     private final ExemplarBuffer buffer;
     private final boolean captureErrors;
     private final boolean captureSlow;
+    private final long uxBudgetMs;
 
     private final ThreadLocal<Long> startNanos = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
@@ -75,9 +76,19 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
 
     public InteractionExemplarCollector(ExemplarBuffer buffer,
             ObservabilitySettings settings) {
+        this(buffer, settings, UX_BUDGET_MS);
+    }
+
+    /**
+     * Test seam allowing the slow-interaction threshold to be overridden so
+     * timing behaviour can be exercised without real delays.
+     */
+    InteractionExemplarCollector(ExemplarBuffer buffer,
+            ObservabilitySettings settings, long uxBudgetMs) {
         this.buffer = buffer;
         this.captureErrors = settings.isErrors();
         this.captureSlow = settings.isRequests();
+        this.uxBudgetMs = uxBudgetMs;
     }
 
     @Override
@@ -114,7 +125,7 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
         errored.remove();
         // Failed invocations are already captured with their duration; only
         // successful-but-slow ones are captured here.
-        if (failed || !captureSlow || durationMs < UX_BUDGET_MS) {
+        if (failed || !captureSlow || durationMs < uxBudgetMs) {
             return;
         }
         try {
