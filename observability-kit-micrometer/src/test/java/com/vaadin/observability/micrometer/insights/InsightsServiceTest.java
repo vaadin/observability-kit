@@ -17,25 +17,25 @@ import org.junit.jupiter.api.Test;
 
 class InsightsServiceTest {
 
-    private static final long OVER_BUDGET = InteractionExemplarCollector.UX_BUDGET_MS
+    private static final long OVER_BUDGET = InteractionCollector.UX_BUDGET_MS
             + 2000;
 
-    private final ExemplarBuffer buffer = new ExemplarBuffer(100);
+    private final RecentInteractions buffer = new RecentInteractions(100);
     private final InsightsService service = new InsightsService(buffer);
 
-    private static InteractionExemplar error(Instant when, String component,
+    private static CapturedInteraction error(Instant when, String component,
             String exception, String frame) {
-        return new InteractionExemplar(when, "orders", component, "click",
-                "event", InteractionExemplar.OUTCOME_ERROR, 5, exception,
+        return new CapturedInteraction(when, "orders", component, "click",
+                "event", CapturedInteraction.OUTCOME_ERROR, 5, exception,
                 exception + " message", frame,
                 List.of(frame, "framework.Frame.call(Frame.java:1)"), "session",
                 0);
     }
 
-    private static InteractionExemplar slow(Instant when, String component,
+    private static CapturedInteraction slow(Instant when, String component,
             long durationMs) {
-        return new InteractionExemplar(when, "orders", component, "click",
-                "event", InteractionExemplar.OUTCOME_SUCCESS, durationMs, null,
+        return new CapturedInteraction(when, "orders", component, "click",
+                "event", CapturedInteraction.OUTCOME_SUCCESS, durationMs, null,
                 null, null, null, "session", 0);
     }
 
@@ -62,7 +62,7 @@ class InsightsServiceTest {
         Assertions.assertNotNull(payload.get("generated"),
                 "payload should carry a generation timestamp");
         Assertions.assertTrue(insights().isEmpty(),
-                "no exemplars should yield no insights");
+                "no interactions should yield no insights");
     }
 
     @Test
@@ -102,7 +102,7 @@ class InsightsServiceTest {
 
         Map<String, Object> evidence = evidence(insight);
         Assertions.assertEquals(OVER_BUDGET, evidence.get("maxDurationMs"));
-        Assertions.assertEquals(InteractionExemplarCollector.UX_BUDGET_MS,
+        Assertions.assertEquals(InteractionCollector.UX_BUDGET_MS,
                 evidence.get("thresholdMs"));
     }
 

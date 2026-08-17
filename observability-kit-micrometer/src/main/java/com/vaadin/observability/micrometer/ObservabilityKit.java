@@ -15,7 +15,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
-import com.vaadin.observability.micrometer.insights.ExemplarBuffer;
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 /**
  * Programmatic bootstrap for standalone (non-Spring) deployments. Call
@@ -39,11 +39,11 @@ public final class ObservabilityKit {
     private static final AtomicReference<MeterRegistry> ACTIVE_METER_REGISTRY = new AtomicReference<>();
 
     /**
-     * The interaction exemplar buffer instrumentation was bound to, recorded at
+     * The recent-interactions buffer instrumentation was bound to, recorded at
      * {@code serviceInit} time like {@link #ACTIVE_METER_REGISTRY}. Read by the
      * insights endpoint.
      */
-    private static final AtomicReference<ExemplarBuffer> ACTIVE_EXEMPLARS = new AtomicReference<>();
+    private static final AtomicReference<RecentInteractions> RECENT_INTERACTIONS = new AtomicReference<>();
 
     private ObservabilityKit() {
     }
@@ -93,22 +93,22 @@ public final class ObservabilityKit {
     }
 
     /**
-     * Records the interaction exemplar buffer instrumentation was bound to.
+     * Records the recent-interactions buffer instrumentation was bound to.
      * Called from {@code MetricsServiceInitListener} for all deployment types.
      */
-    static void setActiveExemplars(ExemplarBuffer buffer) {
-        ACTIVE_EXEMPLARS.set(buffer);
+    static void setRecentInteractions(RecentInteractions buffer) {
+        RECENT_INTERACTIONS.set(buffer);
     }
 
     /**
-     * The interaction exemplar buffer instrumentation is currently recording
+     * The recent-interactions buffer instrumentation is currently recording
      * into, or {@code null} if interaction backtracking has not been bound.
      * Read by the insights endpoint.
      *
-     * @return the active interaction exemplar buffer, or {@code null}
+     * @return the active recent-interactions buffer, or {@code null}
      */
-    public static ExemplarBuffer getActiveExemplars() {
-        return ACTIVE_EXEMPLARS.get();
+    public static RecentInteractions getRecentInteractions() {
+        return RECENT_INTERACTIONS.get();
     }
 
     static ObservationRegistry getObservationRegistry() {
@@ -125,6 +125,6 @@ public final class ObservabilityKit {
         OBSERVATION_REGISTRY.set(null);
         SETTINGS.set(null);
         ACTIVE_METER_REGISTRY.set(null);
-        ACTIVE_EXEMPLARS.set(null);
+        RECENT_INTERACTIONS.set(null);
     }
 }

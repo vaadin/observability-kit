@@ -18,8 +18,8 @@ import org.springframework.boot.actuate.endpoint.annotation.ReadOperation;
 import org.springframework.boot.actuate.endpoint.annotation.Selector;
 
 import com.vaadin.observability.micrometer.ObservabilityKit;
-import com.vaadin.observability.micrometer.insights.ExemplarBuffer;
 import com.vaadin.observability.micrometer.insights.InsightsService;
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 /**
  * The {@code /actuator/vaadin/observability} insights endpoint. Actuator
@@ -27,10 +27,10 @@ import com.vaadin.observability.micrometer.insights.InsightsService;
  * {@code vaadin} plus a selector, claiming the {@code vaadin} Actuator
  * namespace with room for future sub-resources.
  * <p>
- * The exemplar buffer is bound at {@code serviceInit} time, after this bean is
- * created, so it is looked up per request via
- * {@link ObservabilityKit#getActiveErrorExemplars()}, mirroring how the
- * dev-tools stats panel reads the active meter registry.
+ * The interaction buffer is bound at {@code serviceInit} time, after this bean
+ * is created, so it is looked up per request via
+ * {@link ObservabilityKit#getRecentInteractions()}, mirroring how the dev-tools
+ * stats panel reads the active meter registry.
  */
 @Endpoint(id = "vaadin")
 public class VaadinObservabilityEndpoint {
@@ -43,14 +43,15 @@ public class VaadinObservabilityEndpoint {
             // Unknown selector: null renders as 404.
             return null;
         }
-        ExemplarBuffer exemplars = ObservabilityKit.getActiveExemplars();
-        if (exemplars == null) {
+        RecentInteractions interactions = ObservabilityKit
+                .getRecentInteractions();
+        if (interactions == null) {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("schemaVersion", 1);
             payload.put("generated", Instant.now().toString());
             payload.put("insights", List.of());
             return payload;
         }
-        return new InsightsService(exemplars).payload();
+        return new InsightsService(interactions).payload();
     }
 }

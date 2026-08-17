@@ -24,7 +24,7 @@ import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
-import com.vaadin.observability.micrometer.insights.InteractionExemplarCollector;
+import com.vaadin.observability.micrometer.insights.InteractionCollector;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
@@ -196,7 +196,7 @@ class MetricsServiceInitListenerTest {
     @Test
     void registersRpcMetricsBinderAndInteractionCollectorWhenRequestsEnabled() {
         // Defaults enable both requests and errors: the RpcMetricsBinder
-        // (timing/tracing) and the InteractionExemplarCollector (insights)
+        // (timing/tracing) and the InteractionCollector (insights)
         // are both registered as RPC invocation listeners.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().build());
@@ -206,8 +206,8 @@ class MetricsServiceInitListenerTest {
                 listeners.stream().anyMatch(l -> l instanceof RpcMetricsBinder),
                 "requests enabled should register the RpcMetricsBinder");
         Assertions.assertTrue(
-                listeners.stream().anyMatch(
-                        l -> l instanceof InteractionExemplarCollector),
+                listeners.stream()
+                        .anyMatch(l -> l instanceof InteractionCollector),
                 "requests enabled should register the interaction collector");
     }
 
@@ -221,8 +221,8 @@ class MetricsServiceInitListenerTest {
         List<RpcInvocationListener> listeners = registeredRpcListeners();
 
         Assertions.assertTrue(
-                listeners.stream().anyMatch(
-                        l -> l instanceof InteractionExemplarCollector),
+                listeners.stream()
+                        .anyMatch(l -> l instanceof InteractionCollector),
                 "errors enabled should register the interaction collector");
         Assertions.assertTrue(
                 listeners.stream()

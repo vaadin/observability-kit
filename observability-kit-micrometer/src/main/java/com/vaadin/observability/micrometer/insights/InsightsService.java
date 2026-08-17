@@ -19,16 +19,16 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * Turns raw interaction exemplars into insights, and renders the payload served
- * at {@code /actuator/vaadin/observability}. Exemplars are grouped so that N
+ * Turns captured interactions into insights, and renders the payload served at
+ * {@code /actuator/vaadin/observability}. Interactions are grouped so that N
  * users hitting the same problem produce ONE insight with N occurrences; each
- * insight type is a rule over the shared exemplar buffer:
+ * insight type is a rule over the shared interaction buffer:
  * <ul>
  * <li>{@code user-interaction-error}: failed interactions, grouped by (route,
  * component, event, exception);</li>
  * <li>{@code slow-user-interaction}: successful interactions over the
- * {@link InteractionExemplarCollector#UX_BUDGET_MS UX budget}, grouped by
- * (route, component, event).</li>
+ * {@link InteractionCollector#UX_BUDGET_MS UX budget}, grouped by (route,
+ * component, event).</li>
  * </ul>
  * The output is a stable, AI-agent-readable contract: an agent with access to
  * the application codebase can open {@code evidence.applicationFrame} (or the
@@ -37,11 +37,11 @@ import java.util.stream.Collectors;
  */
 public class InsightsService {
 
-    private static final int EXEMPLARS_PER_INSIGHT = 3;
+    private static final int EXAMPLES_PER_INSIGHT = 3;
 
-    private final ExemplarBuffer buffer;
+    private final RecentInteractions buffer;
 
-    public InsightsService(ExemplarBuffer buffer) {
+    public InsightsService(RecentInteractions buffer) {
         this.buffer = buffer;
     }
 
@@ -54,34 +54,35 @@ public class InsightsService {
     }
 
     private List<Map<String, Object>> insights() {
-        List<InteractionExemplar> all = buffer.snapshot();
+        List<CapturedInteraction> all = buffer.snapshot();
         List<Map<String, Object>> insights = new ArrayList<>();
-        groups(all, e -> InteractionExemplar.OUTCOME_ERROR.equals(e.outcome()),
+        groups(all, e -> CapturedInteraction.OUTCOME_ERROR.equals(e.outcome()),
                 e -> String.join("|", nullSafe(e.route()),
                         nullSafe(e.component()), nullSafe(e.event()),
                         nullSafe(e.exceptionType())))
                 .forEach(group -> insights.add(errorInsight(group)));
-        groups(all, e -> InteractionExemplar.OUTCOME_SUCCESS.equals(e.outcome())
-                && e.durationMs() >= InteractionExemplarCollector.UX_BUDGET_MS,
+        groups(all,
+                e -> CapturedInteraction.OUTCOME_SUCCESS.equals(e.outcome())
+                        && e.durationMs() >= InteractionCollector.UX_BUDGET_MS,
                 e -> String.join("|", nullSafe(e.route()),
                         nullSafe(e.component()), nullSafe(e.event())))
                 .forEach(group -> insights.add(slowInsight(group)));
         return insights;
     }
 
-    private static List<List<InteractionExemplar>> groups(
-            List<InteractionExemplar> exemplars,
-            Predicate<InteractionExemplar> rule,
-            Function<InteractionExemplar, String> key) {
-        return List.copyOf(exemplars.stream().filter(rule).collect(Collectors
+    private static List<List<CapturedInteraction>> groups(
+            List<CapturedInteraction> interactions,
+            Predicate<CapturedInteraction> rule,
+            Function<CapturedInteraction, String> key) {
+        return List.copyOf(interactions.stream().filter(rule).collect(Collectors
                 .groupingBy(key, LinkedHashMap::new, Collectors.toList()))
                 .values());
     }
 
     private static Map<String, Object> errorInsight(
-            List<InteractionExemplar> group) {
+            List<CapturedInteraction> group) {
         // Snapshot is newest-first, so the head is the latest occurrence.
-        InteractionExemplar latest = group.get(0);
+        CapturedInteraction latest = group.get(0);
 
         Map<String, Object> insight = new LinkedHashMap<>();
         insight.put("id", "user-interaction-error");
@@ -120,14 +121,14 @@ public class InsightsService {
                                 simpleName(latest.component()),
                                 simpleName(latest.exceptionType())));
 
-        insight.put("exemplars", exemplarsJson(group));
+        insight.put("examples", examplesJson(group));
         return insight;
     }
 
     private static Map<String, Object> slowInsight(
-            List<InteractionExemplar> group) {
-        InteractionExemplar latest = group.get(0);
-        long maxMs = group.stream().mapToLong(InteractionExemplar::durationMs)
+            List<CapturedInteraction> group) {
+        CapturedInteraction latest = group.get(0);
+        long maxMs = group.stream().mapToLong(CapturedInteraction::durationMs)
                 .max().orElse(-1);
 
         Map<String, Object> insight = new LinkedHashMap<>();
@@ -138,12 +139,12 @@ public class InsightsService {
                 "User interaction '%s' on %s took up to %d ms, over the %d ms UX budget (%d occurrence%s)"
                         .formatted(nullSafe(latest.event()),
                                 simpleName(latest.component()), maxMs,
-                                InteractionExemplarCollector.UX_BUDGET_MS,
-                                group.size(), group.size() == 1 ? "" : "s"));
+                                InteractionCollector.UX_BUDGET_MS, group.size(),
+                                group.size() == 1 ? "" : "s"));
 
         Map<String, Object> evidence = commonEvidence(group);
         evidence.put("maxDurationMs", maxMs);
-        evidence.put("thresholdMs", InteractionExemplarCollector.UX_BUDGET_MS);
+        evidence.put("thresholdMs", InteractionCollector.UX_BUDGET_MS);
         insight.put("evidence", evidence);
 
         insight.put("replay", List.of(
@@ -162,16 +163,16 @@ public class InsightsService {
                         + "thread and push the result via ui.access().")
                         .formatted(nullSafe(latest.event()),
                                 simpleName(latest.component()), maxMs,
-                                InteractionExemplarCollector.UX_BUDGET_MS));
+                                InteractionCollector.UX_BUDGET_MS));
 
-        insight.put("exemplars", exemplarsJson(group));
+        insight.put("examples", examplesJson(group));
         return insight;
     }
 
     private static Map<String, Object> commonEvidence(
-            List<InteractionExemplar> group) {
-        InteractionExemplar latest = group.get(0);
-        Instant firstSeen = group.stream().map(InteractionExemplar::timestamp)
+            List<CapturedInteraction> group) {
+        CapturedInteraction latest = group.get(0);
+        Instant firstSeen = group.stream().map(CapturedInteraction::timestamp)
                 .min(Comparator.naturalOrder()).orElseThrow();
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("route", latest.route());
@@ -184,21 +185,21 @@ public class InsightsService {
         return evidence;
     }
 
-    private static List<Map<String, Object>> exemplarsJson(
-            List<InteractionExemplar> group) {
-        return group.stream().limit(EXEMPLARS_PER_INSIGHT)
-                .map(InsightsService::exemplarJson).toList();
+    private static List<Map<String, Object>> examplesJson(
+            List<CapturedInteraction> group) {
+        return group.stream().limit(EXAMPLES_PER_INSIGHT)
+                .map(InsightsService::exampleJson).toList();
     }
 
-    private static Map<String, Object> exemplarJson(
-            InteractionExemplar exemplar) {
+    private static Map<String, Object> exampleJson(
+            CapturedInteraction interaction) {
         Map<String, Object> json = new LinkedHashMap<>();
-        json.put("timestamp", exemplar.timestamp().toString());
-        json.put("durationMs", exemplar.durationMs());
-        json.put("sessionId", exemplar.sessionId());
-        json.put("uiId", exemplar.uiId());
-        if (exemplar.stackTop() != null) {
-            json.put("stackTop", exemplar.stackTop());
+        json.put("timestamp", interaction.timestamp().toString());
+        json.put("durationMs", interaction.durationMs());
+        json.put("sessionId", interaction.sessionId());
+        json.put("uiId", interaction.uiId());
+        if (interaction.stackTop() != null) {
+            json.put("stackTop", interaction.stackTop());
         }
         return json;
     }

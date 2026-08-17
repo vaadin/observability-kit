@@ -18,7 +18,7 @@ import java.util.List;
  * in application code it blew up.
  * <p>
  * Only interesting interactions are retained: failed ones and ones slower than
- * the UX budget ({@link InteractionExemplarCollector#UX_BUDGET_MS}).
+ * the UX budget ({@link InteractionCollector#UX_BUDGET_MS}).
  *
  * @param timestamp
  *            when the interaction completed
@@ -51,7 +51,7 @@ import java.util.List;
  * @param uiId
  *            UI id within the session
  */
-public record InteractionExemplar(Instant timestamp, String route,
+public record CapturedInteraction(Instant timestamp, String route,
         String component, String event, String rpcType, String outcome,
         long durationMs, String exceptionType, String exceptionMessage,
         String applicationFrame, List<String> stackTop, String sessionId,

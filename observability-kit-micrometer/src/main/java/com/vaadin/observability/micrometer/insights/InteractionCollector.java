@@ -14,18 +14,15 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
-import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.dom.Element;
-import com.vaadin.flow.internal.StateNode;
-import com.vaadin.flow.internal.StateTree;
 import com.vaadin.flow.server.communication.RpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 /**
  * Captures interesting client-to-server invocations as
- * {@link InteractionExemplar}s: failed ones (when error metrics are enabled)
+ * {@link CapturedInteraction}s: failed ones (when error metrics are enabled)
  * and ones slower than the {@link #UX_BUDGET_MS UX budget} (when request
  * metrics are enabled).
  * <p>
@@ -36,12 +33,12 @@ import com.vaadin.observability.micrometer.ObservabilitySettings;
  * duration, and the event carries the target state node from which the
  * interacted component is resolved. Works in production mode.
  */
-public class InteractionExemplarCollector implements RpcInvocationListener {
+public class InteractionCollector implements RpcInvocationListener {
 
     /**
      * Absolute per-interaction latency budget for good UX, in milliseconds.
      * Beyond roughly one second a user loses the feeling of operating directly
-     * on the UI, so interactions over this budget are captured as exemplars
+     * on the UI, so interactions over this budget are captured as interactions
      * regardless of any historical baseline.
      */
     public static final long UX_BUDGET_MS = 1000;
@@ -59,7 +56,7 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
 
     private static final int STACK_TOP_FRAMES = 5;
 
-    private final ExemplarBuffer buffer;
+    private final RecentInteractions buffer;
     private final boolean captureErrors;
     private final boolean captureSlow;
     private final long uxBudgetMs;
@@ -74,7 +71,7 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
      */
     private final ThreadLocal<String> componentType = new ThreadLocal<>();
 
-    public InteractionExemplarCollector(ExemplarBuffer buffer,
+    public InteractionCollector(RecentInteractions buffer,
             ObservabilitySettings settings) {
         this(buffer, settings, UX_BUDGET_MS);
     }
@@ -83,7 +80,7 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
      * Test seam allowing the slow-interaction threshold to be overridden so
      * timing behaviour can be exercised without real delays.
      */
-    InteractionExemplarCollector(ExemplarBuffer buffer,
+    InteractionCollector(RecentInteractions buffer,
             ObservabilitySettings settings, long uxBudgetMs) {
         this.buffer = buffer;
         this.captureErrors = settings.isErrors();
@@ -96,7 +93,8 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
-        componentType.set(resolveComponentType(event).orElse(null));
+        componentType.set(
+                ComponentResolver.resolveComponentType(event).orElse(null));
         startNanos.set(System.nanoTime());
     }
 
@@ -107,7 +105,7 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
             return;
         }
         try {
-            buffer.add(errorExemplar(event, error, elapsedMs(),
+            buffer.add(errorInteraction(event, error, elapsedMs(),
                     componentType.get()));
         } catch (RuntimeException e) {
             // Collection is best-effort enrichment; never interfere with the
@@ -129,7 +127,7 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
             return;
         }
         try {
-            buffer.add(slowExemplar(event, durationMs, component));
+            buffer.add(slowInteraction(event, durationMs, component));
         } catch (RuntimeException e) {
             // Best-effort, as above.
         }
@@ -143,14 +141,15 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
     }
 
-    private static InteractionExemplar errorExemplar(RpcInvocationEvent event,
-            Throwable error, long durationMs, String component) {
+    private static CapturedInteraction errorInteraction(
+            RpcInvocationEvent event, Throwable error, long durationMs,
+            String component) {
         UI ui = event.getUI();
         Throwable rootCause = rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
-        return new InteractionExemplar(Instant.now(), route(ui), component,
+        return new CapturedInteraction(Instant.now(), route(ui), component,
                 event.getName(), event.getType(),
-                InteractionExemplar.OUTCOME_ERROR, durationMs,
+                CapturedInteraction.OUTCOME_ERROR, durationMs,
                 rootCause.getClass().getName(), rootCause.getMessage(),
                 firstApplicationFrame(stack).orElse(null),
                 Arrays.stream(stack).limit(STACK_TOP_FRAMES)
@@ -158,12 +157,12 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
                 sessionId(ui), ui != null ? ui.getUIId() : -1);
     }
 
-    private static InteractionExemplar slowExemplar(RpcInvocationEvent event,
+    private static CapturedInteraction slowInteraction(RpcInvocationEvent event,
             long durationMs, String component) {
         UI ui = event.getUI();
-        return new InteractionExemplar(Instant.now(), route(ui), component,
+        return new CapturedInteraction(Instant.now(), route(ui), component,
                 event.getName(), event.getType(),
-                InteractionExemplar.OUTCOME_SUCCESS, durationMs, null, null,
+                CapturedInteraction.OUTCOME_SUCCESS, durationMs, null, null,
                 null, null, sessionId(ui), ui != null ? ui.getUIId() : -1);
     }
 
@@ -198,28 +197,4 @@ public class InteractionExemplarCollector implements RpcInvocationListener {
                 .findFirst().map(StackTraceElement::toString);
     }
 
-    /**
-     * Resolves the class name of the component the invocation targets, walking
-     * up from the target state node to the nearest enclosing component. Same
-     * approach as the kit's {@code RpcMetricsBinder}.
-     */
-    private static Optional<String> resolveComponentType(
-            RpcInvocationEvent event) {
-        int nodeId = event.getNodeId();
-        UI ui = event.getUI();
-        if (nodeId < 0 || ui == null) {
-            return Optional.empty();
-        }
-        try {
-            StateTree tree = ui.getInternals().getStateTree();
-            StateNode node = tree.getNodeById(nodeId);
-            if (node == null) {
-                return Optional.empty();
-            }
-            return ComponentUtil.findParentComponent(Element.get(node))
-                    .map(component -> component.getClass().getName());
-        } catch (RuntimeException e) {
-            return Optional.empty();
-        }
-    }
 }
