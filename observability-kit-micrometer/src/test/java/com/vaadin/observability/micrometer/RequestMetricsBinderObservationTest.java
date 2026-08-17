@@ -12,9 +12,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import io.micrometer.common.KeyValue;
+import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
@@ -36,6 +41,7 @@ class RequestMetricsBinderObservationTest {
         final List<String> names = new ArrayList<>();
         final List<String> contextualNames = new ArrayList<>();
         final List<Map<String, String>> tags = new ArrayList<>();
+        final List<Map<String, String>> highCardinalityTags = new ArrayList<>();
         final AtomicBoolean errored = new AtomicBoolean();
 
         @Override
@@ -47,6 +53,11 @@ class RequestMetricsBinderObservationTest {
                 snap.put(kv.getKey(), kv.getValue());
             }
             tags.add(snap);
+            Map<String, String> highSnap = new HashMap<>();
+            for (KeyValue kv : ctx.getHighCardinalityKeyValues()) {
+                highSnap.put(kv.getKey(), kv.getValue());
+            }
+            highCardinalityTags.add(highSnap);
             if (ctx.getError() != null) {
                 errored.set(true);
             }
@@ -168,6 +179,63 @@ class RequestMetricsBinderObservationTest {
         Assertions.assertEquals(ObservationNames.OUTCOME_ERROR,
                 recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
         Assertions.assertTrue(recorder.errored.get());
+    }
+
+    @Test
+    void uiIdAndClientLocationAreSpanOnlyAndNeverTimerTags() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(registry))
+                .observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, obs,
+                ObservabilitySettings.builder().build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getParameter("v-r")).thenReturn("uidl");
+        Mockito.when(req.getParameter("v-uiId")).thenReturn("42");
+        Mockito.when(req.getHeader("Referer"))
+                .thenReturn("https://example.com/orders/17");
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        binder.requestStart(req, resp);
+        binder.requestEnd(req, resp, session);
+
+        // Both values reach the span...
+        Assertions.assertEquals("42", recorder.highCardinalityTags.get(0)
+                .get(ObservationNames.KEY_UI_ID));
+        Assertions.assertEquals("/orders/17", recorder.highCardinalityTags
+                .get(0).get(ObservationNames.KEY_CLIENT_LOCATION));
+
+        // ...but neither becomes a Timer tag: a UI id is unbounded and the
+        // client location is un-templated, so tagging with them would multiply
+        // the time series of vaadin.request.duration without limit.
+        Assertions.assertFalse(
+                recorder.tags.get(0).containsKey(ObservationNames.KEY_UI_ID),
+                "ui.id must not be a low-cardinality Timer tag");
+        Assertions.assertFalse(
+                recorder.tags.get(0)
+                        .containsKey(ObservationNames.KEY_CLIENT_LOCATION),
+                "vaadin.client.location must not be a low-cardinality Timer tag");
+
+        Timer timer = registry.find(MeterNames.REQUEST_DURATION).timer();
+        Assertions.assertNotNull(timer,
+                "the observation should have produced the request timer");
+        Assertions.assertEquals(
+                Set.of(ObservationNames.KEY_REQUEST_TYPE,
+                        ObservationNames.KEY_INTERACTION,
+                        ObservationNames.KEY_HTTP_METHOD,
+                        ObservationNames.KEY_OUTCOME,
+                        // Added by DefaultMeterObservationHandler itself; the
+                        // exception class name, or "none".
+                        "error"),
+                timer.getId().getTags().stream().map(Tag::getKey)
+                        .collect(Collectors.toSet()),
+                "vaadin.request.duration should carry only bounded tags");
     }
 
     @Test

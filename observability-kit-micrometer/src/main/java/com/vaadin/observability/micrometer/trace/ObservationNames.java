@@ -29,7 +29,20 @@ public final class ObservationNames {
     public static final String KEY_ROUTE = "route";
     public static final String KEY_HTTP_METHOD = "http.method";
     public static final String KEY_SESSION_ID = "vaadin.session.id";
+
+    /**
+     * High-cardinality span attribute: the id of the UI the request belongs to,
+     * or {@link #UI_ID_UNKNOWN}. Span-only; UI ids are unbounded over an
+     * application's lifetime, so this is never added as a Timer tag.
+     */
     public static final String KEY_UI_ID = "ui.id";
+
+    /**
+     * High-cardinality span attribute: the literal, un-templated browser path
+     * the request was sent from, or {@link #LOCATION_UNKNOWN}. Span-only; use
+     * the {@link #KEY_ROUTE} tag of the navigation meters for templated,
+     * cardinality-capped view attribution.
+     */
     public static final String KEY_CLIENT_LOCATION = "vaadin.client.location";
 
     /**

@@ -37,6 +37,14 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * <li>Otherwise (no obs registry / traces disabled / observation handler
  * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
+ * <p>
+ * Timer tags (low cardinality): {@code vaadin.request.type},
+ * {@code vaadin.interaction}, {@code http.method} and {@code outcome} on the
+ * Observation path; {@code outcome} alone on the direct-recording path. The UI
+ * id and the client location are attached as high-cardinality key-values, so
+ * they enrich the span without multiplying the Timer's time series: a UI id is
+ * unbounded over an application's lifetime, and the client location is
+ * deliberately kept un-templated.
  */
 final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
@@ -108,9 +116,12 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                             type)
                     .lowCardinalityKeyValue(ObservationNames.KEY_HTTP_METHOD,
                             httpMethod(request))
-                    .lowCardinalityKeyValue(ObservationNames.KEY_UI_ID,
+                    // Span-only: the UI id is unbounded over an application's
+                    // lifetime and the client location is un-templated, so
+                    // neither may become a Timer tag.
+                    .highCardinalityKeyValue(ObservationNames.KEY_UI_ID,
                             uiId(request))
-                    .lowCardinalityKeyValue(
+                    .highCardinalityKeyValue(
                             ObservationNames.KEY_CLIENT_LOCATION,
                             clientLocation(request))
                     // Always emit the interaction key so every
@@ -146,11 +157,12 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     /**
      * Extracts the page path the UIDL request was sent from. Falls back to the
-     * Referer header path so we always emit something useful for dashboards
-     * filtering by view, without ever exposing PII (the path goes through the
-     * parent navigation observation's route template mapping in dashboards; we
-     * deliberately keep it un-templated here so the span captures the literal
-     * client path).
+     * Referer header path so we always emit something useful when reading a
+     * trace, without ever exposing PII. The path is deliberately kept
+     * un-templated so the span captures the literal client path; that is also
+     * why it is attached as a high-cardinality key-value and never as a Timer
+     * tag. For a templated, cardinality-capped view attribution use the
+     * {@code route} tag of the navigation meters instead.
      */
     private static String clientLocation(VaadinRequest request) {
         if (request == null) {
