@@ -41,10 +41,14 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
  * <p>
- * Timer tags (low cardinality): {@code type} (RPC invocation type) and
- * {@code outcome} ({@code success}/{@code error}). The invocation name and node
- * ID are deliberately omitted from the Timer tags because they are
- * high-cardinality.
+ * Timer tags (low cardinality), identical on both paths: {@code type} (RPC
+ * invocation type), {@code outcome} ({@code success}/{@code error}) and
+ * {@code error} (the failing exception's simple class name, or {@code none}) —
+ * the last of these added by {@code DefaultMeterObservationHandler} on the
+ * Observation path and explicitly on the direct-recording one, so neither
+ * publishes {@link MeterNames#RPC_DURATION} under a tag-key set the other
+ * lacks. The invocation name and node ID are deliberately omitted from the
+ * Timer tags because they are high-cardinality.
  * <p>
  * When tracing is enabled, the span additionally carries the invocation name
  * ({@link ObservationNames#KEY_EVENT_NAME}) and the targeted component class
@@ -60,6 +64,10 @@ final class RpcMetricsBinder implements RpcInvocationListener {
 
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
+    // Simple class name of the failing exception, mirroring what
+    // DefaultMeterObservationHandler reads off the Observation context so the
+    // direct-recording path can tag its Timer the same way.
+    private final ThreadLocal<String> errorType = new ThreadLocal<>();
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Observation> observation = new ThreadLocal<>();
     private final ThreadLocal<Observation.Scope> observationScope = new ThreadLocal<>();
@@ -80,6 +88,7 @@ final class RpcMetricsBinder implements RpcInvocationListener {
         // server shutdown). Without this, a pooled thread could carry
         // errored=TRUE into the next invocation and misreport it.
         errored.remove();
+        errorType.remove();
         sample.remove();
         observation.remove();
         observationScope.remove();
@@ -151,6 +160,9 @@ final class RpcMetricsBinder implements RpcInvocationListener {
     @Override
     public void invocationFailed(RpcInvocationEvent event, Throwable error) {
         errored.set(Boolean.TRUE);
+        if (error != null) {
+            errorType.set(error.getClass().getSimpleName());
+        }
         Observation obs = observation.get();
         if (obs != null && error != null) {
             obs.error(error);
@@ -160,6 +172,7 @@ final class RpcMetricsBinder implements RpcInvocationListener {
     @Override
     public void invocationEnded(RpcInvocationEvent event) {
         boolean wasError = errored.get();
+        String error = errorType.get();
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
         String type = event.getType();
@@ -170,6 +183,7 @@ final class RpcMetricsBinder implements RpcInvocationListener {
 
         // Clear all thread-locals before any calls that could throw.
         errored.remove();
+        errorType.remove();
         sample.remove();
         observationScope.remove();
         observation.remove();
@@ -181,9 +195,15 @@ final class RpcMetricsBinder implements RpcInvocationListener {
             }
             obs.stop();
         } else if (s != null) {
+            // The error tag replicates the one
+            // DefaultMeterObservationHandler adds for us on the Observation
+            // path, keeping both paths' tag-key sets identical.
             s.stop(Timer.builder(MeterNames.RPC_DURATION)
                     .tag(MeterNames.TAG_TYPE, type)
-                    .tag(MeterNames.TAG_OUTCOME, outcome).register(registry));
+                    .tag(MeterNames.TAG_OUTCOME, outcome)
+                    .tag(MeterNames.TAG_ERROR,
+                            error != null ? error : MeterNames.ERROR_NONE)
+                    .register(registry));
         }
     }
 }
