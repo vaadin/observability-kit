@@ -225,14 +225,12 @@ class RequestMetricsBinderObservationTest {
         Timer timer = registry.find(MeterNames.REQUEST_DURATION).timer();
         Assertions.assertNotNull(timer,
                 "the observation should have produced the request timer");
-        Assertions.assertEquals(
-                Set.of(ObservationNames.KEY_REQUEST_TYPE,
-                        ObservationNames.KEY_INTERACTION,
-                        ObservationNames.KEY_HTTP_METHOD,
-                        ObservationNames.KEY_OUTCOME,
-                        // Added by DefaultMeterObservationHandler itself; the
-                        // exception class name, or "none".
-                        "error"),
+        Assertions.assertEquals(Set.of(ObservationNames.KEY_REQUEST_TYPE,
+                ObservationNames.KEY_INTERACTION,
+                ObservationNames.KEY_HTTP_METHOD, ObservationNames.KEY_OUTCOME,
+                // Added by DefaultMeterObservationHandler itself; the
+                // exception class name, or "none".
+                "error"),
                 timer.getId().getTags().stream().map(Tag::getKey)
                         .collect(Collectors.toSet()),
                 "vaadin.request.duration should carry only bounded tags");
