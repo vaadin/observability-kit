@@ -11,6 +11,7 @@ package com.vaadin.observability.micrometer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
@@ -21,8 +22,10 @@ import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +48,19 @@ class MetricsServiceInitListenerTest {
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(true);
         return service;
+    }
+
+    /**
+     * Counts the registered interceptors of the given type. Several binders
+     * intercept requests (request timing, navigation clean-up), so tests match
+     * on the concrete type instead of the plain invocation count.
+     */
+    private static long interceptorsOfType(ServiceInitEvent event,
+            Class<? extends VaadinRequestInterceptor> type) {
+        ArgumentCaptor<VaadinRequestInterceptor> captor = ArgumentCaptor
+                .forClass(VaadinRequestInterceptor.class);
+        verify(event, atLeast(0)).addVaadinRequestInterceptor(captor.capture());
+        return captor.getAllValues().stream().filter(type::isInstance).count();
     }
 
     @Test
@@ -154,8 +170,7 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(event).addVaadinRequestInterceptor(
-                any(VaadinRequestInterceptor.class));
+        assertEquals(1, interceptorsOfType(event, RequestMetricsBinder.class));
     }
 
     @Test
@@ -169,8 +184,7 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(event).addVaadinRequestInterceptor(
-                any(VaadinRequestInterceptor.class));
+        assertEquals(1, interceptorsOfType(event, RequestMetricsBinder.class));
     }
 
     @Test
@@ -184,7 +198,37 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(event, never()).addVaadinRequestInterceptor(any());
+        assertEquals(0, interceptorsOfType(event, RequestMetricsBinder.class));
+    }
+
+    @Test
+    void registersNavigationInterceptorWhenNavigationEnabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        // The navigation binder also intercepts requests so it can close out
+        // navigations that never reach afterNavigation.
+        assertEquals(1,
+                interceptorsOfType(event, NavigationMetricsBinder.class));
+    }
+
+    @Test
+    void skipsNavigationInterceptorWhenNavigationDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().navigation(false).build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        assertEquals(0,
+                interceptorsOfType(event, NavigationMetricsBinder.class));
     }
 
     @Test

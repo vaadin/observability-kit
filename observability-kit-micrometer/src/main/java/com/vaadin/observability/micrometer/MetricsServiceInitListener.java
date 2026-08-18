@@ -196,8 +196,17 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
 
         if (settings.isUis() || settings.isNavigation()
                 || settings.isClient()) {
-            service.addUIInitListener(new UiMetricsBinder(registry,
-                    observationRegistry, settings));
+            UiMetricsBinder uiBinder = new UiMetricsBinder(registry,
+                    observationRegistry, settings);
+            service.addUIInitListener(uiBinder);
+            NavigationMetricsBinder navigationBinder = uiBinder
+                    .getNavigationBinder();
+            if (navigationBinder != null) {
+                // Navigations that are rerouted away or aborted by an
+                // exception never reach afterNavigation; the interceptor
+                // gives the binder a request-scoped point to close them out.
+                event.addVaadinRequestInterceptor(navigationBinder);
+            }
         }
 
         if (settings.isRequests() || settings.isErrors()) {

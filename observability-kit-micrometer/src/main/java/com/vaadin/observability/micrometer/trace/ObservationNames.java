@@ -61,6 +61,19 @@ public final class ObservationNames {
     public static final String OUTCOME_SUCCESS = "success";
     public static final String OUTCOME_ERROR = "error";
 
+    /**
+     * {@link #KEY_OUTCOME} value for a navigation replaced by a
+     * {@code rerouteTo} before it completed; a routing decision rather than a
+     * failure.
+     */
+    public static final String OUTCOME_REROUTED = "rerouted";
+
+    /**
+     * {@link #KEY_OUTCOME} value for a navigation replaced by a
+     * {@code forwardTo} before it completed.
+     */
+    public static final String OUTCOME_FORWARDED = "forwarded";
+
     public static final String REQUEST_TYPE_UIDL = "uidl";
     public static final String REQUEST_TYPE_HEARTBEAT = "heartbeat";
     public static final String REQUEST_TYPE_PUSH = "push";

@@ -57,6 +57,17 @@ final class UiMetricsBinder implements UIInitListener {
                 : null;
     }
 
+    /**
+     * The navigation binder attached to every UI, or {@code null} when
+     * navigation metrics are disabled. Exposed so the service init listener can
+     * also register it as a request interceptor: a navigation that never
+     * reaches {@code afterNavigation} has to be closed out before the request
+     * thread is recycled.
+     */
+    NavigationMetricsBinder getNavigationBinder() {
+        return navigationBinder;
+    }
+
     @Override
     public void uiInit(UIInitEvent event) {
         UI ui = event.getUI();

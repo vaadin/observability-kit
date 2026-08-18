@@ -208,7 +208,7 @@ ObservabilitySettings.builder()
 | `vaadin.session.lock.hold` | Timer | Time the session lock is held. |
 | `vaadin.ui.active` | Gauge | Currently active UIs. |
 | `vaadin.ui.created` | Counter | UIs created. |
-| `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). |
+| `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). A navigation that never completes is still recorded: `outcome=rerouted` or `outcome=forwarded` when a listener redirected it, and `outcome=error` when it was aborted (`rerouteToError`, or an exception while the view was being built). |
 | `vaadin.request.duration` | Timer | Server-side request handling time. |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
 | `vaadin.errors` | Counter | Server-side errors (tagged by `exception`). |
