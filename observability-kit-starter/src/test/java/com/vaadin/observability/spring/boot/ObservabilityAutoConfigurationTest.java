@@ -177,6 +177,29 @@ class ObservabilityAutoConfigurationTest {
     }
 
     /**
+     * Insight detail is opt-in: the payload is meant to be forwarded, so the
+     * sensitive parts stay out until the application asks for them.
+     */
+    @Test
+    void insightsDetails_offByDefault_optInViaProperty() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .run(context -> assertThat(
+                        context.getBean(ObservabilitySettings.class)
+                                .isInsightsDetails())
+                        .isFalse());
+
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withPropertyValues(
+                        "vaadin.observability.insights-details=true")
+                .run(context -> assertThat(
+                        context.getBean(ObservabilitySettings.class)
+                                .isInsightsDetails())
+                        .isTrue());
+    }
+
+    /**
      * With Spring Boot Actuator on the classpath (an optional dependency of the
      * starter, present here at test scope) the insights endpoint bean is
      * registered.

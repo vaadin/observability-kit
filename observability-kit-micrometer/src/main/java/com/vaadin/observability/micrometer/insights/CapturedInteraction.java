@@ -46,28 +46,37 @@ import java.util.List;
  *            the UX budget this interaction was measured against, {@code -1}
  *            when it was not retained for being slow. Carried per interaction
  *            so a report never has to guess which budget was in force
+ * @param detailsIncluded
+ *            whether potentially sensitive detail was collected for this
+ *            interaction, i.e. the raw session id, the exception message and
+ *            the stack frames. Recorded per interaction so a report can say
+ *            that a field was withheld rather than absent
  * @param exceptionType
  *            fully-qualified class of the root-cause exception, {@code null}
  *            for successful interactions
  * @param exceptionMessage
- *            message of the root cause, may be {@code null}
+ *            message of the root cause, truncated; {@code null} when it was not
+ *            collected (see {@code detailsIncluded}) or the cause had none
  * @param applicationFrame
  *            first stack frame in application code (not JDK/framework), the
  *            most likely location of the bug; {@code null} for successful
  *            interactions
  * @param stackTop
- *            the top frames of the root-cause stack trace, {@code null} for
- *            successful interactions
+ *            the top frames of the root-cause stack trace; {@code null} for
+ *            successful interactions and when detail was not collected
  * @param sessionId
- *            Vaadin session id, for correlating with logs
+ *            the Vaadin session id when detail was collected, otherwise a short
+ *            one-way hash of it, which still correlates the examples of one
+ *            insight without identifying the session
  * @param uiId
  *            UI id within the session
  */
 public record CapturedInteraction(Instant timestamp, String route,
         String location, String component, String event, String rpcType,
-        String outcome, long durationMs, long thresholdMs, String exceptionType,
-        String exceptionMessage, String applicationFrame, List<String> stackTop,
-        String sessionId, int uiId) {
+        String outcome, long durationMs, long thresholdMs,
+        boolean detailsIncluded, String exceptionType, String exceptionMessage,
+        String applicationFrame, List<String> stackTop, String sessionId,
+        int uiId) {
 
     public static final String OUTCOME_SUCCESS = "success";
     public static final String OUTCOME_ERROR = "error";

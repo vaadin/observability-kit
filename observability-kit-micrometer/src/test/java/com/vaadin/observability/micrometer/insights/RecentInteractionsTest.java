@@ -19,7 +19,7 @@ class RecentInteractionsTest {
     private static CapturedInteraction interaction(String route) {
         return new CapturedInteraction(Instant.now(), route, route + "/1",
                 "Button", "click", "event", CapturedInteraction.OUTCOME_SUCCESS,
-                1200, 1000, null, null, null, null, "session", 0);
+                1200, 1000, true, null, null, null, null, "session", 0);
     }
 
     @Test

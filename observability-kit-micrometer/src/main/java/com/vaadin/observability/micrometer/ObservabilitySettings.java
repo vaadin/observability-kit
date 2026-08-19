@@ -25,6 +25,7 @@ public final class ObservabilitySettings {
     private final boolean tracesSessionId;
     private final boolean database;
     private final boolean databaseStatement;
+    private final boolean insightsDetails;
     private final int routeCardinalityLimit;
     private final int clientRatePerSession;
 
@@ -40,6 +41,7 @@ public final class ObservabilitySettings {
         this.tracesSessionId = builder.tracesSessionId;
         this.database = builder.database;
         this.databaseStatement = builder.databaseStatement;
+        this.insightsDetails = builder.insightsDetails;
         this.routeCardinalityLimit = builder.routeCardinalityLimit;
         this.clientRatePerSession = builder.clientRatePerSession;
     }
@@ -85,6 +87,23 @@ public final class ObservabilitySettings {
         return tracesSessionId;
     }
 
+    /**
+     * Whether interaction insights may carry potentially sensitive detail: the
+     * raw session id, the exception message and the top stack frames.
+     * <p>
+     * Off by default. The insights payload is meant to travel — into issue
+     * trackers, AI agents and whatever a consumer forwards it to — so the
+     * detail that could contain personal or secret data is withheld unless an
+     * application asks for it. What remains is still actionable: the route, the
+     * component, the event, the exception type and the first application stack
+     * frame. With this off the session id is reduced to a short one-way hash,
+     * which still correlates the examples of one insight without identifying
+     * the session.
+     */
+    public boolean isInsightsDetails() {
+        return insightsDetails;
+    }
+
     public boolean isDatabase() {
         return database;
     }
@@ -115,6 +134,7 @@ public final class ObservabilitySettings {
         private boolean tracesSessionId = false;
         private boolean database = false;
         private boolean databaseStatement = false;
+        private boolean insightsDetails = false;
         private int routeCardinalityLimit = 200;
         private int clientRatePerSession = 100;
 
@@ -163,6 +183,11 @@ public final class ObservabilitySettings {
 
         public Builder tracesSessionId(boolean tracesSessionId) {
             this.tracesSessionId = tracesSessionId;
+            return this;
+        }
+
+        public Builder insightsDetails(boolean insightsDetails) {
+            this.insightsDetails = insightsDetails;
             return this;
         }
 

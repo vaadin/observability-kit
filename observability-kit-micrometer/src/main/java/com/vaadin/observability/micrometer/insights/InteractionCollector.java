@@ -8,9 +8,13 @@
  */
 package com.vaadin.observability.micrometer.insights;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -70,10 +74,20 @@ public class InteractionCollector implements RpcInvocationListener {
 
     private static final int STACK_TOP_FRAMES = 5;
 
+    /**
+     * Exception messages are truncated to this many characters even when detail
+     * is enabled: a message is free-form text and can carry a whole payload.
+     */
+    private static final int MAX_MESSAGE_LENGTH = 200;
+
+    /** Hex characters kept of the hashed session id. */
+    private static final int SESSION_HASH_LENGTH = 12;
+
     private final RecentInteractions buffer;
     private final boolean captureErrors;
     private final boolean captureSlow;
     private final long uxBudgetMs;
+    private final boolean details;
     private final RouteTagResolver routes;
 
     private final ThreadLocal<Long> startNanos = new ThreadLocal<>();
@@ -101,6 +115,7 @@ public class InteractionCollector implements RpcInvocationListener {
         this.captureErrors = settings.isErrors();
         this.captureSlow = settings.isRequests();
         this.uxBudgetMs = uxBudgetMs;
+        this.details = settings.isInsightsDetails();
         this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
     }
 
@@ -162,13 +177,18 @@ public class InteractionCollector implements RpcInvocationListener {
         UI ui = event.getUI();
         Throwable rootCause = rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
+        // The exception type and the first application frame are always kept:
+        // they are what makes the insight actionable and neither is free-form
+        // user data. The message and the remaining frames are withheld unless
+        // the application opted in.
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
                 component, event.getName(), event.getType(),
-                CapturedInteraction.OUTCOME_ERROR, durationMs, -1,
-                rootCause.getClass().getName(), rootCause.getMessage(),
+                CapturedInteraction.OUTCOME_ERROR, durationMs, -1, details,
+                rootCause.getClass().getName(),
+                details ? truncate(rootCause.getMessage()) : null,
                 firstApplicationFrame(stack).orElse(null),
-                Arrays.stream(stack).limit(STACK_TOP_FRAMES)
-                        .map(StackTraceElement::toString).toList(),
+                details ? Arrays.stream(stack).limit(STACK_TOP_FRAMES)
+                        .map(StackTraceElement::toString).toList() : null,
                 sessionId(ui), ui != null ? ui.getUIId() : -1);
     }
 
@@ -180,7 +200,7 @@ public class InteractionCollector implements RpcInvocationListener {
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
                 component, event.getName(), event.getType(),
                 CapturedInteraction.OUTCOME_SUCCESS, durationMs, uxBudgetMs,
-                null, null, null, null, sessionId(ui),
+                details, null, null, null, null, sessionId(ui),
                 ui != null ? ui.getUIId() : -1);
     }
 
@@ -211,12 +231,40 @@ public class InteractionCollector implements RpcInvocationListener {
                 : ui.getInternals().getActiveViewLocation().getPath();
     }
 
-    private static String sessionId(UI ui) {
+    /**
+     * The session id, reduced to a short one-way hash unless detail is enabled.
+     * The hash still correlates the examples of one insight while not being an
+     * identifier that could be replayed against the running application.
+     */
+    private String sessionId(UI ui) {
         if (ui == null || ui.getSession() == null
                 || ui.getSession().getSession() == null) {
             return null;
         }
-        return ui.getSession().getSession().getId();
+        String id = ui.getSession().getSession().getId();
+        if (id == null) {
+            return null;
+        }
+        return details ? id : hash(id);
+    }
+
+    private static String hash(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest).substring(0,
+                    SESSION_HASH_LENGTH);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is required of every JVM; never fall back to the raw id.
+            return null;
+        }
+    }
+
+    private static String truncate(String message) {
+        if (message == null || message.length() <= MAX_MESSAGE_LENGTH) {
+            return message;
+        }
+        return message.substring(0, MAX_MESSAGE_LENGTH) + "…";
     }
 
     /**

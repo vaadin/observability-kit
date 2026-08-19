@@ -40,6 +40,11 @@ class InteractionCollectorTest {
                 .build();
     }
 
+    private static ObservabilitySettings withDetails(boolean details) {
+        return ObservabilitySettings.builder().errors(true).requests(true)
+                .insightsDetails(details).build();
+    }
+
     /** A UI with one attached component, plus a mocked event targeting it. */
     private record Target(UI ui, Component component,
             RpcInvocationEvent event) {
@@ -315,5 +320,100 @@ class InteractionCollectorTest {
         Assertions.assertEquals(CapturedInteraction.OUTCOME_SUCCESS,
                 snapshot.get(0).outcome(),
                 "second (newest) invocation must record success, not a stale error");
+    }
+
+    @Test
+    void withholdsSensitiveDetailByDefault() {
+        // The payload is meant to travel, so the message and the stack frames
+        // are not collected unless asked for, and the session id is reduced to
+        // a hash. What stays is what makes the insight actionable.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                withDetails(false));
+        Target target = target();
+        String realSessionId = target.ui().getSession() == null ? null
+                : target.ui().getSession().getSession().getId();
+
+        collector.invocationStarted(target.event());
+        collector.invocationFailed(target.event(), failure());
+        collector.invocationEnded(target.event());
+
+        CapturedInteraction interaction = buffer.snapshot().get(0);
+        Assertions.assertFalse(interaction.detailsIncluded(),
+                "the interaction should record that detail was withheld");
+        Assertions.assertNull(interaction.exceptionMessage(),
+                "the exception message should not be collected by default");
+        Assertions.assertNull(interaction.stackTop(),
+                "stack frames should not be collected by default");
+        // Still actionable without the sensitive parts.
+        Assertions.assertEquals("java.lang.RuntimeException",
+                interaction.exceptionType());
+        Assertions.assertEquals(
+                "com.example.OrderService.ship(OrderService.java:30)",
+                interaction.applicationFrame());
+        if (realSessionId != null) {
+            Assertions.assertNotEquals(realSessionId, interaction.sessionId(),
+                    "the raw session id must not be exposed by default");
+        }
+    }
+
+    @Test
+    void collectsSensitiveDetailWhenOptedIn() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                withDetails(true));
+        Target target = target();
+
+        collector.invocationStarted(target.event());
+        collector.invocationFailed(target.event(), failure());
+        collector.invocationEnded(target.event());
+
+        CapturedInteraction interaction = buffer.snapshot().get(0);
+        Assertions.assertTrue(interaction.detailsIncluded());
+        Assertions.assertEquals("boom", interaction.exceptionMessage(),
+                "the message should be collected when opted in");
+        Assertions.assertNotNull(interaction.stackTop(),
+                "stack frames should be collected when opted in");
+        Assertions.assertFalse(interaction.stackTop().isEmpty());
+    }
+
+    @Test
+    void truncatesAVeryLongExceptionMessage() {
+        // A message is free-form text and can carry a whole payload, so it is
+        // capped even when detail is enabled.
+        RuntimeException error = new RuntimeException("x".repeat(5000));
+        error.setStackTrace(failure().getStackTrace());
+        InteractionCollector collector = new InteractionCollector(buffer,
+                withDetails(true));
+        Target target = target();
+
+        collector.invocationStarted(target.event());
+        collector.invocationFailed(target.event(), error);
+        collector.invocationEnded(target.event());
+
+        String message = buffer.snapshot().get(0).exceptionMessage();
+        Assertions.assertTrue(message.length() < 5000,
+                "a long message should be truncated, got " + message.length()
+                        + " characters");
+        Assertions.assertTrue(message.endsWith("…"),
+                "truncation should be visible in the value");
+    }
+
+    @Test
+    void hashedSessionIdIsStableSoExamplesStillCorrelate() {
+        // The hash replaces the identifier but must still group the examples of
+        // one insight together.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                withDetails(false));
+        Target target = target();
+
+        for (int i = 0; i < 2; i++) {
+            collector.invocationStarted(target.event());
+            collector.invocationFailed(target.event(), failure());
+            collector.invocationEnded(target.event());
+        }
+
+        List<String> ids = buffer.snapshot().stream()
+                .map(CapturedInteraction::sessionId).distinct().toList();
+        Assertions.assertEquals(1, ids.size(),
+                "the same session should hash to the same value, got: " + ids);
     }
 }

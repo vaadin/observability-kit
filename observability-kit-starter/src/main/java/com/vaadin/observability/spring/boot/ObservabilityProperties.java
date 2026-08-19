@@ -32,6 +32,7 @@ public class ObservabilityProperties {
     private boolean tracesSessionId = false;
     private boolean database = false;
     private boolean databaseStatement = false;
+    private boolean insightsDetails = false;
     private int routeCardinalityLimit = 200;
     private int clientRatePerSession = 100;
 
@@ -115,6 +116,19 @@ public class ObservabilityProperties {
         this.tracesSessionId = tracesSessionId;
     }
 
+    /**
+     * Whether interaction insights may carry potentially sensitive detail: the
+     * raw session id, the exception message and the top stack frames. Off by
+     * default, since the insights payload is meant to be forwarded.
+     */
+    public boolean isInsightsDetails() {
+        return insightsDetails;
+    }
+
+    public void setInsightsDetails(boolean insightsDetails) {
+        this.insightsDetails = insightsDetails;
+    }
+
     public boolean isDatabase() {
         return database;
     }
@@ -161,6 +175,7 @@ public class ObservabilityProperties {
                 .client(client).resync(resync).traces(traces)
                 .tracesSessionId(tracesSessionId).database(database)
                 .databaseStatement(databaseStatement)
+                .insightsDetails(insightsDetails)
                 .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession).build();
     }

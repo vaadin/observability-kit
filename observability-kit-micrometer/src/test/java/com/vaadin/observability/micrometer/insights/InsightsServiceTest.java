@@ -29,7 +29,7 @@ class InsightsServiceTest {
             String exception, String frame) {
         return new CapturedInteraction(when, "orders", "orders/17", component,
                 "click", "event", CapturedInteraction.OUTCOME_ERROR, 5, -1,
-                exception, exception + " message", frame,
+                true, exception, exception + " message", frame,
                 List.of(frame, "framework.Frame.call(Frame.java:1)"), "session",
                 0);
     }
@@ -38,7 +38,7 @@ class InsightsServiceTest {
             long durationMs) {
         return new CapturedInteraction(when, "orders", "orders/17", component,
                 "click", "event", CapturedInteraction.OUTCOME_SUCCESS,
-                durationMs, OVER_BUDGET_THRESHOLD, null, null, null, null,
+                durationMs, OVER_BUDGET_THRESHOLD, true, null, null, null, null,
                 "session", 0);
     }
 
@@ -47,7 +47,7 @@ class InsightsServiceTest {
         return new CapturedInteraction(Instant.now(), "orders", "orders/17",
                 "com.example.OrdersView", "click", "event",
                 CapturedInteraction.OUTCOME_SUCCESS, durationMs, thresholdMs,
-                null, null, null, null, "session", 0);
+                true, null, null, null, null, "session", 0);
     }
 
     @SuppressWarnings("unchecked")
@@ -253,5 +253,50 @@ class InsightsServiceTest {
                 .get("examples");
         Assertions.assertEquals("orders/17", examples.get(0).get("location"),
                 "the concrete location belongs in the examples block");
+    }
+
+    @Test
+    void payloadSaysWhenDetailWasWithheldRatherThanAbsent() {
+        // An error captured with detail off carries no message and no frames.
+        // The payload has to say so: a missing message would otherwise read as
+        // an exception that simply had none.
+        buffer.add(new CapturedInteraction(Instant.now(), "orders", "orders/17",
+                "com.example.OrdersView", "click", "event",
+                CapturedInteraction.OUTCOME_ERROR, 5, -1, false,
+                "java.lang.IllegalStateException", null,
+                "com.example.OrderService.ship(OrderService.java:30)", null,
+                "9f2b1c4d5e6a", 0));
+
+        Map<String, Object> insight = insightWithId("user-interaction-error");
+        Map<String, Object> evidence = evidence(insight);
+
+        Assertions.assertFalse(evidence.containsKey("message"),
+                "a withheld message should not be rendered as a null value");
+        Assertions.assertTrue(
+                evidence.get("detail").toString().contains("insights-details"),
+                "the payload should name the setting that collects the detail");
+        // The actionable part survives.
+        Assertions.assertEquals(
+                "com.example.OrderService.ship(OrderService.java:30)",
+                evidence.get("applicationFrame"));
+        Assertions.assertEquals("java.lang.IllegalStateException",
+                evidence.get("exception"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> examples = (List<Map<String, Object>>) insight
+                .get("examples");
+        Assertions.assertFalse(examples.get(0).containsKey("stackTop"),
+                "withheld stack frames should be absent from the examples");
+        Assertions.assertEquals("9f2b1c4d5e6a",
+                examples.get(0).get("sessionId"),
+                "the hashed session id should still correlate the examples");
+
+        // And the replay step must not print a null message.
+        Assertions.assertTrue(
+                insight.get("replay").toString()
+                        .contains("Expect IllegalStateException")
+                        && !insight.get("replay").toString().contains("null"),
+                "replay should read cleanly without a message: "
+                        + insight.get("replay"));
     }
 }

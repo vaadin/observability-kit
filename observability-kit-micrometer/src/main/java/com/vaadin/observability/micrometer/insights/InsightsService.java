@@ -111,7 +111,14 @@ public class InsightsService {
 
         Map<String, Object> evidence = commonEvidence(group);
         evidence.put("exception", latest.exceptionType());
-        evidence.put("message", latest.exceptionMessage());
+        if (latest.detailsIncluded()) {
+            evidence.put("message", latest.exceptionMessage());
+        } else {
+            // Without this a reader cannot tell a withheld message from an
+            // exception that carried none.
+            evidence.put("detail", "message and stack frames withheld; enable "
+                    + "vaadin.observability.insights-details to collect them");
+        }
         evidence.put("applicationFrame", latest.applicationFrame());
         insight.put("evidence", evidence);
 
@@ -120,8 +127,12 @@ public class InsightsService {
                 "Locate component %s".formatted(simpleName(latest.component())),
                 "Trigger a '%s' event on it"
                         .formatted(nullSafe(latest.event())),
-                "Expect %s: %s".formatted(simpleName(latest.exceptionType()),
-                        nullSafe(latest.exceptionMessage()))));
+                latest.exceptionMessage() == null
+                        ? "Expect %s"
+                                .formatted(simpleName(latest.exceptionType()))
+                        : "Expect %s: %s".formatted(
+                                simpleName(latest.exceptionType()),
+                                latest.exceptionMessage())));
 
         insight.put("suggestion",
                 ("Inspect %s; the '%s' handler in %s throws %s. An AI agent with "
