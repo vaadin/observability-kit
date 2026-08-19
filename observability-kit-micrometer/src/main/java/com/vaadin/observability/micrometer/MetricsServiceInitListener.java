@@ -8,7 +8,9 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.lang.reflect.Method;
 import java.util.Objects;
+import java.util.concurrent.Executor;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
@@ -22,6 +24,7 @@ import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
 import com.vaadin.observability.micrometer.insights.InteractionCollector;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
+import com.vaadin.observability.micrometer.trace.ObservationNames;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
 /**
@@ -44,7 +47,7 @@ import com.vaadin.observability.micrometer.trace.TracingExecutor;
  * When an {@link ObservationRegistry} is available and
  * {@link ObservabilitySettings#isTraces()} is on, the listener also wraps the
  * service's executor with a {@link TracingExecutor} so trace context flows
- * across {@code UI.access(...)} boundaries.
+ * across the thread hops taken by tasks submitted to it.
  */
 public class MetricsServiceInitListener implements VaadinServiceInitListener {
 
@@ -225,8 +228,57 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         }
 
         if (settings.isTraces() && observationRegistry != null) {
-            event.getExecutor().ifPresent(exec -> event.setExecutor(
-                    new TracingExecutor(exec, observationRegistry)));
+            Executor executor = event.getExecutor()
+                    .orElseGet(() -> resolveServiceExecutor(service));
+            if (executor != null) {
+                event.setExecutor(
+                        TracingExecutor.wrap(executor, observationRegistry));
+            }
+        }
+    }
+
+    /**
+     * Resolves the {@link Executor} the Vaadin service is about to use, so that
+     * it can be wrapped for tracing.
+     * <p>
+     * {@link ServiceInitEvent#getExecutor()} is empty unless another
+     * {@link VaadinServiceInitListener} has set an executor: Vaadin resolves
+     * its own executor only after all listeners have run, by calling the
+     * protected {@code VaadinService.createDefaultExecutor()}. Calling that
+     * method here — reflectively, since it is not part of the public API —
+     * hands back exactly the executor Vaadin would have picked, including
+     * Spring's {@code TaskExecutor} bean selection, without duplicating any of
+     * that logic. Vaadin then adopts the wrapper we set on the event instead of
+     * resolving an executor a second time.
+     * <p>
+     * If the call fails, tracing of executor tasks is skipped and Vaadin
+     * resolves its executor as usual. If another listener sets an executor
+     * after this one has run, Vaadin uses that one and the executor resolved
+     * here is discarded unused.
+     * <p>
+     * Remove this once Flow offers a supported way to decorate the resolved
+     * executor from a {@link VaadinServiceInitListener}.
+     *
+     * @param service
+     *            the service being initialized
+     * @return the executor to wrap, or {@code null} if it could not be resolved
+     */
+    private static Executor resolveServiceExecutor(VaadinService service) {
+        try {
+            Method createDefaultExecutor = VaadinService.class
+                    .getDeclaredMethod("createDefaultExecutor");
+            createDefaultExecutor.setAccessible(true);
+            // Invoked on the service instance, so subclass overrides such as
+            // SpringVaadinServletService.createDefaultExecutor() are used.
+            return (Executor) createDefaultExecutor.invoke(service);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            LOGGER.warn(
+                    "Could not resolve the Vaadin service executor, tasks "
+                            + "submitted to it will not be traced. Trace "
+                            + "context will not propagate to those tasks and "
+                            + "no {} spans will be recorded.",
+                    ObservationNames.UI_ACCESS, e);
+            return null;
         }
     }
 }
