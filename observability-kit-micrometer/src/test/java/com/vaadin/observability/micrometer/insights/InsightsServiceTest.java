@@ -19,24 +19,35 @@ class InsightsServiceTest {
 
     private static final long OVER_BUDGET = InteractionCollector.UX_BUDGET_MS
             + 2000;
+    /** The budget a captured slow interaction was measured against. */
+    private static final long OVER_BUDGET_THRESHOLD = InteractionCollector.UX_BUDGET_MS;
 
     private final RecentInteractions buffer = new RecentInteractions(100);
     private final InsightsService service = new InsightsService(buffer);
 
     private static CapturedInteraction error(Instant when, String component,
             String exception, String frame) {
-        return new CapturedInteraction(when, "orders", component, "click",
-                "event", CapturedInteraction.OUTCOME_ERROR, 5, exception,
-                exception + " message", frame,
+        return new CapturedInteraction(when, "orders", "orders/17", component,
+                "click", "event", CapturedInteraction.OUTCOME_ERROR, 5, -1,
+                exception, exception + " message", frame,
                 List.of(frame, "framework.Frame.call(Frame.java:1)"), "session",
                 0);
     }
 
     private static CapturedInteraction slow(Instant when, String component,
             long durationMs) {
-        return new CapturedInteraction(when, "orders", component, "click",
-                "event", CapturedInteraction.OUTCOME_SUCCESS, durationMs, null,
-                null, null, null, "session", 0);
+        return new CapturedInteraction(when, "orders", "orders/17", component,
+                "click", "event", CapturedInteraction.OUTCOME_SUCCESS,
+                durationMs, OVER_BUDGET_THRESHOLD, null, null, null, null,
+                "session", 0);
+    }
+
+    private static CapturedInteraction slowWithBudget(long durationMs,
+            long thresholdMs) {
+        return new CapturedInteraction(Instant.now(), "orders", "orders/17",
+                "com.example.OrdersView", "click", "event",
+                CapturedInteraction.OUTCOME_SUCCESS, durationMs, thresholdMs,
+                null, null, null, null, "session", 0);
     }
 
     @SuppressWarnings("unchecked")
@@ -180,5 +191,67 @@ class InsightsServiceTest {
         Assertions.assertTrue(
                 insight.get("summary").toString().contains("_unknown"),
                 "a null component should render as the _unknown placeholder");
+    }
+
+    @Test
+    void reportsInstrumentationInactiveWhenNothingIsBound() {
+        // "no insights" and "nothing was watching" are different answers; a
+        // consumer cannot act on the second one unless it is told.
+        Map<String, Object> payload = new InsightsService(null).payload();
+
+        Assertions.assertEquals("inactive", payload.get("instrumentation"),
+                "an unbound buffer should be reported as inactive");
+        Assertions.assertTrue(((List<?>) payload.get("insights")).isEmpty(),
+                "no insights should be reported when nothing is bound");
+    }
+
+    @Test
+    void reportsInstrumentationActiveWhenBound() {
+        Assertions.assertEquals("active",
+                service.payload().get("instrumentation"),
+                "a bound buffer should be reported as active");
+    }
+
+    @Test
+    void keepsInteractionsCapturedUnderALowerBudget() {
+        // A collector configured with a 250 ms budget retains a 300 ms
+        // interaction. Re-checking it against the static 1 s default would
+        // silently drop it, losing data the collector deliberately kept.
+        buffer.add(slowWithBudget(300, 250));
+
+        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        Map<String, Object> evidence = evidence(insight);
+        Assertions.assertEquals(250L, evidence.get("thresholdMs"),
+                "the insight should report the budget actually in force");
+        Assertions.assertEquals(300L, evidence.get("maxDurationMs"));
+    }
+
+    @Test
+    void slowInsightSaysItMeasuresServerHandlingOnly() {
+        // The duration covers the RPC invocation, not lock wait, network or
+        // client rendering, so the report must not imply perceived latency.
+        buffer.add(slowWithBudget(1500, 1000));
+
+        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        Assertions.assertTrue(
+                insight.get("summary").toString().startsWith("Server handling"),
+                "summary should scope the claim to server handling: "
+                        + insight.get("summary"));
+        Assertions.assertTrue(
+                evidence(insight).get("measures").toString()
+                        .contains("server-side RPC handling only"),
+                "evidence should state what was measured");
+    }
+
+    @Test
+    void examplesCarryTheConcreteLocation() {
+        buffer.add(slowWithBudget(1500, 1000));
+
+        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> examples = (List<Map<String, Object>>) insight
+                .get("examples");
+        Assertions.assertEquals("orders/17", examples.get(0).get("location"),
+                "the concrete location belongs in the examples block");
     }
 }

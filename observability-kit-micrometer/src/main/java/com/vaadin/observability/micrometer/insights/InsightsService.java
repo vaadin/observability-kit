@@ -18,6 +18,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Turns captured interactions into insights, and renders the payload served at
  * {@code /actuator/vaadin/observability}. Interactions are grouped so that N
@@ -39,9 +41,15 @@ public class InsightsService {
 
     private static final int EXAMPLES_PER_INSIGHT = 3;
 
-    private final RecentInteractions buffer;
+    private final @Nullable RecentInteractions buffer;
 
-    public InsightsService(RecentInteractions buffer) {
+    /**
+     * @param buffer
+     *            the interactions recorded so far, or {@code null} when the kit
+     *            registered no instrumentation — the payload then says so
+     *            explicitly instead of reporting an empty result
+     */
+    public InsightsService(@Nullable RecentInteractions buffer) {
         this.buffer = buffer;
     }
 
@@ -49,7 +57,10 @@ public class InsightsService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("schemaVersion", 1);
         payload.put("generated", Instant.now().toString());
-        payload.put("insights", insights());
+        // "no insights" and "nothing was watching" are different answers, and a
+        // consumer cannot act on the second one without being told.
+        payload.put("instrumentation", buffer == null ? "inactive" : "active");
+        payload.put("insights", buffer == null ? List.of() : insights());
         return payload;
     }
 
@@ -61,9 +72,12 @@ public class InsightsService {
                         nullSafe(e.component()), nullSafe(e.event()),
                         nullSafe(e.exceptionType())))
                 .forEach(group -> insights.add(errorInsight(group)));
+        // No threshold re-check here: the collector only retains a successful
+        // interaction when it already exceeded the budget it was configured
+        // with. Re-filtering against the static default would silently drop
+        // interactions captured under a lower budget.
         groups(all,
-                e -> CapturedInteraction.OUTCOME_SUCCESS.equals(e.outcome())
-                        && e.durationMs() >= InteractionCollector.UX_BUDGET_MS,
+                e -> CapturedInteraction.OUTCOME_SUCCESS.equals(e.outcome()),
                 e -> String.join("|", nullSafe(e.route()),
                         nullSafe(e.component()), nullSafe(e.event())))
                 .forEach(group -> insights.add(slowInsight(group)));
@@ -131,20 +145,30 @@ public class InsightsService {
         long maxMs = group.stream().mapToLong(CapturedInteraction::durationMs)
                 .max().orElse(-1);
 
+        // The budget travels with the interaction, so a report reflects the
+        // budget that was actually in force rather than the static default.
+        long thresholdMs = latest.thresholdMs();
+
         Map<String, Object> insight = new LinkedHashMap<>();
         insight.put("id", "slow-user-interaction");
         insight.put("severity", "warning");
         insight.put("category", "performance");
         insight.put("summary",
-                "User interaction '%s' on %s took up to %d ms, over the %d ms UX budget (%d occurrence%s)"
+                ("Server handling of user interaction '%s' on %s took up to "
+                        + "%d ms, over the %d ms UX budget (%d occurrence%s)")
                         .formatted(nullSafe(latest.event()),
                                 simpleName(latest.component()), maxMs,
-                                InteractionCollector.UX_BUDGET_MS, group.size(),
+                                thresholdMs, group.size(),
                                 group.size() == 1 ? "" : "s"));
 
         Map<String, Object> evidence = commonEvidence(group);
         evidence.put("maxDurationMs", maxMs);
-        evidence.put("thresholdMs", InteractionCollector.UX_BUDGET_MS);
+        evidence.put("thresholdMs", thresholdMs);
+        // Be explicit about what was measured: the number below is the RPC
+        // invocation only, so a user-perceived delay may be larger.
+        evidence.put("measures",
+                "server-side RPC handling only; excludes session-lock wait, "
+                        + "network transfer and client-side rendering");
         insight.put("evidence", evidence);
 
         insight.put("replay", List.of(
@@ -152,18 +176,20 @@ public class InsightsService {
                 "Locate component %s".formatted(simpleName(latest.component())),
                 "Trigger a '%s' event on it"
                         .formatted(nullSafe(latest.event())),
-                "Expect the UI to stay unresponsive for roughly %d ms"
+                "Expect the server to spend roughly %d ms handling it"
                         .formatted(maxMs)));
 
         insight.put("suggestion",
-                ("The '%s' handler in %s blocks the request for up to %d ms, "
-                        + "over the %d ms UX budget. An AI agent with codebase "
-                        + "access should inspect the handler and make the slow "
-                        + "work faster, paginated, or move it off the request "
-                        + "thread and push the result via ui.access().")
+                ("The '%s' handler in %s occupies the request thread for up to "
+                        + "%d ms, over the %d ms UX budget. That is server-side "
+                        + "handling alone, so what the user feels is at least "
+                        + "this much. An AI agent with codebase access should "
+                        + "inspect the handler and make the slow work faster, "
+                        + "paginated, or move it off the request thread and "
+                        + "push the result via ui.access().")
                         .formatted(nullSafe(latest.event()),
                                 simpleName(latest.component()), maxMs,
-                                InteractionCollector.UX_BUDGET_MS));
+                                thresholdMs));
 
         insight.put("examples", examplesJson(group));
         return insight;
@@ -195,6 +221,8 @@ public class InsightsService {
             CapturedInteraction interaction) {
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("timestamp", interaction.timestamp().toString());
+        // The concrete location, as opposed to the grouped-on route template.
+        json.put("location", interaction.location());
         json.put("durationMs", interaction.durationMs());
         json.put("sessionId", interaction.sessionId());
         json.put("uiId", interaction.uiId());

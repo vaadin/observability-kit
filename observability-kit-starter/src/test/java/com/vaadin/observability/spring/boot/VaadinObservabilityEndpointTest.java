@@ -29,6 +29,19 @@ class VaadinObservabilityEndpointTest {
     }
 
     @Test
+    void saysInstrumentationIsInactiveWhenNothingIsBound() {
+        // No serviceInit has run here, so no interaction buffer is bound. The
+        // endpoint must say that outright: an empty "insights" list would read
+        // as "we looked and found nothing", which is a different answer and
+        // would send a consumer looking for a bug that is not there.
+        Map<String, Object> payload = endpoint
+                .section(VaadinObservabilityEndpoint.SECTION_OBSERVABILITY);
+
+        assertThat(payload).containsEntry("instrumentation", "inactive");
+        assertThat(payload).extracting("insights").asList().isEmpty();
+    }
+
+    @Test
     void unknownSelectorReturnsNullSoActuatorRenders404() {
         assertThat(endpoint.section("does-not-exist")).isNull();
     }

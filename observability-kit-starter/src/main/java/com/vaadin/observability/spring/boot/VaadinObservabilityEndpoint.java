@@ -8,9 +8,6 @@
  */
 package com.vaadin.observability.spring.boot;
 
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
@@ -19,7 +16,6 @@ import org.springframework.boot.actuate.endpoint.annotation.Selector;
 
 import com.vaadin.observability.micrometer.ObservabilityKit;
 import com.vaadin.observability.micrometer.insights.InsightsService;
-import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 /**
  * The {@code /actuator/vaadin/observability} insights endpoint. Actuator
@@ -30,7 +26,10 @@ import com.vaadin.observability.micrometer.insights.RecentInteractions;
  * The interaction buffer is bound at {@code serviceInit} time, after this bean
  * is created, so it is looked up per request via
  * {@link ObservabilityKit#getRecentInteractions()}, mirroring how the dev-tools
- * stats panel reads the active meter registry.
+ * stats panel reads the active meter registry. A {@code null} buffer means the
+ * kit registered no instrumentation; {@link InsightsService} renders that as an
+ * explicit {@code instrumentation: inactive} rather than an empty result, so
+ * this endpoint does not need a second code path for it.
  */
 @Endpoint(id = "vaadin")
 public class VaadinObservabilityEndpoint {
@@ -43,15 +42,7 @@ public class VaadinObservabilityEndpoint {
             // Unknown selector: null renders as 404.
             return null;
         }
-        RecentInteractions interactions = ObservabilityKit
-                .getRecentInteractions();
-        if (interactions == null) {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("schemaVersion", 1);
-            payload.put("generated", Instant.now().toString());
-            payload.put("insights", List.of());
-            return payload;
-        }
-        return new InsightsService(interactions).payload();
+        return new InsightsService(ObservabilityKit.getRecentInteractions())
+                .payload();
     }
 }
