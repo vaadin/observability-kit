@@ -23,7 +23,13 @@ import java.util.List;
  * @param timestamp
  *            when the interaction completed
  * @param route
- *            the active view location, e.g. {@code orders}
+ *            the route <em>template</em> of the active view, e.g.
+ *            {@code orders/:orderId}, so that every parameter value groups
+ *            under one insight rather than one per value
+ * @param location
+ *            the concrete location the interaction happened on, e.g.
+ *            {@code orders/17}; reported per example rather than used for
+ *            grouping
  * @param component
  *            fully-qualified class of the component the user interacted with
  * @param event
@@ -33,7 +39,13 @@ import java.util.List;
  * @param outcome
  *            {@link #OUTCOME_SUCCESS} or {@link #OUTCOME_ERROR}
  * @param durationMs
- *            server-side handling time in milliseconds, {@code -1} if unknown
+ *            server-side RPC handling time in milliseconds, {@code -1} if
+ *            unknown. This covers the invocation only: not session-lock wait,
+ *            network, or client-side rendering
+ * @param thresholdMs
+ *            the UX budget this interaction was measured against, {@code -1}
+ *            when it was not retained for being slow. Carried per interaction
+ *            so a report never has to guess which budget was in force
  * @param exceptionType
  *            fully-qualified class of the root-cause exception, {@code null}
  *            for successful interactions
@@ -52,10 +64,10 @@ import java.util.List;
  *            UI id within the session
  */
 public record CapturedInteraction(Instant timestamp, String route,
-        String component, String event, String rpcType, String outcome,
-        long durationMs, String exceptionType, String exceptionMessage,
-        String applicationFrame, List<String> stackTop, String sessionId,
-        int uiId) {
+        String location, String component, String event, String rpcType,
+        String outcome, long durationMs, long thresholdMs, String exceptionType,
+        String exceptionMessage, String applicationFrame, List<String> stackTop,
+        String sessionId, int uiId) {
 
     public static final String OUTCOME_SUCCESS = "success";
     public static final String OUTCOME_ERROR = "error";

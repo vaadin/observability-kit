@@ -17,9 +17,9 @@ import org.junit.jupiter.api.Test;
 class RecentInteractionsTest {
 
     private static CapturedInteraction interaction(String route) {
-        return new CapturedInteraction(Instant.now(), route, "Button", "click",
-                "event", CapturedInteraction.OUTCOME_SUCCESS, 1200, null, null,
-                null, null, "session", 0);
+        return new CapturedInteraction(Instant.now(), route, route + "/1",
+                "Button", "click", "event", CapturedInteraction.OUTCOME_SUCCESS,
+                1200, 1000, null, null, null, null, "session", 0);
     }
 
     @Test

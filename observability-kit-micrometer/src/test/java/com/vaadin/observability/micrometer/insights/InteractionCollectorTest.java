@@ -9,15 +9,19 @@
 package com.vaadin.observability.micrometer.insights;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.Timeout.ThreadMode;
 import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
+import com.vaadin.flow.router.Location;
 import com.vaadin.flow.server.communication.RpcInvocationEvent;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
@@ -193,6 +197,103 @@ class InteractionCollectorTest {
                 "a failed interaction yields exactly one (error) interaction");
         Assertions.assertEquals(CapturedInteraction.OUTCOME_ERROR,
                 snapshot.get(0).outcome());
+    }
+
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS, threadMode = ThreadMode.SEPARATE_THREAD)
+    void terminatesOnACyclicCausalChain() {
+        // A cause cycle (A caused by B caused by A) is legal and would spin
+        // forever on a self-reference-only guard — while the server is already
+        // handling a failure.
+        RuntimeException outer = new RuntimeException("outer");
+        RuntimeException inner = new RuntimeException("inner", outer);
+        outer.initCause(inner);
+
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true));
+        Target target = target();
+
+        collector.invocationStarted(target.event());
+        collector.invocationFailed(target.event(), outer);
+        collector.invocationEnded(target.event());
+
+        List<CapturedInteraction> snapshot = buffer.snapshot();
+        Assertions.assertEquals(1, snapshot.size(),
+                "a cyclic cause chain should still yield one interaction");
+        Assertions.assertNotNull(snapshot.get(0).exceptionType(),
+                "the walk should stop at a cause rather than hang");
+    }
+
+    /** A named view class, so the route key is stable across navigations. */
+    private static class OrdersView extends Component {
+        OrdersView() {
+            super(ElementFactory.createDiv());
+        }
+    }
+
+    @Test
+    void groupsByRouteKeySoParameterValuesDoNotSplitInsights() {
+        // The route key must identify the view, not the resolved path:
+        // otherwise orders/17 and orders/18 look like two different problems.
+        // (Turning the view into an actual "orders/:orderId" template needs a
+        // session-scoped RouteConfiguration and is covered by
+        // RouteTagResolverTest; with no session the resolver falls back to the
+        // view class, which is still one key per view, not per parameter.)
+        OrdersView view = new OrdersView();
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true));
+
+        for (int id : new int[] { 17, 18 }) {
+            UI ui = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
+            Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                    .thenReturn(List.of(view));
+            Mockito.when(ui.getInternals().getActiveViewLocation())
+                    .thenReturn(new Location("orders/" + id));
+
+            RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+            Mockito.when(event.getType()).thenReturn("event");
+            Mockito.when(event.getName()).thenReturn("click");
+            Mockito.when(event.getUI()).thenReturn(ui);
+            // No target node: this test is about the route, not the component.
+            Mockito.when(event.getNodeId()).thenReturn(-1);
+
+            collector.invocationStarted(event);
+            collector.invocationFailed(event, failure());
+            collector.invocationEnded(event);
+        }
+
+        List<String> routes = buffer.snapshot().stream()
+                .map(CapturedInteraction::route).distinct().toList();
+        Assertions.assertEquals(1, routes.size(),
+                "both interactions should share one route key, got: " + routes);
+        List<String> locations = buffer.snapshot().stream()
+                .map(CapturedInteraction::location).distinct().sorted()
+                .toList();
+        Assertions.assertEquals(List.of("orders/17", "orders/18"), locations,
+                "the concrete locations should still be reported per example");
+    }
+
+    @Test
+    void slowInteractionCarriesTheBudgetItWasMeasuredAgainst() {
+        // A collector configured with a non-default budget must record that
+        // budget, so a report never has to assume the static default.
+        // CAPTURE_ALL (0) is used so the instantaneous invocation qualifies
+        // while still differing from the static UX_BUDGET_MS default, which is
+        // the value this test must prove is not assumed.
+        long budget = CAPTURE_ALL;
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), budget);
+        Target target = target();
+
+        collector.invocationStarted(target.event());
+        collector.invocationEnded(target.event());
+
+        CapturedInteraction interaction = buffer.snapshot().get(0);
+        Assertions.assertEquals(budget, interaction.thresholdMs(),
+                "the configured budget should travel with the interaction");
+        Assertions.assertNotEquals(InteractionCollector.UX_BUDGET_MS,
+                interaction.thresholdMs(),
+                "the static default must not be assumed");
     }
 
     @Test

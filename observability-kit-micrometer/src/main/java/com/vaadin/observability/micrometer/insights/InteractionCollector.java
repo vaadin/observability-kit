@@ -10,15 +10,20 @@ package com.vaadin.observability.micrometer.insights;
 
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.communication.RpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+import com.vaadin.observability.micrometer.RouteTagResolver;
 
 /**
  * Captures interesting client-to-server invocations as
@@ -48,11 +53,20 @@ public class InteractionCollector implements RpcInvocationListener {
      * code; the first frame NOT matching a prefix is reported as the likely bug
      * location.
      */
-    private static final List<String> FRAMEWORK_PREFIXES = List.of("java.",
-            "jdk.", "sun.", "jakarta.", "org.springframework.", "org.apache.",
-            "io.micrometer.", "com.vaadin.flow.", "com.vaadin.base.",
+    private static final List<String> FRAMEWORK_PREFIXES = List.of(
+            // JDK and language runtimes
+            "java.", "javax.", "jakarta.", "jdk.", "sun.", "com.sun.",
+            "kotlin.", "scala.",
+            // Vaadin and this kit
+            "com.vaadin.flow.", "com.vaadin.base.", "com.vaadin.hilla.",
             "com.vaadin.observability.micrometer.",
-            "com.vaadin.observability.spring.");
+            "com.vaadin.observability.spring.",
+            // Servers, frameworks and persistence
+            "org.springframework.", "org.apache.", "org.atmosphere.",
+            "org.hibernate.", "org.eclipse.", "io.micrometer.",
+            // Proxy and bytecode generators, whose synthetic frames would
+            // otherwise be reported as the application's own code
+            "net.bytebuddy.", "org.objenesis.", "javassist.", "org.javassist.");
 
     private static final int STACK_TOP_FRAMES = 5;
 
@@ -60,6 +74,7 @@ public class InteractionCollector implements RpcInvocationListener {
     private final boolean captureErrors;
     private final boolean captureSlow;
     private final long uxBudgetMs;
+    private final RouteTagResolver routes;
 
     private final ThreadLocal<Long> startNanos = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
@@ -86,6 +101,7 @@ public class InteractionCollector implements RpcInvocationListener {
         this.captureErrors = settings.isErrors();
         this.captureSlow = settings.isRequests();
         this.uxBudgetMs = uxBudgetMs;
+        this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
     }
 
     @Override
@@ -141,15 +157,14 @@ public class InteractionCollector implements RpcInvocationListener {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
     }
 
-    private static CapturedInteraction errorInteraction(
-            RpcInvocationEvent event, Throwable error, long durationMs,
-            String component) {
+    private CapturedInteraction errorInteraction(RpcInvocationEvent event,
+            Throwable error, long durationMs, String component) {
         UI ui = event.getUI();
         Throwable rootCause = rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
-        return new CapturedInteraction(Instant.now(), route(ui), component,
-                event.getName(), event.getType(),
-                CapturedInteraction.OUTCOME_ERROR, durationMs,
+        return new CapturedInteraction(Instant.now(), route(ui), location(ui),
+                component, event.getName(), event.getType(),
+                CapturedInteraction.OUTCOME_ERROR, durationMs, -1,
                 rootCause.getClass().getName(), rootCause.getMessage(),
                 firstApplicationFrame(stack).orElse(null),
                 Arrays.stream(stack).limit(STACK_TOP_FRAMES)
@@ -157,20 +172,43 @@ public class InteractionCollector implements RpcInvocationListener {
                 sessionId(ui), ui != null ? ui.getUIId() : -1);
     }
 
-    private static CapturedInteraction slowInteraction(RpcInvocationEvent event,
+    private CapturedInteraction slowInteraction(RpcInvocationEvent event,
             long durationMs, String component) {
         UI ui = event.getUI();
-        return new CapturedInteraction(Instant.now(), route(ui), component,
-                event.getName(), event.getType(),
-                CapturedInteraction.OUTCOME_SUCCESS, durationMs, null, null,
-                null, null, sessionId(ui), ui != null ? ui.getUIId() : -1);
+        // The budget this interaction was actually measured against travels
+        // with it, so a report never has to assume the default.
+        return new CapturedInteraction(Instant.now(), route(ui), location(ui),
+                component, event.getName(), event.getType(),
+                CapturedInteraction.OUTCOME_SUCCESS, durationMs, uxBudgetMs,
+                null, null, null, null, sessionId(ui),
+                ui != null ? ui.getUIId() : -1);
     }
 
-    private static String route(UI ui) {
+    /**
+     * The route <em>template</em> of the active view, so that {@code orders/17}
+     * and {@code orders/18} group under one {@code orders/:orderId} insight
+     * instead of one per parameter value. Falls back to the concrete location
+     * when no navigation target can be resolved; both paths go through
+     * {@link RouteTagResolver}, so the number of distinct values stays bounded
+     * either way.
+     */
+    private String route(UI ui) {
         if (ui == null) {
             return null;
         }
-        return ui.getInternals().getActiveViewLocation().getPath();
+        for (HasElement target : ui.getInternals()
+                .getActiveRouterTargetsChain()) {
+            if (target instanceof Component component) {
+                return routes.tagFor(component.getClass());
+            }
+        }
+        return routes.tagForTemplate(location(ui));
+    }
+
+    /** The concrete location, reported per example rather than grouped on. */
+    private static String location(UI ui) {
+        return ui == null ? null
+                : ui.getInternals().getActiveViewLocation().getPath();
     }
 
     private static String sessionId(UI ui) {
@@ -181,9 +219,19 @@ public class InteractionCollector implements RpcInvocationListener {
         return ui.getSession().getSession().getId();
     }
 
+    /**
+     * Walks to the root cause, tracking the causes already visited so a cyclic
+     * causal chain terminates. A cycle longer than a self-reference (A caused
+     * by B caused by A) would otherwise spin forever, and this runs while the
+     * server is already handling a failure.
+     *
+     * @return the root cause, or the last cause before the chain looped back
+     */
     private static Throwable rootCause(Throwable error) {
+        Set<Throwable> visited = new HashSet<>();
         Throwable cause = error;
-        while (cause.getCause() != null && cause.getCause() != cause) {
+        visited.add(cause);
+        while (cause.getCause() != null && visited.add(cause.getCause())) {
             cause = cause.getCause();
         }
         return cause;
