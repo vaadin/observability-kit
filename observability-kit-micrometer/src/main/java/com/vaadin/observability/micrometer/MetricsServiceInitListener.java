@@ -22,6 +22,8 @@ import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
+import com.vaadin.observability.micrometer.insights.InteractionCollector;
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
@@ -212,6 +214,18 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         if (settings.isRequests()) {
             service.addRpcInvocationListener(new RpcMetricsBinder(registry,
                     observationRegistry, settings));
+        }
+
+        if (settings.isInsights()
+                && (settings.isErrors() || settings.isRequests())) {
+            // Retain failed and over-UX-budget user interactions so the
+            // insights endpoint can backtrack user reports ("I clicked this
+            // and got an error / it was slow") to a replicable interaction.
+            RecentInteractions interactions = new RecentInteractions(
+                    settings.getInsightsCapacity());
+            service.addRpcInvocationListener(
+                    new InteractionCollector(interactions, settings));
+            ObservabilityKit.setRecentInteractions(interactions);
         }
 
         if (settings.isTraces() && observationRegistry != null) {

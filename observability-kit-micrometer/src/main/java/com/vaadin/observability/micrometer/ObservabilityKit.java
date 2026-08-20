@@ -15,6 +15,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
+
 /**
  * Programmatic bootstrap for standalone (non-Spring) deployments. Call
  * {@link #install(MeterRegistry, ObservabilitySettings)} once at startup; the
@@ -35,6 +37,13 @@ public final class ObservabilityKit {
      * by the dev-mode Copilot metrics panel to read the live meters.
      */
     private static final AtomicReference<MeterRegistry> ACTIVE_METER_REGISTRY = new AtomicReference<>();
+
+    /**
+     * The recent-interactions buffer instrumentation was bound to, recorded at
+     * {@code serviceInit} time like {@link #ACTIVE_METER_REGISTRY}. Read by the
+     * insights endpoint.
+     */
+    private static final AtomicReference<RecentInteractions> RECENT_INTERACTIONS = new AtomicReference<>();
 
     private ObservabilityKit() {
     }
@@ -83,6 +92,25 @@ public final class ObservabilityKit {
         return ACTIVE_METER_REGISTRY.get();
     }
 
+    /**
+     * Records the recent-interactions buffer instrumentation was bound to.
+     * Called from {@code MetricsServiceInitListener} for all deployment types.
+     */
+    static void setRecentInteractions(RecentInteractions buffer) {
+        RECENT_INTERACTIONS.set(buffer);
+    }
+
+    /**
+     * The recent-interactions buffer instrumentation is currently recording
+     * into, or {@code null} if interaction backtracking has not been bound.
+     * Read by the insights endpoint.
+     *
+     * @return the active recent-interactions buffer, or {@code null}
+     */
+    public static RecentInteractions getRecentInteractions() {
+        return RECENT_INTERACTIONS.get();
+    }
+
     static ObservationRegistry getObservationRegistry() {
         return OBSERVATION_REGISTRY.get();
     }
@@ -97,5 +125,6 @@ public final class ObservabilityKit {
         OBSERVATION_REGISTRY.set(null);
         SETTINGS.set(null);
         ACTIVE_METER_REGISTRY.set(null);
+        RECENT_INTERACTIONS.set(null);
     }
 }

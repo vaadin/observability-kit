@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
+
 /**
  * Immutable settings for Observability Kit instrumentation. Build instances
  * with {@link #builder()}.
@@ -25,8 +27,11 @@ public final class ObservabilitySettings {
     private final boolean tracesSessionId;
     private final boolean database;
     private final boolean databaseStatement;
+    private final boolean insights;
+    private final boolean insightsDetails;
     private final int routeCardinalityLimit;
     private final int clientRatePerSession;
+    private final int insightsCapacity;
 
     private ObservabilitySettings(Builder builder) {
         this.sessions = builder.sessions;
@@ -40,8 +45,11 @@ public final class ObservabilitySettings {
         this.tracesSessionId = builder.tracesSessionId;
         this.database = builder.database;
         this.databaseStatement = builder.databaseStatement;
+        this.insights = builder.insights;
+        this.insightsDetails = builder.insightsDetails;
         this.routeCardinalityLimit = builder.routeCardinalityLimit;
         this.clientRatePerSession = builder.clientRatePerSession;
+        this.insightsCapacity = builder.insightsCapacity;
     }
 
     public static Builder builder() {
@@ -85,6 +93,37 @@ public final class ObservabilitySettings {
         return tracesSessionId;
     }
 
+    /**
+     * Whether failed and over-budget user interactions are retained so the
+     * insights endpoint can backtrack a user report to a replicable
+     * interaction. On by default.
+     * <p>
+     * Independent of {@link #isInsightsDetails()}, which only governs how much
+     * detail a retained interaction carries. Collection still requires
+     * {@link #isErrors()} for failures and {@link #isRequests()} for slow
+     * interactions, since those supply the respective capture paths.
+     */
+    public boolean isInsights() {
+        return insights;
+    }
+
+    /**
+     * Whether interaction insights may carry potentially sensitive detail: the
+     * raw session id, the exception message and the top stack frames.
+     * <p>
+     * Off by default. The insights payload is meant to travel — into issue
+     * trackers, AI agents and whatever a consumer forwards it to — so the
+     * detail that could contain personal or secret data is withheld unless an
+     * application asks for it. What remains is still actionable: the route, the
+     * component, the event, the exception type and the first application stack
+     * frame. With this off the session id is reduced to a short one-way hash,
+     * which still correlates the examples of one insight without identifying
+     * the session.
+     */
+    public boolean isInsightsDetails() {
+        return insightsDetails;
+    }
+
     public boolean isDatabase() {
         return database;
     }
@@ -101,6 +140,14 @@ public final class ObservabilitySettings {
         return clientRatePerSession;
     }
 
+    /**
+     * The hard cap on retained interactions. Memory use of the insights buffer
+     * is bounded by this; the oldest entry is evicted once it is reached.
+     */
+    public int getInsightsCapacity() {
+        return insightsCapacity;
+    }
+
     /** Builder for {@link ObservabilitySettings}. */
     public static final class Builder {
 
@@ -115,8 +162,11 @@ public final class ObservabilitySettings {
         private boolean tracesSessionId = false;
         private boolean database = false;
         private boolean databaseStatement = false;
+        private boolean insights = true;
+        private boolean insightsDetails = false;
         private int routeCardinalityLimit = 200;
         private int clientRatePerSession = 100;
+        private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
         private Builder() {
         }
@@ -166,6 +216,16 @@ public final class ObservabilitySettings {
             return this;
         }
 
+        public Builder insights(boolean insights) {
+            this.insights = insights;
+            return this;
+        }
+
+        public Builder insightsDetails(boolean insightsDetails) {
+            this.insightsDetails = insightsDetails;
+            return this;
+        }
+
         public Builder database(boolean database) {
             this.database = database;
             return this;
@@ -193,6 +253,16 @@ public final class ObservabilitySettings {
                                 + clientRatePerSession);
             }
             this.clientRatePerSession = clientRatePerSession;
+            return this;
+        }
+
+        public Builder insightsCapacity(int insightsCapacity) {
+            if (insightsCapacity < 1) {
+                throw new IllegalArgumentException(
+                        "insightsCapacity must be >= 1, got "
+                                + insightsCapacity);
+            }
+            this.insightsCapacity = insightsCapacity;
             return this;
         }
 
