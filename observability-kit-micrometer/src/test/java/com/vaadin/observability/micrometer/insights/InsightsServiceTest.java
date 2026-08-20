@@ -55,10 +55,10 @@ class InsightsServiceTest {
         return (List<Map<String, Object>>) service.payload().get("insights");
     }
 
-    private Map<String, Object> insightWithId(String id) {
-        return insights().stream().filter(i -> id.equals(i.get("id")))
-                .findFirst().orElseThrow(
-                        () -> new AssertionError("no insight with id " + id));
+    private Map<String, Object> insightWithType(String type) {
+        return insights().stream().filter(i -> type.equals(i.get("type")))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "no insight with type " + type));
     }
 
     @SuppressWarnings("unchecked")
@@ -82,7 +82,7 @@ class InsightsServiceTest {
                 "java.lang.NullPointerException",
                 "com.example.OrderService.ship(OrderService.java:30)"));
 
-        Map<String, Object> insight = insightWithId("user-interaction-error");
+        Map<String, Object> insight = insightWithType("user-interaction-error");
         Assertions.assertEquals("error", insight.get("severity"));
         Assertions.assertEquals("reliability", insight.get("category"));
 
@@ -107,7 +107,7 @@ class InsightsServiceTest {
     void slowInteractionProducesPerformanceInsight() {
         buffer.add(slow(Instant.now(), "com.example.OrdersView", OVER_BUDGET));
 
-        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        Map<String, Object> insight = insightWithType("slow-user-interaction");
         Assertions.assertEquals("warning", insight.get("severity"));
         Assertions.assertEquals("performance", insight.get("category"));
 
@@ -128,7 +128,7 @@ class InsightsServiceTest {
                 frame));
 
         List<Map<String, Object>> errors = insights().stream()
-                .filter(i -> "user-interaction-error".equals(i.get("id")))
+                .filter(i -> "user-interaction-error".equals(i.get("type")))
                 .toList();
         Assertions.assertEquals(1, errors.size(),
                 "identical failures should collapse into a single insight");
@@ -149,7 +149,7 @@ class InsightsServiceTest {
                 "com.example.B.y(B.java:2)"));
 
         long errorInsights = insights().stream()
-                .filter(i -> "user-interaction-error".equals(i.get("id")))
+                .filter(i -> "user-interaction-error".equals(i.get("type")))
                 .count();
         Assertions.assertEquals(2, errorInsights,
                 "distinct exceptions must not be grouped together");
@@ -162,7 +162,7 @@ class InsightsServiceTest {
                 OVER_BUDGET + 5000));
 
         Map<String, Object> evidence = evidence(
-                insightWithId("slow-user-interaction"));
+                insightWithType("slow-user-interaction"));
         Assertions.assertEquals(2, evidence.get("occurrences"));
         Assertions.assertEquals(OVER_BUDGET + 5000,
                 evidence.get("maxDurationMs"),
@@ -176,18 +176,18 @@ class InsightsServiceTest {
                 "com.example.OrderService.ship(OrderService.java:30)"));
         buffer.add(slow(Instant.now(), "com.example.OrdersView", OVER_BUDGET));
 
-        List<String> ids = insights().stream().map(i -> i.get("id").toString())
-                .toList();
-        Assertions.assertTrue(ids.contains("user-interaction-error"));
-        Assertions.assertTrue(ids.contains("slow-user-interaction"));
-        Assertions.assertEquals(2, ids.size());
+        List<String> types = insights().stream()
+                .map(i -> i.get("type").toString()).toList();
+        Assertions.assertTrue(types.contains("user-interaction-error"));
+        Assertions.assertTrue(types.contains("slow-user-interaction"));
+        Assertions.assertEquals(2, types.size());
     }
 
     @Test
     void nullComponentRendersAsUnknownPlaceholder() {
         buffer.add(slow(Instant.now(), null, OVER_BUDGET));
 
-        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        Map<String, Object> insight = insightWithType("slow-user-interaction");
         Assertions.assertTrue(
                 insight.get("summary").toString().contains("_unknown"),
                 "a null component should render as the _unknown placeholder");
@@ -219,7 +219,7 @@ class InsightsServiceTest {
         // silently drop it, losing data the collector deliberately kept.
         buffer.add(slowWithBudget(300, 250));
 
-        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        Map<String, Object> insight = insightWithType("slow-user-interaction");
         Map<String, Object> evidence = evidence(insight);
         Assertions.assertEquals(250L, evidence.get("thresholdMs"),
                 "the insight should report the budget actually in force");
@@ -232,7 +232,7 @@ class InsightsServiceTest {
         // client rendering, so the report must not imply perceived latency.
         buffer.add(slowWithBudget(1500, 1000));
 
-        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        Map<String, Object> insight = insightWithType("slow-user-interaction");
         Assertions.assertTrue(
                 insight.get("summary").toString().startsWith("Server handling"),
                 "summary should scope the claim to server handling: "
@@ -247,7 +247,7 @@ class InsightsServiceTest {
     void examplesCarryTheConcreteLocation() {
         buffer.add(slowWithBudget(1500, 1000));
 
-        Map<String, Object> insight = insightWithId("slow-user-interaction");
+        Map<String, Object> insight = insightWithType("slow-user-interaction");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> examples = (List<Map<String, Object>>) insight
                 .get("examples");
@@ -267,7 +267,7 @@ class InsightsServiceTest {
                 "com.example.OrderService.ship(OrderService.java:30)", null,
                 "9f2b1c4d5e6a", 0));
 
-        Map<String, Object> insight = insightWithId("user-interaction-error");
+        Map<String, Object> insight = insightWithType("user-interaction-error");
         Map<String, Object> evidence = evidence(insight);
 
         Assertions.assertFalse(evidence.containsKey("message"),
@@ -298,5 +298,74 @@ class InsightsServiceTest {
                         && !insight.get("replay").toString().contains("null"),
                 "replay should read cleanly without a message: "
                         + insight.get("replay"));
+    }
+
+    @Test
+    void insightsCarryTheirRuleAsTypeRatherThanAUniqueId() {
+        // Two distinct groups share the same rule label, so a field named
+        // "id" would be a non-unique identifier among its siblings.
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", OVER_BUDGET));
+        buffer.add(
+                slow(Instant.now(), "com.example.CustomersView", OVER_BUDGET));
+
+        List<Map<String, Object>> insights = insights();
+        Assertions.assertEquals(2, insights.size());
+        Assertions
+                .assertTrue(
+                        insights.stream()
+                                .allMatch(i -> "slow-user-interaction"
+                                        .equals(i.get("type"))),
+                        "each insight should carry its rule as 'type'");
+        Assertions.assertTrue(
+                insights.stream().noneMatch(i -> i.containsKey("id")),
+                "'id' implies a uniqueness the rule label does not have");
+    }
+
+    @Test
+    void replayOpensTheConcreteLocationNotTheGroupingTemplate() {
+        // The route is the cardinality-limited template used for grouping,
+        // which is not something a human or an agent can open.
+        buffer.add(error(Instant.now(), "com.example.OrdersView",
+                "java.lang.NullPointerException",
+                "com.example.OrderService.ship(OrderService.java:30)"));
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", OVER_BUDGET));
+
+        for (String type : List.of("user-interaction-error",
+                "slow-user-interaction")) {
+            List<?> replay = (List<?>) insightWithType(type).get("replay");
+            Assertions.assertEquals("Open route '/orders/17'", replay.get(0),
+                    "replay should open the concrete location for " + type);
+        }
+    }
+
+    @Test
+    void slowInsightHeadlinesTheMedianRatherThanTheWorstOutlier() {
+        // A single 5 s outlier must not describe a group that is otherwise
+        // only just over budget.
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", 1200));
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", 1300));
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", 5000));
+
+        Map<String, Object> insight = insightWithType("slow-user-interaction");
+        Map<String, Object> evidence = evidence(insight);
+        Assertions.assertEquals(1300L, evidence.get("medianDurationMs"));
+        Assertions.assertEquals(5000L, evidence.get("maxDurationMs"),
+                "the worst observed duration stays in the evidence");
+        Assertions.assertTrue(
+                insight.get("summary").toString().contains("1300 ms"),
+                "the summary should headline the median: "
+                        + insight.get("summary"));
+    }
+
+    @Test
+    void medianOfAnEvenNumberOfOccurrencesAveragesTheTwoMiddleDurations() {
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", 1100));
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", 1200));
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", 1400));
+        buffer.add(slow(Instant.now(), "com.example.OrdersView", 2000));
+
+        Assertions.assertEquals(1300L,
+                evidence(insightWithType("slow-user-interaction"))
+                        .get("medianDurationMs"));
     }
 }

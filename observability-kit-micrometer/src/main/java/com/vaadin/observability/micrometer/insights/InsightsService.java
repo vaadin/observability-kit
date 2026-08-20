@@ -99,7 +99,7 @@ public class InsightsService {
         CapturedInteraction latest = group.get(0);
 
         Map<String, Object> insight = new LinkedHashMap<>();
-        insight.put("id", "user-interaction-error");
+        insight.put("type", "user-interaction-error");
         insight.put("severity", "error");
         insight.put("category", "reliability");
         insight.put("summary",
@@ -123,7 +123,7 @@ public class InsightsService {
         insight.put("evidence", evidence);
 
         insight.put("replay", List.of(
-                "Open route '/%s'".formatted(nullSafe(latest.route())),
+                "Open route '/%s'".formatted(nullSafe(latest.location())),
                 "Locate component %s".formatted(simpleName(latest.component())),
                 "Trigger a '%s' event on it"
                         .formatted(nullSafe(latest.event())),
@@ -155,24 +155,29 @@ public class InsightsService {
         CapturedInteraction latest = group.get(0);
         long maxMs = group.stream().mapToLong(CapturedInteraction::durationMs)
                 .max().orElse(-1);
+        // The headline number is the median, not the worst case: one outlier
+        // would otherwise describe a group that is only just over budget.
+        long medianMs = medianDurationMs(group);
 
         // The budget travels with the interaction, so a report reflects the
         // budget that was actually in force rather than the static default.
         long thresholdMs = latest.thresholdMs();
 
         Map<String, Object> insight = new LinkedHashMap<>();
-        insight.put("id", "slow-user-interaction");
+        insight.put("type", "slow-user-interaction");
         insight.put("severity", "warning");
         insight.put("category", "performance");
         insight.put("summary",
-                ("Server handling of user interaction '%s' on %s took up to "
-                        + "%d ms, over the %d ms UX budget (%d occurrence%s)")
+                ("Server handling of user interaction '%s' on %s took %d ms "
+                        + "at the median (worst %d ms), over the %d ms UX "
+                        + "budget (%d occurrence%s)")
                         .formatted(nullSafe(latest.event()),
-                                simpleName(latest.component()), maxMs,
+                                simpleName(latest.component()), medianMs, maxMs,
                                 thresholdMs, group.size(),
                                 group.size() == 1 ? "" : "s"));
 
         Map<String, Object> evidence = commonEvidence(group);
+        evidence.put("medianDurationMs", medianMs);
         evidence.put("maxDurationMs", maxMs);
         evidence.put("thresholdMs", thresholdMs);
         // Be explicit about what was measured: the number below is the RPC
@@ -183,27 +188,43 @@ public class InsightsService {
         insight.put("evidence", evidence);
 
         insight.put("replay", List.of(
-                "Open route '/%s'".formatted(nullSafe(latest.route())),
+                "Open route '/%s'".formatted(nullSafe(latest.location())),
                 "Locate component %s".formatted(simpleName(latest.component())),
                 "Trigger a '%s' event on it"
                         .formatted(nullSafe(latest.event())),
                 "Expect the server to spend roughly %d ms handling it"
-                        .formatted(maxMs)));
+                        .formatted(medianMs)));
 
         insight.put("suggestion",
-                ("The '%s' handler in %s occupies the request thread for up to "
-                        + "%d ms, over the %d ms UX budget. That is server-side "
+                ("The '%s' handler in %s occupies the request thread for about "
+                        + "%d ms at the median and up to %d ms at worst, over "
+                        + "the %d ms UX budget. That is server-side "
                         + "handling alone, so what the user feels is at least "
                         + "this much. An AI agent with codebase access should "
                         + "inspect the handler and make the slow work faster, "
                         + "paginated, or move it off the request thread and "
                         + "push the result via ui.access().")
                         .formatted(nullSafe(latest.event()),
-                                simpleName(latest.component()), maxMs,
+                                simpleName(latest.component()), medianMs, maxMs,
                                 thresholdMs));
 
         insight.put("examples", examplesJson(group));
         return insight;
+    }
+
+    /**
+     * The median duration of a group. Even-sized groups average the two middle
+     * values, so a two-occurrence group is not represented by either extreme.
+     */
+    private static long medianDurationMs(List<CapturedInteraction> group) {
+        long[] sorted = group.stream()
+                .mapToLong(CapturedInteraction::durationMs).sorted().toArray();
+        if (sorted.length == 0) {
+            return -1;
+        }
+        int middle = sorted.length / 2;
+        return sorted.length % 2 == 1 ? sorted[middle]
+                : (sorted[middle - 1] + sorted[middle]) / 2;
     }
 
     private static Map<String, Object> commonEvidence(
