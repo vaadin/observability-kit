@@ -216,12 +216,13 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     observationRegistry, settings));
         }
 
-        if (settings.isErrors() || settings.isRequests()) {
+        if (settings.isInsights()
+                && (settings.isErrors() || settings.isRequests())) {
             // Retain failed and over-UX-budget user interactions so the
             // insights endpoint can backtrack user reports ("I clicked this
             // and got an error / it was slow") to a replicable interaction.
             RecentInteractions interactions = new RecentInteractions(
-                    RecentInteractions.DEFAULT_CAPACITY);
+                    settings.getInsightsCapacity());
             service.addRpcInvocationListener(
                     new InteractionCollector(interactions, settings));
             ObservabilityKit.setRecentInteractions(interactions);

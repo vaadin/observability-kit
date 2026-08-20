@@ -200,6 +200,36 @@ class ObservabilityAutoConfigurationTest {
     }
 
     /**
+     * Insights is a feature in its own right, so it gets its own flag rather
+     * than riding on the error and request metrics switches.
+     */
+    @Test
+    void insights_onByDefault_switchableIndependentlyOfErrorsAndRequests() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .run(context -> {
+                    ObservabilitySettings settings = context
+                            .getBean(ObservabilitySettings.class);
+                    assertThat(settings.isInsights()).isTrue();
+                    assertThat(settings.getInsightsCapacity()).isEqualTo(100);
+                });
+
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withPropertyValues("vaadin.observability.insights=false",
+                        "vaadin.observability.insights-capacity=25")
+                .run(context -> {
+                    ObservabilitySettings settings = context
+                            .getBean(ObservabilitySettings.class);
+                    assertThat(settings.isInsights()).isFalse();
+                    assertThat(settings.getInsightsCapacity()).isEqualTo(25);
+                    // Switching insights off must not disturb the metrics.
+                    assertThat(settings.isErrors()).isTrue();
+                    assertThat(settings.isRequests()).isTrue();
+                });
+    }
+
+    /**
      * With Spring Boot Actuator on the classpath (an optional dependency of the
      * starter, present here at test scope) the insights endpoint bean is
      * registered.

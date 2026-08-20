@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.time.Instant;
 import java.util.List;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -24,7 +25,9 @@ import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.observability.micrometer.insights.CapturedInteraction;
 import com.vaadin.observability.micrometer.insights.InteractionCollector;
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
@@ -242,6 +245,47 @@ class MetricsServiceInitListenerTest {
         new MetricsServiceInitListener().serviceInit(event);
 
         verify(service, never()).addRpcInvocationListener(any());
+    }
+
+    @Test
+    void insightsCanBeDisabledWithoutGivingUpErrorOrRequestMetrics() {
+        // Insights is a feature in its own right: switching it off must not
+        // force a choice between error metrics and request metrics.
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().insights(false).build());
+        List<RpcInvocationListener> listeners = registeredRpcListeners();
+
+        Assertions.assertTrue(
+                listeners.stream()
+                        .noneMatch(l -> l instanceof InteractionCollector),
+                "insights off should not register the interaction collector");
+        Assertions.assertTrue(
+                listeners.stream().anyMatch(l -> l instanceof RpcMetricsBinder),
+                "request metrics should survive insights being off");
+        Assertions.assertNull(ObservabilityKit.getRecentInteractions(),
+                "no buffer should be bound when insights are off");
+    }
+
+    @Test
+    void insightsBufferHonoursTheConfiguredCapacity() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().insightsCapacity(2).build());
+        registeredRpcListeners();
+
+        RecentInteractions buffer = ObservabilityKit.getRecentInteractions();
+        Assertions.assertNotNull(buffer);
+        buffer.add(interaction("a"));
+        buffer.add(interaction("b"));
+        buffer.add(interaction("c"));
+        Assertions.assertEquals(2, buffer.snapshot().size(),
+                "the buffer should be bounded by the configured capacity");
+    }
+
+    private static CapturedInteraction interaction(String component) {
+        return new CapturedInteraction(Instant.now(), "orders", "orders/17",
+                component, "click", "event",
+                CapturedInteraction.OUTCOME_SUCCESS, 1500, 1000, false, null,
+                null, null, null, "session", 0);
     }
 
     private static List<RpcInvocationListener> registeredRpcListeners() {
