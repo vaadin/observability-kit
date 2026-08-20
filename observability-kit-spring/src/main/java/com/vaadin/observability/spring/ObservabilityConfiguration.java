@@ -50,6 +50,8 @@ public class ObservabilityConfiguration {
      *            whether to track session metrics (default {@code true})
      * @param uis
      *            whether to track UI metrics (default {@code true})
+     * @param uiState
+     *            whether to measure per-UI state size (default {@code false})
      * @param navigation
      *            whether to track navigation metrics (default {@code true})
      * @param requests
@@ -69,10 +71,18 @@ public class ObservabilityConfiguration {
      * @param clientRatePerSession
      *            maximum client-side metric events per session (default
      *            {@code 100})
+     * @param uiStateSampleInterval
+     *            minimum milliseconds between two measurements of the same UI
+     *            (default {@code 10000})
+     * @param uiStateBytesPerNode
+     *            bytes per state-tree node used for
+     *            {@code vaadin.ui.state.size}, {@code 0} to publish no byte
+     *            figure (default {@code 0})
      */
     ObservabilityConfiguration(
             @Value("${vaadin.observability.sessions:true}") boolean sessions,
             @Value("${vaadin.observability.uis:true}") boolean uis,
+            @Value("${vaadin.observability.ui-state:false}") boolean uiState,
             @Value("${vaadin.observability.navigation:true}") boolean navigation,
             @Value("${vaadin.observability.requests:true}") boolean requests,
             @Value("${vaadin.observability.errors:true}") boolean errors,
@@ -80,12 +90,17 @@ public class ObservabilityConfiguration {
             @Value("${vaadin.observability.traces-session-id:false}") boolean tracesSessionId,
             @Value("${vaadin.observability.route-cardinality-limit:200}") int routeCardinalityLimit,
             @Value("${vaadin.observability.client:true}") boolean client,
-            @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession) {
+            @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession,
+            @Value("${vaadin.observability.ui-state-sample-interval:10000}") int uiStateSampleInterval,
+            @Value("${vaadin.observability.ui-state-bytes-per-node:0}") int uiStateBytesPerNode) {
         this.settings = ObservabilitySettings.builder().sessions(sessions)
-                .uis(uis).navigation(navigation).requests(requests)
-                .errors(errors).traces(traces).tracesSessionId(tracesSessionId)
+                .uis(uis).uiState(uiState).navigation(navigation)
+                .requests(requests).errors(errors).traces(traces)
+                .tracesSessionId(tracesSessionId)
                 .routeCardinalityLimit(routeCardinalityLimit).client(client)
-                .clientRatePerSession(clientRatePerSession).build();
+                .clientRatePerSession(clientRatePerSession)
+                .uiStateSampleInterval(uiStateSampleInterval)
+                .uiStateBytesPerNode(uiStateBytesPerNode).build();
     }
 
     /**

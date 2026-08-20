@@ -70,6 +70,34 @@ class ObservabilityAutoConfigurationTest {
     }
 
     /**
+     * UI-state metrics are opt-in, and the
+     * {@code vaadin.observability.ui-state} family binds onto the settings the
+     * instrumentation reads.
+     */
+    @Test
+    void uiStateProperties_bindOntoSettings() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .run(context -> assertThat(context
+                        .getBean(ObservabilitySettings.class).isUiState())
+                        .isFalse());
+
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withPropertyValues("vaadin.observability.ui-state=true",
+                        "vaadin.observability.ui-state-sample-interval=250",
+                        "vaadin.observability.ui-state-bytes-per-node=96")
+                .run(context -> {
+                    ObservabilitySettings settings = context
+                            .getBean(ObservabilitySettings.class);
+                    assertThat(settings.isUiState()).isTrue();
+                    assertThat(settings.getUiStateSampleInterval())
+                            .isEqualTo(250);
+                    assertThat(settings.getUiStateBytesPerNode()).isEqualTo(96);
+                });
+    }
+
+    /**
      * When vaadin.observability.enabled=false, the auto-configuration should
      * not activate and no beans should be registered.
      */

@@ -26,6 +26,43 @@ public final class MeterNames {
     public static final String UI_ACTIVE = "vaadin.ui.active";
     public static final String UI_CREATED = "vaadin.ui.created";
 
+    /**
+     * Gauge: state-tree nodes retained across all tracked UIs — how much UI
+     * state the server currently holds for live users. Recorded only when UI
+     * state metrics are enabled.
+     */
+    public static final String UI_STATE_NODES = "vaadin.ui.state.nodes";
+
+    /** Gauge: state-tree nodes held by the largest single UI. */
+    public static final String UI_STATE_NODES_MAX = "vaadin.ui.state.nodes.max";
+
+    /** Gauge: server-side component instances retained across all UIs. */
+    public static final String UI_STATE_COMPONENTS = "vaadin.ui.state.components";
+
+    /** Gauge: route-target instances retained across all UIs. */
+    public static final String UI_STATE_VIEWS = "vaadin.ui.state.views";
+
+    /**
+     * Gauge: retained UI state in bytes, node count times the configured cost
+     * per node. Registered only when
+     * {@link ObservabilitySettings#getUiStateBytesPerNode()} is greater than
+     * zero, because an unmeasured byte figure would be a guess.
+     */
+    public static final String UI_STATE_SIZE = "vaadin.ui.state.size";
+
+    /**
+     * Gauge: age in seconds of the stalest per-UI measurement in the aggregate.
+     * A UI is measured on its own session's thread, so an idle user's state is
+     * as old as their last interaction.
+     */
+    public static final String UI_STATE_SAMPLE_AGE_MAX = "vaadin.ui.state.sample.age.max";
+
+    /** Gauge: state-tree nodes held by the largest single session. */
+    public static final String SESSION_STATE_NODES_MAX = "vaadin.session.state.nodes.max";
+
+    /** Gauge: most UIs (browser tabs) held open by one session. */
+    public static final String SESSION_UIS_MAX = "vaadin.session.uis.max";
+
     public static final String NAVIGATION = "vaadin.navigation";
 
     public static final String REQUEST_DURATION = "vaadin.request.duration";

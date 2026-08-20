@@ -64,6 +64,44 @@ class MetricsServiceInitListenerTest {
     }
 
     @Test
+    void registersUiStateBinderWhenUiStateEnabled() {
+        // Everything else off, so the three listeners verified below can only
+        // come from the UI-state binder.
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().sessions(false).uis(false)
+                        .navigation(false).client(false).requests(false)
+                        .errors(false).traces(false).uiState(true).build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service).addUIInitListener(any(UIInitListener.class));
+        verify(service)
+                .addRpcInvocationListener(any(RpcInvocationListener.class));
+        verify(service)
+                .addSessionDestroyListener(any(SessionDestroyListener.class));
+    }
+
+    @Test
+    void skipsUiStateBinderByDefault() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().sessions(false).uis(false)
+                        .navigation(false).client(false).requests(false)
+                        .errors(false).traces(false).build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        verify(service, never()).addUIInitListener(any());
+        verify(service, never()).addRpcInvocationListener(any());
+        verify(service, never()).addSessionDestroyListener(any());
+    }
+
+    @Test
     void doesNothingWhenNotInstalled() {
         VaadinService service = mock(VaadinService.class);
         ServiceInitEvent event = mock(ServiceInitEvent.class);
