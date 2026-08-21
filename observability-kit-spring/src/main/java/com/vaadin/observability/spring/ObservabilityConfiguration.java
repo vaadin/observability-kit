@@ -69,6 +69,14 @@ public class ObservabilityConfiguration {
      * @param clientRatePerSession
      *            maximum client-side metric events per session (default
      *            {@code 100})
+     * @param insights
+     *            whether to retain failed and over-budget interactions for the
+     *            insights endpoint (default {@code true})
+     * @param insightsDetails
+     *            whether retained interactions may carry sensitive detail
+     *            (default {@code false})
+     * @param insightsCapacity
+     *            maximum number of retained interactions (default {@code 100})
      */
     ObservabilityConfiguration(
             @Value("${vaadin.observability.sessions:true}") boolean sessions,
@@ -80,12 +88,17 @@ public class ObservabilityConfiguration {
             @Value("${vaadin.observability.traces-session-id:false}") boolean tracesSessionId,
             @Value("${vaadin.observability.route-cardinality-limit:200}") int routeCardinalityLimit,
             @Value("${vaadin.observability.client:true}") boolean client,
-            @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession) {
+            @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession,
+            @Value("${vaadin.observability.insights:true}") boolean insights,
+            @Value("${vaadin.observability.insights-details:false}") boolean insightsDetails,
+            @Value("${vaadin.observability.insights-capacity:100}") int insightsCapacity) {
         this.settings = ObservabilitySettings.builder().sessions(sessions)
                 .uis(uis).navigation(navigation).requests(requests)
                 .errors(errors).traces(traces).tracesSessionId(tracesSessionId)
                 .routeCardinalityLimit(routeCardinalityLimit).client(client)
-                .clientRatePerSession(clientRatePerSession).build();
+                .clientRatePerSession(clientRatePerSession).insights(insights)
+                .insightsDetails(insightsDetails)
+                .insightsCapacity(insightsCapacity).build();
     }
 
     /**

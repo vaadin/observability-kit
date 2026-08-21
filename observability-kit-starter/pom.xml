@@ -16,6 +16,13 @@
     <name>Observability Kit :: Spring Boot Starter</name>
     <description>Spring Boot auto-configuration for Observability Kit.</description>
 
+    <properties>
+        <!-- Actuator @Selector parameters are resolved by reflection and
+             require parameter names in the bytecode. spring-boot-starter-parent
+             enables this by default, but this build inherits vaadin-parent. -->
+        <maven.compiler.parameters>true</maven.compiler.parameters>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.vaadin</groupId>
@@ -38,6 +45,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- @Endpoint for the insights endpoint; only engaged when the
+             application itself uses Actuator. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-actuator</artifactId>
             <optional>true</optional>
         </dependency>
         <!-- Needed at compile time to reference the servlet Filter registered

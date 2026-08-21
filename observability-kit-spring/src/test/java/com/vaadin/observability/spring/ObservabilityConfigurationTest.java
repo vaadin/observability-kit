@@ -56,9 +56,38 @@ class ObservabilityConfigurationTest {
             assertThat(settings.isTracesSessionId()).isFalse();
             assertThat(settings.getRouteCardinalityLimit()).isEqualTo(200);
             assertThat(settings.getClientRatePerSession()).isEqualTo(100);
+            assertThat(settings.isInsights()).isTrue();
+            assertThat(settings.isInsightsDetails()).isFalse();
+            assertThat(settings.getInsightsCapacity()).isEqualTo(100);
 
             assertThat(ctx.getBean(MetricsServiceInitListener.class))
                     .isNotNull();
+        }
+    }
+
+    /**
+     * The insights keys are documented as working for plain Spring too, so they
+     * have to be bound here and not only in the Boot starter.
+     */
+    @Test
+    void insightsPropertiesAreBoundForPlainSpring() {
+        try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
+            MockPropertySource props = new MockPropertySource()
+                    .withProperty("vaadin.observability.insights", "false")
+                    .withProperty("vaadin.observability.insights-details",
+                            "true")
+                    .withProperty("vaadin.observability.insights-capacity",
+                            "7");
+            ((ConfigurableEnvironment) ctx.getEnvironment())
+                    .getPropertySources().addFirst(props);
+            ctx.register(TestConfig.class);
+            ctx.refresh();
+
+            ObservabilitySettings settings = ctx
+                    .getBean(ObservabilitySettings.class);
+            assertThat(settings.isInsights()).isFalse();
+            assertThat(settings.isInsightsDetails()).isTrue();
+            assertThat(settings.getInsightsCapacity()).isEqualTo(7);
         }
     }
 
