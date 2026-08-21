@@ -74,7 +74,10 @@ final class RpcMetricsBinder implements RpcInvocationListener {
         errored.remove();
         sample.remove();
         observation.remove();
-        observationScope.remove();
+        // Close (not just drop) a leaked scope so the stale observation stops
+        // being the registry's current one and this invocation's span is not
+        // parented onto it.
+        ObservationScopes.closeStale(observationScope);
 
         // Mark the enclosing UIDL request span as an RPC interaction so the
         // RequestMetricsBinder labels the parent span appropriately.

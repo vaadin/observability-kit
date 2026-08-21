@@ -190,6 +190,40 @@ class RpcMetricsBinderTest {
     }
 
     @Test
+    void leakedScopeIsClosedSoNextInvocationIsNotParentedOnStaleObservation() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig().observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        Mockito.when(event.getType()).thenReturn("event");
+
+        Assertions.assertNull(observationRegistry.getCurrentObservation(),
+                "precondition: no observation is current on this thread");
+
+        // An invocation whose invocationEnded never ran (e.g. mid-request
+        // shutdown) leaves its scope open on this thread.
+        binder.invocationStarted(event);
+        Assertions.assertNotNull(observationRegistry.getCurrentObservation(),
+                "precondition: the first invocation opened a scope");
+
+        // The pooled thread now serves the next invocation.
+        binder.invocationStarted(event);
+        binder.invocationEnded(event);
+
+        Assertions.assertNotNull(recorder.lastContext);
+        Assertions.assertNull(recorder.lastContext.getParentObservation(),
+                "new RPC span must not be parented on the stale observation");
+        Assertions.assertNull(observationRegistry.getCurrentObservation(),
+                "no scope should remain current once the invocation ended");
+    }
+
+    @Test
     void noObservationWhenTracesDisabled() {
         SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
         ObservationRegistry observationRegistry = ObservationRegistry.create();

@@ -19,6 +19,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.ObservationView;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -36,11 +37,13 @@ class RequestMetricsBinderObservationTest {
         final List<String> names = new ArrayList<>();
         final List<String> contextualNames = new ArrayList<>();
         final List<Map<String, String>> tags = new ArrayList<>();
+        final List<ObservationView> parents = new ArrayList<>();
         final AtomicBoolean errored = new AtomicBoolean();
 
         @Override
         public void onStop(Observation.Context ctx) {
             names.add(ctx.getName());
+            parents.add(ctx.getParentObservation());
             contextualNames.add(ctx.getContextualName());
             Map<String, String> snap = new HashMap<>();
             for (KeyValue kv : ctx.getLowCardinalityKeyValues()) {
@@ -144,6 +147,41 @@ class RequestMetricsBinderObservationTest {
 
         Assertions.assertEquals(ObservationNames.INTERACTION_RPC,
                 recorder.tags.get(0).get(ObservationNames.KEY_INTERACTION));
+    }
+
+    @Test
+    void leakedScopeIsClosedSoNextRequestIsNotParentedOnStaleObservation() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getParameter("v-r")).thenReturn("uidl");
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        Assertions.assertNull(obs.getCurrentObservation(),
+                "precondition: no observation is current on this thread");
+
+        // A request whose requestEnd never ran (e.g. mid-request shutdown)
+        // leaves its scope open on this thread.
+        binder.requestStart(req, resp);
+        Assertions.assertNotNull(obs.getCurrentObservation(),
+                "precondition: the first request opened a scope");
+
+        // The pooled thread now serves the next request.
+        binder.requestStart(req, resp);
+        binder.requestEnd(req, resp, session);
+
+        Assertions.assertEquals(1, recorder.parents.size());
+        Assertions.assertNull(recorder.parents.get(0),
+                "new request span must not be parented on the stale observation");
+        Assertions.assertNull(obs.getCurrentObservation(),
+                "no scope should remain current once the request ended");
     }
 
     @Test

@@ -90,7 +90,10 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         errored.remove();
         sample.remove();
         observation.remove();
-        observationScope.remove();
+        // Close (not just drop) a leaked scope so the stale observation stops
+        // being the registry's current one and this request's span is not
+        // parented onto it.
+        ObservationScopes.closeStale(observationScope);
         // Drop any interaction marker left by a previous request on this
         // pooled thread; poll/navigation listeners re-mark during handling.
         RequestInteraction.clear();
