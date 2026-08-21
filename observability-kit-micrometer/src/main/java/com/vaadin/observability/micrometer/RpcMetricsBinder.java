@@ -8,19 +8,11 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.util.Optional;
-
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
-import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.ComponentUtil;
-import com.vaadin.flow.component.UI;
-import com.vaadin.flow.dom.Element;
-import com.vaadin.flow.internal.StateNode;
-import com.vaadin.flow.internal.StateTree;
 import com.vaadin.flow.server.communication.RpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
@@ -104,7 +96,7 @@ final class RpcMetricsBinder implements RpcInvocationListener {
                 obs.highCardinalityKeyValue(ObservationNames.KEY_EVENT_NAME,
                         name);
             }
-            resolveComponentType(event)
+            ComponentResolver.resolveComponentType(event)
                     .ifPresent(component -> obs.highCardinalityKeyValue(
                             ObservationNames.KEY_COMPONENT, component));
 
@@ -113,38 +105,6 @@ final class RpcMetricsBinder implements RpcInvocationListener {
             observationScope.set(obs.openScope());
         } else {
             sample.set(Timer.start(registry));
-        }
-    }
-
-    /**
-     * Resolves the class name of the {@link Component} the invocation targets,
-     * by looking up the target {@code StateNode} in the UI's state tree and
-     * walking up to the nearest enclosing component. Returns
-     * {@link Optional#empty()} if the invocation does not target a node, the
-     * node is no longer attached, or no component can be resolved.
-     */
-    private static Optional<String> resolveComponentType(
-            RpcInvocationEvent event) {
-        int nodeId = event.getNodeId();
-        if (nodeId < 0) {
-            return Optional.empty();
-        }
-        UI ui = event.getUI();
-        if (ui == null) {
-            return Optional.empty();
-        }
-        try {
-            StateTree tree = ui.getInternals().getStateTree();
-            StateNode node = tree.getNodeById(nodeId);
-            if (node == null) {
-                return Optional.empty();
-            }
-            return ComponentUtil.findParentComponent(Element.get(node))
-                    .map(component -> component.getClass().getName());
-        } catch (RuntimeException e) {
-            // Resolution is best-effort enrichment; never let it break the
-            // invocation or the surrounding span.
-            return Optional.empty();
         }
     }
 

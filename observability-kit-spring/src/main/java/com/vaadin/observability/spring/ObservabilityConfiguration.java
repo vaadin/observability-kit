@@ -78,6 +78,14 @@ public class ObservabilityConfiguration {
      *            bytes per state-tree node used for
      *            {@code vaadin.ui.state.size}, {@code 0} to publish no byte
      *            figure (default {@code 0})
+     * @param insights
+     *            whether to retain failed and over-budget interactions for the
+     *            insights endpoint (default {@code true})
+     * @param insightsDetails
+     *            whether retained interactions may carry sensitive detail
+     *            (default {@code false})
+     * @param insightsCapacity
+     *            maximum number of retained interactions (default {@code 100})
      */
     ObservabilityConfiguration(
             @Value("${vaadin.observability.sessions:true}") boolean sessions,
@@ -92,7 +100,10 @@ public class ObservabilityConfiguration {
             @Value("${vaadin.observability.client:true}") boolean client,
             @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession,
             @Value("${vaadin.observability.ui-state-sample-interval:10000}") int uiStateSampleInterval,
-            @Value("${vaadin.observability.ui-state-bytes-per-node:0}") int uiStateBytesPerNode) {
+            @Value("${vaadin.observability.ui-state-bytes-per-node:0}") int uiStateBytesPerNode,
+            @Value("${vaadin.observability.insights:true}") boolean insights,
+            @Value("${vaadin.observability.insights-details:false}") boolean insightsDetails,
+            @Value("${vaadin.observability.insights-capacity:100}") int insightsCapacity) {
         this.settings = ObservabilitySettings.builder().sessions(sessions)
                 .uis(uis).uiState(uiState).navigation(navigation)
                 .requests(requests).errors(errors).traces(traces)
@@ -100,7 +111,9 @@ public class ObservabilityConfiguration {
                 .routeCardinalityLimit(routeCardinalityLimit).client(client)
                 .clientRatePerSession(clientRatePerSession)
                 .uiStateSampleInterval(uiStateSampleInterval)
-                .uiStateBytesPerNode(uiStateBytesPerNode).build();
+                .uiStateBytesPerNode(uiStateBytesPerNode).insights(insights)
+                .insightsDetails(insightsDetails)
+                .insightsCapacity(insightsCapacity).build();
     }
 
     /**

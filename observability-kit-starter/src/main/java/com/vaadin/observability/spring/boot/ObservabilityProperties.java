@@ -11,6 +11,7 @@ package com.vaadin.observability.spring.boot;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 /**
  * Boot-bound configuration properties under the {@code vaadin.observability}
@@ -33,10 +34,13 @@ public class ObservabilityProperties {
     private boolean tracesSessionId = false;
     private boolean database = false;
     private boolean databaseStatement = false;
+    private boolean insights = true;
+    private boolean insightsDetails = false;
     private int routeCardinalityLimit = 200;
     private int clientRatePerSession = 100;
     private int uiStateSampleInterval = 10000;
     private int uiStateBytesPerNode = 0;
+    private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
     public boolean isEnabled() {
         return enabled;
@@ -126,6 +130,35 @@ public class ObservabilityProperties {
         this.tracesSessionId = tracesSessionId;
     }
 
+    /**
+     * Whether failed and over-budget user interactions are retained so the
+     * insights endpoint can backtrack a user report to a replicable
+     * interaction. Enabled by default.
+     * <p>
+     * Independent of {@link #isInsightsDetails()}, which governs only how much
+     * detail a retained interaction carries.
+     */
+    public boolean isInsights() {
+        return insights;
+    }
+
+    public void setInsights(boolean insights) {
+        this.insights = insights;
+    }
+
+    /**
+     * Whether interaction insights may carry potentially sensitive detail: the
+     * raw session id, the exception message and the top stack frames. Off by
+     * default, since the insights payload is meant to be forwarded.
+     */
+    public boolean isInsightsDetails() {
+        return insightsDetails;
+    }
+
+    public void setInsightsDetails(boolean insightsDetails) {
+        this.insightsDetails = insightsDetails;
+    }
+
     public boolean isDatabase() {
         return database;
     }
@@ -182,15 +215,30 @@ public class ObservabilityProperties {
      * @return a new {@link ObservabilitySettings} built from the current
      *         property values
      */
+    /**
+     * The hard cap on retained interactions, bounding the memory the insights
+     * buffer can use. Defaults to
+     * {@value com.vaadin.observability.micrometer.insights.RecentInteractions#DEFAULT_CAPACITY}.
+     */
+    public int getInsightsCapacity() {
+        return insightsCapacity;
+    }
+
+    public void setInsightsCapacity(int insightsCapacity) {
+        this.insightsCapacity = insightsCapacity;
+    }
+
     public ObservabilitySettings toSettings() {
         return ObservabilitySettings.builder().sessions(sessions).uis(uis)
                 .uiState(uiState).navigation(navigation).requests(requests)
                 .errors(errors).client(client).resync(resync).traces(traces)
                 .tracesSessionId(tracesSessionId).database(database)
-                .databaseStatement(databaseStatement)
+                .databaseStatement(databaseStatement).insights(insights)
+                .insightsDetails(insightsDetails)
                 .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession)
                 .uiStateSampleInterval(uiStateSampleInterval)
-                .uiStateBytesPerNode(uiStateBytesPerNode).build();
+                .uiStateBytesPerNode(uiStateBytesPerNode)
+                .insightsCapacity(insightsCapacity).build();
     }
 }

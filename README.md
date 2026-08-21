@@ -188,6 +188,9 @@ vaadin.observability.traces=false
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the session id as a span attribute. |
+| `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions. |
+| `vaadin.observability.insights-details` | `false` | Allow retained interactions to carry the raw session id, exception message and top stack frames. Off by default since the insights payload is meant to be forwarded. |
+| `vaadin.observability.insights-capacity` | `100` | Maximum number of retained interactions; the oldest is evicted once the cap is reached. |
 | `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. |
 | `vaadin.observability.client-rate-per-session` | `100` | Maximum client-side samples accepted per session (throttling guard). |
 | `vaadin.observability.ui-state-sample-interval` | `10000` | Minimum milliseconds between two measurements of the same UI. One measurement walks that UI's whole component tree under its session lock, so this is the knob that bounds the cost of the feature. |

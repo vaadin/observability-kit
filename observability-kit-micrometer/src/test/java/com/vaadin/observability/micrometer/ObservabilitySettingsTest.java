@@ -31,10 +31,12 @@ class ObservabilitySettingsTest {
         assertTrue(settings.isClient());
         assertTrue(settings.isTraces());
         assertFalse(settings.isTracesSessionId());
+        assertTrue(settings.isInsights());
         assertEquals(200, settings.getRouteCardinalityLimit());
         assertEquals(100, settings.getClientRatePerSession());
         assertEquals(10000, settings.getUiStateSampleInterval());
         assertEquals(0, settings.getUiStateBytesPerNode());
+        assertEquals(100, settings.getInsightsCapacity());
     }
 
     @Test
@@ -89,14 +91,25 @@ class ObservabilitySettingsTest {
     }
 
     @Test
+    void insightsCapacity_zero_throwsIllegalArgument() {
+        // The buffer itself rejects a capacity below 1; failing at
+        // configuration time names the property instead of the buffer.
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().insightsCapacity(0));
+    }
+
+    @Test
     void builder_overridesAreApplied() {
         ObservabilitySettings settings = ObservabilitySettings.builder()
                 .sessions(false).tracesSessionId(true).routeCardinalityLimit(50)
-                .clientRatePerSession(10).build();
+                .clientRatePerSession(10).insights(false).insightsCapacity(25)
+                .build();
 
         assertFalse(settings.isSessions());
         assertTrue(settings.isTracesSessionId());
         assertEquals(50, settings.getRouteCardinalityLimit());
         assertEquals(10, settings.getClientRatePerSession());
+        assertFalse(settings.isInsights());
+        assertEquals(25, settings.getInsightsCapacity());
     }
 }
