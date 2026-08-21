@@ -14,6 +14,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.boot.actuate.endpoint.annotation.Endpoint;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -24,6 +25,7 @@ import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterR
 import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Role;
 import org.springframework.core.Ordered;
 
@@ -111,5 +113,22 @@ public class ObservabilityAutoConfiguration {
             ObjectProvider<ObservabilitySettings> settings) {
         return new DataSourceFetchMetricsBeanPostProcessor(meterRegistry,
                 observationRegistry, settings);
+    }
+
+    /**
+     * The {@code /actuator/vaadin/observability} insights endpoint. Only active
+     * when Actuator is on the classpath; the application controls exposure
+     * through the standard {@code management.endpoints.web.exposure.include}
+     * property.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(Endpoint.class)
+    static class VaadinObservabilityEndpointConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean
+        VaadinObservabilityEndpoint vaadinObservabilityEndpoint() {
+            return new VaadinObservabilityEndpoint();
+        }
     }
 }
