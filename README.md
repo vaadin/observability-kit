@@ -214,7 +214,7 @@ ObservabilitySettings.builder()
 | `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). |
 | `vaadin.request.duration` | Timer | Server-side request handling time. |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
-| `vaadin.errors` | Counter | Server-side errors (tagged by `exception`). |
+| `vaadin.errors` | Counter | Server-side errors (tagged by `exception`, `route`, `component`). See [Error metrics](#error-metrics). |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
 | `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time. |
 | `vaadin.client.rpc.duration` | Timer | Browser-observed server round trip. |
@@ -225,6 +225,31 @@ ObservabilitySettings.builder()
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
 | `vaadin.db.query` | Timer | Duration of a JDBC query, tagged by `route`. Produced alongside the query span when database monitoring and tracing are both on. |
+
+## Error metrics
+
+`vaadin.errors` counts every server-side failure the kit observes, tagged by
+exception type, by the route the user was on, and by the component the failure
+was thrown for (`_unknown` where a tag cannot be resolved, `_other` once the
+cardinality limit is reached).
+
+Only exceptions that *escape* request handling surface to a request
+interceptor. Everything a user can trigger — a click listener that throws, a
+`UI.access` body, a detach listener, a `beforeEnter` callback — is caught by
+Flow and routed to `VaadinSession.getErrorHandler()` instead. The kit therefore
+decorates that handler, which is also what lets it attribute a failure to a
+component and mark the enclosing `vaadin.request` span as `outcome=error`.
+
+The decoration always delegates, so an application's own error handler keeps
+receiving every error it received before. It is re-applied at UI init and at
+the start of every RPC invocation, so installing your own handler after session
+init does not switch error metrics off — the UI hook still runs while the
+bootstrap request is being handled, so that request's failures are covered too.
+One consequence: a handler read back from `VaadinSession.getErrorHandler()` is
+the kit's wrapper rather than the instance you set. Delegating to it works as
+expected (the failure is still counted exactly once); an `instanceof` check or a
+cast to your own type does not. Set `vaadin.observability.errors=false` to opt
+out entirely.
 
 ## Database fetch size
 

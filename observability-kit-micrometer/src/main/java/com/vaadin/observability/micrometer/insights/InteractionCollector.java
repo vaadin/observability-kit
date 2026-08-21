@@ -20,8 +20,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.communication.RpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationListener;
@@ -213,16 +211,7 @@ public class InteractionCollector implements RpcInvocationListener {
      * either way.
      */
     private String route(UI ui) {
-        if (ui == null) {
-            return null;
-        }
-        for (HasElement target : ui.getInternals()
-                .getActiveRouterTargetsChain()) {
-            if (target instanceof Component component) {
-                return routes.tagFor(component.getClass());
-            }
-        }
-        return routes.tagForTemplate(location(ui));
+        return ui == null ? null : routes.tagForActiveRoute(ui);
     }
 
     /** The concrete location, reported per example rather than grouped on. */

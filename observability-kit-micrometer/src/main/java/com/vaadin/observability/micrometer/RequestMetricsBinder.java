@@ -10,7 +10,6 @@ package com.vaadin.observability.micrometer;
 
 import java.util.function.BiConsumer;
 
-import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
@@ -37,6 +36,12 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * <li>Otherwise (no obs registry / traces disabled / observation handler
  * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
+ * <p>
+ * This interceptor only ever sees exceptions that <em>escape</em> request
+ * handling. The failures a user triggers are caught by Flow and routed to the
+ * session error handler, where {@link ErrorMetricsBinder} counts them and
+ * relays them back here through {@link RequestError} so the request outcome
+ * reflects them.
  */
 final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
@@ -47,6 +52,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings settings;
+    private final ErrorCounter errors;
     private final BiConsumer<VaadinRequest, String> httpObservationEnricher;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
@@ -72,6 +78,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
+        this.errors = new ErrorCounter(registry, settings);
         this.httpObservationEnricher = httpObservationEnricher != null
                 ? httpObservationEnricher
                 : NO_ENRICH;
@@ -94,6 +101,8 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // Drop any interaction marker left by a previous request on this
         // pooled thread; poll/navigation listeners re-mark during handling.
         RequestInteraction.clear();
+        // Same for a failure relayed by the session error handler.
+        RequestError.clear();
         if (useObservation()) {
             String type = requestType(request);
             // Let DI integrations (Spring/Boot) lift Vaadin type into the
@@ -192,11 +201,11 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     public void handleException(VaadinRequest request, VaadinResponse response,
             VaadinSession vaadinSession, Exception t) {
         errored.set(Boolean.TRUE);
-        if (settings.isErrors() && t != null) {
-            Counter.builder(MeterNames.ERRORS)
-                    .tag(MeterNames.TAG_EXCEPTION, t.getClass().getSimpleName())
-                    .register(registry).increment();
-        }
+        // Flow reports the same throwable to the session error handler right
+        // after this call; mark it so ErrorMetricsBinder does not count the
+        // one failure a second time.
+        errors.increment(t, null);
+        RequestError.markCounted(t);
         Observation obs = observation.get();
         if (obs != null && t != null) {
             obs.error(t);
@@ -206,8 +215,14 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     @Override
     public void requestEnd(VaadinRequest request, VaadinResponse response,
             VaadinSession session) {
-        boolean wasError = errored.get();
+        boolean interceptorError = errored.get();
         errored.remove();
+        // An exception Flow routed to the session error handler (a failing
+        // component listener, UI.access body or navigation callback) never
+        // reaches handleException, yet the interaction the request carried did
+        // fail; without this the span would claim outcome=success.
+        Throwable handledError = RequestError.takeHandled();
+        boolean wasError = interceptorError || handledError != null;
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
         Timer.Sample s = sample.get();
@@ -228,6 +243,9 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // of the opaque protocol-level "uidl".
         String interaction = RequestInteraction.take();
         if (obs != null) {
+            if (handledError != null && !interceptorError) {
+                obs.error(handledError);
+            }
             String type = requestType(request);
             if (ObservationNames.REQUEST_TYPE_UIDL.equals(type)) {
                 String kind = interaction != null ? interaction

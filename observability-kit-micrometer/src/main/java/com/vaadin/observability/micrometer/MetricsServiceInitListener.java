@@ -216,6 +216,19 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     observationRegistry, settings));
         }
 
+        if (settings.isErrors()) {
+            // Observes the session error handler, which is where Flow routes
+            // every failure a user can trigger. Registered on three hooks: the
+            // session one instruments a session as it is created, the UI and
+            // RPC ones re-instrument a session whose error handler the
+            // application replaced after that.
+            ErrorMetricsBinder errorBinder = new ErrorMetricsBinder(registry,
+                    settings);
+            service.addSessionInitListener(errorBinder);
+            service.addUIInitListener(errorBinder);
+            service.addRpcInvocationListener(errorBinder);
+        }
+
         if (settings.isInsights()
                 && (settings.isErrors() || settings.isRequests())) {
             // Retain failed and over-UX-budget user interactions so the
