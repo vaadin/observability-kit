@@ -23,8 +23,12 @@ import java.util.concurrent.TimeUnit;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
-import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
@@ -35,14 +39,15 @@ import com.vaadin.observability.micrometer.RouteTagResolver;
  * and ones slower than the {@link #UX_BUDGET_MS UX budget} (when request
  * metrics are enabled).
  * <p>
- * Hooks Flow's {@link RpcInvocationListener} (the same hook
- * {@code RpcMetricsBinder} uses for RPC spans): {@code invocationFailed}
- * delivers the exact "user action + exception" pair, timing between
- * {@code invocationStarted} and {@code invocationEnded} gives the handling
- * duration, and the event carries the target state node from which the
- * interacted component is resolved. Works in production mode.
+ * Listens for the RPC invocation events on the service event bus, the same
+ * events {@code RpcMetricsBinder} uses for RPC spans:
+ * {@link RpcInvocationFailedEvent} delivers the exact "user action +
+ * exception" pair, timing between {@link RpcInvocationStartedEvent} and
+ * {@link RpcInvocationEndedEvent} gives the handling duration, and the events
+ * carry the target state node from which the interacted component is
+ * resolved. Works in production mode.
  */
-public class InteractionCollector implements RpcInvocationListener {
+public class InteractionCollector {
 
     /**
      * Absolute per-interaction latency budget for good UX, in milliseconds.
@@ -119,8 +124,24 @@ public class InteractionCollector implements RpcInvocationListener {
         this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
     }
 
-    @Override
-    public void invocationStarted(RpcInvocationEvent event) {
+    /**
+     * Subscribes to the RPC invocation events on the given bus.
+     *
+     * @param eventBus
+     *            the service event bus to listen on
+     * @return a handle removing every subscription made here
+     */
+    public Registration register(VaadinServiceEventBus eventBus) {
+        return Registration.combine(
+                eventBus.addListener(RpcInvocationStartedEvent.class,
+                        this::invocationStarted),
+                eventBus.addListener(RpcInvocationFailedEvent.class,
+                        this::invocationFailed),
+                eventBus.addListener(RpcInvocationEndedEvent.class,
+                        this::invocationEnded));
+    }
+
+    public void invocationStarted(RpcInvocationStartedEvent event) {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
@@ -129,8 +150,8 @@ public class InteractionCollector implements RpcInvocationListener {
         startNanos.set(System.nanoTime());
     }
 
-    @Override
-    public void invocationFailed(RpcInvocationEvent event, Throwable error) {
+    public void invocationFailed(RpcInvocationFailedEvent event) {
+        Throwable error = event.getError();
         errored.set(Boolean.TRUE);
         if (!captureErrors) {
             return;
@@ -144,8 +165,7 @@ public class InteractionCollector implements RpcInvocationListener {
         }
     }
 
-    @Override
-    public void invocationEnded(RpcInvocationEvent event) {
+    public void invocationEnded(RpcInvocationEndedEvent event) {
         long durationMs = elapsedMs();
         String component = componentType.get();
         startNanos.remove();
@@ -172,7 +192,8 @@ public class InteractionCollector implements RpcInvocationListener {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
     }
 
-    private CapturedInteraction errorInteraction(RpcInvocationEvent event,
+    private CapturedInteraction errorInteraction(
+            AbstractRpcInvocationEvent event,
             Throwable error, long durationMs, String component) {
         UI ui = event.getUI();
         Throwable rootCause = rootCause(error);
@@ -192,7 +213,8 @@ public class InteractionCollector implements RpcInvocationListener {
                 sessionId(ui), ui != null ? ui.getUIId() : -1);
     }
 
-    private CapturedInteraction slowInteraction(RpcInvocationEvent event,
+    private CapturedInteraction slowInteraction(
+            AbstractRpcInvocationEvent event,
             long durationMs, String component) {
         UI ui = event.getUI();
         // The budget this interaction was actually measured against travels

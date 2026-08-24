@@ -13,7 +13,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import com.vaadin.flow.internal.CurrentInstance;
-import com.vaadin.flow.server.SessionLockEvent;
+import com.vaadin.flow.server.SessionLockAcquiredEvent;
+import com.vaadin.flow.server.SessionLockReleasedEvent;
+import com.vaadin.flow.server.SessionLockRequestedEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 
@@ -33,11 +35,9 @@ class SessionLockMetricsBinderTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
                 registry);
-        SessionLockEvent event = new SessionLockEvent(
-                mock(VaadinService.class));
 
-        binder.lockRequested(event);
-        binder.lockAcquired(event);
+        binder.lockRequested(mock(SessionLockRequestedEvent.class));
+        binder.lockAcquired(mock(SessionLockAcquiredEvent.class));
 
         assertEquals(1L,
                 registry.get(MeterNames.SESSION_LOCK_WAIT)
@@ -50,12 +50,10 @@ class SessionLockMetricsBinderTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
                 registry);
-        SessionLockEvent event = new SessionLockEvent(
-                mock(VaadinService.class));
 
-        binder.lockRequested(event);
-        binder.lockAcquired(event);
-        binder.lockReleased(event);
+        binder.lockRequested(mock(SessionLockRequestedEvent.class));
+        binder.lockAcquired(mock(SessionLockAcquiredEvent.class));
+        binder.lockReleased(mock(SessionLockReleasedEvent.class));
 
         assertEquals(1L,
                 registry.get(MeterNames.SESSION_LOCK_HOLD)
@@ -68,14 +66,12 @@ class SessionLockMetricsBinderTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
                 registry);
-        SessionLockEvent event = new SessionLockEvent(
-                mock(VaadinService.class));
 
         CurrentInstance.set(VaadinRequest.class, mock(VaadinRequest.class));
         try {
-            binder.lockRequested(event);
-            binder.lockAcquired(event);
-            binder.lockReleased(event);
+            binder.lockRequested(mock(SessionLockRequestedEvent.class));
+            binder.lockAcquired(mock(SessionLockAcquiredEvent.class));
+            binder.lockReleased(mock(SessionLockReleasedEvent.class));
 
             assertEquals(1L, registry.get(MeterNames.SESSION_LOCK_WAIT)
                     .tag(MeterNames.TAG_CONTEXT, MeterNames.CONTEXT_REQUEST)
@@ -93,10 +89,8 @@ class SessionLockMetricsBinderTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
                 registry);
-        SessionLockEvent event = new SessionLockEvent(
-                mock(VaadinService.class));
 
-        binder.lockReleased(event);
+        binder.lockReleased(mock(SessionLockReleasedEvent.class));
 
         assertNull(registry.find(MeterNames.SESSION_LOCK_HOLD).timer());
     }

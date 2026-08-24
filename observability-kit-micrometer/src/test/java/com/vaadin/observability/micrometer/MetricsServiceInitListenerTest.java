@@ -20,11 +20,12 @@ import org.mockito.ArgumentCaptor;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
-import com.vaadin.flow.server.SessionLockListener;
 import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
-import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.SessionLockRequestedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
 import com.vaadin.observability.micrometer.insights.InteractionCollector;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
@@ -53,6 +54,10 @@ class MetricsServiceInitListenerTest {
         VaadinService service = mock(VaadinService.class, RETURNS_DEEP_STUBS);
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(true);
+        // A real bus, so the binders that subscribe to events rather than
+        // to an addXListener method can be asserted on
+        when(service.getEventBus())
+                .thenReturn(new VaadinServiceEventBus(service));
         return service;
     }
 
@@ -69,7 +74,10 @@ class MetricsServiceInitListenerTest {
         verify(service).addSessionInitListener(any(SessionInitListener.class));
         verify(service)
                 .addSessionDestroyListener(any(SessionDestroyListener.class));
-        verify(service).addSessionLockListener(any(SessionLockListener.class));
+        Assertions.assertEquals(1,
+                service.getEventBus()
+                        .getListeners(SessionLockRequestedEvent.class).size(),
+                "sessions enabled should subscribe the session lock binder");
     }
 
     @Test
@@ -95,7 +103,10 @@ class MetricsServiceInitListenerTest {
 
         verify(service, never()).addSessionInitListener(any());
         verify(service, never()).addSessionDestroyListener(any());
-        verify(service, never()).addSessionLockListener(any());
+        Assertions.assertTrue(
+                service.getEventBus()
+                        .getListeners(SessionLockRequestedEvent.class).isEmpty(),
+                "sessions disabled should not subscribe the lock binder");
     }
 
     @Test
@@ -203,15 +214,9 @@ class MetricsServiceInitListenerTest {
         // are both registered as RPC invocation listeners.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().build());
-        List<RpcInvocationListener> listeners = registeredRpcListeners();
-
-        Assertions.assertTrue(
-                listeners.stream().anyMatch(l -> l instanceof RpcMetricsBinder),
-                "requests enabled should register the RpcMetricsBinder");
-        Assertions.assertTrue(
-                listeners.stream()
-                        .anyMatch(l -> l instanceof InteractionCollector),
-                "requests enabled should register the interaction collector");
+        Assertions.assertEquals(2, rpcEventSubscribers(),
+                "requests enabled should subscribe both the RpcMetricsBinder "
+                        + "and the interaction collector");
     }
 
     @Test
@@ -221,20 +226,13 @@ class MetricsServiceInitListenerTest {
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().requests(false).errors(true)
                         .build());
-        List<RpcInvocationListener> listeners = registeredRpcListeners();
-
-        Assertions.assertTrue(
-                listeners.stream()
-                        .anyMatch(l -> l instanceof InteractionCollector),
-                "errors enabled should register the interaction collector");
-        Assertions.assertTrue(
-                listeners.stream()
-                        .noneMatch(l -> l instanceof RpcMetricsBinder),
-                "RpcMetricsBinder should not be registered when requests are off");
+        Assertions.assertEquals(1, rpcEventSubscribers(),
+                "only the interaction collector should subscribe when requests "
+                        + "are off");
     }
 
     @Test
-    void skipsRpcInvocationListenersWhenRequestsAndErrorsDisabled() {
+    void skipsRpcEventSubscribersWhenRequestsAndErrorsDisabled() {
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().requests(false).errors(false)
                         .build());
@@ -244,7 +242,10 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(service, never()).addRpcInvocationListener(any());
+        Assertions.assertTrue(
+                service.getEventBus()
+                        .getListeners(RpcInvocationStartedEvent.class).isEmpty(),
+                "no RPC subscribers when requests and errors are both off");
     }
 
     @Test
@@ -253,15 +254,9 @@ class MetricsServiceInitListenerTest {
         // force a choice between error metrics and request metrics.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().insights(false).build());
-        List<RpcInvocationListener> listeners = registeredRpcListeners();
-
-        Assertions.assertTrue(
-                listeners.stream()
-                        .noneMatch(l -> l instanceof InteractionCollector),
-                "insights off should not register the interaction collector");
-        Assertions.assertTrue(
-                listeners.stream().anyMatch(l -> l instanceof RpcMetricsBinder),
-                "request metrics should survive insights being off");
+        Assertions.assertEquals(1, rpcEventSubscribers(),
+                "insights off should leave only the RpcMetricsBinder "
+                        + "subscribed");
         Assertions.assertNull(ObservabilityKit.getRecentInteractions(),
                 "no buffer should be bound when insights are off");
     }
@@ -270,7 +265,7 @@ class MetricsServiceInitListenerTest {
     void insightsBufferHonoursTheConfiguredCapacity() {
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().insightsCapacity(2).build());
-        registeredRpcListeners();
+        rpcEventSubscribers();
 
         RecentInteractions buffer = ObservabilityKit.getRecentInteractions();
         Assertions.assertNotNull(buffer);
@@ -288,17 +283,21 @@ class MetricsServiceInitListenerTest {
                 null, null, null, "session", 0);
     }
 
-    private static List<RpcInvocationListener> registeredRpcListeners() {
+    /**
+     * Runs {@code serviceInit} against a real event bus and reports how many
+     * subscribers the RPC invocation events ended up with. The binders now
+     * register method references rather than themselves, so the count is what
+     * identifies the wiring: the metrics binder and the interaction collector
+     * subscribe one each.
+     */
+    private static int rpcEventSubscribers() {
         VaadinService service = licensedService();
+        VaadinServiceEventBus eventBus = service.getEventBus();
         ServiceInitEvent event = mock(ServiceInitEvent.class);
         when(event.getSource()).thenReturn(service);
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        ArgumentCaptor<RpcInvocationListener> captor = ArgumentCaptor
-                .forClass(RpcInvocationListener.class);
-        verify(service, atLeastOnce())
-                .addRpcInvocationListener(captor.capture());
-        return captor.getAllValues();
+        return eventBus.getListeners(RpcInvocationStartedEvent.class).size();
     }
 }
