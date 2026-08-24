@@ -15,14 +15,13 @@ import io.micrometer.core.instrument.MeterRegistry;
 import com.vaadin.flow.server.SessionLockAcquiredEvent;
 import com.vaadin.flow.server.SessionLockReleasedEvent;
 import com.vaadin.flow.server.SessionLockRequestedEvent;
+import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.shared.Registration;
-import com.vaadin.flow.server.VaadinService;
 
 /**
- * Records session-lock wait and hold times from the session lock events on
- * the {@link com.vaadin.flow.server.VaadinService#getEventBus() service event
- * bus}.
+ * Records session-lock wait and hold times from the session lock events on the
+ * {@link com.vaadin.flow.server.VaadinService#getEventBus() service event bus}.
  * <p>
  * Vaadin serializes all server-side work for a session behind one lock, so
  * {@code vaadin.session.lock.wait} (time blocked acquiring the lock) is the

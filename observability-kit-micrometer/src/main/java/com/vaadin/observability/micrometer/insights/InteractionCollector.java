@@ -41,11 +41,11 @@ import com.vaadin.observability.micrometer.RouteTagResolver;
  * <p>
  * Listens for the RPC invocation events on the service event bus, the same
  * events {@code RpcMetricsBinder} uses for RPC spans:
- * {@link RpcInvocationFailedEvent} delivers the exact "user action +
- * exception" pair, timing between {@link RpcInvocationStartedEvent} and
+ * {@link RpcInvocationFailedEvent} delivers the exact "user action + exception"
+ * pair, timing between {@link RpcInvocationStartedEvent} and
  * {@link RpcInvocationEndedEvent} gives the handling duration, and the events
- * carry the target state node from which the interacted component is
- * resolved. Works in production mode.
+ * carry the target state node from which the interacted component is resolved.
+ * Works in production mode.
  */
 public class InteractionCollector {
 
@@ -193,8 +193,8 @@ public class InteractionCollector {
     }
 
     private CapturedInteraction errorInteraction(
-            AbstractRpcInvocationEvent event,
-            Throwable error, long durationMs, String component) {
+            AbstractRpcInvocationEvent event, Throwable error, long durationMs,
+            String component) {
         UI ui = event.getUI();
         Throwable rootCause = rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
@@ -214,8 +214,8 @@ public class InteractionCollector {
     }
 
     private CapturedInteraction slowInteraction(
-            AbstractRpcInvocationEvent event,
-            long durationMs, String component) {
+            AbstractRpcInvocationEvent event, long durationMs,
+            String component) {
         UI ui = event.getUI();
         // The budget this interaction was actually measured against travels
         // with it, so a report never has to assume the default.

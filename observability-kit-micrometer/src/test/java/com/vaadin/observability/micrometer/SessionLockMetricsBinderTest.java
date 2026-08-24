@@ -17,7 +17,6 @@ import com.vaadin.flow.server.SessionLockAcquiredEvent;
 import com.vaadin.flow.server.SessionLockReleasedEvent;
 import com.vaadin.flow.server.SessionLockRequestedEvent;
 import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.server.VaadinService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;

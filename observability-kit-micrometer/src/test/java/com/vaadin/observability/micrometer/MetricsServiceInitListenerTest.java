@@ -9,30 +9,26 @@
 package com.vaadin.observability.micrometer;
 
 import java.time.Instant;
-import java.util.List;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
+import com.vaadin.flow.server.SessionLockRequestedEvent;
 import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
-import com.vaadin.flow.server.SessionLockRequestedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
-import com.vaadin.observability.micrometer.insights.InteractionCollector;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
-import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -103,9 +99,8 @@ class MetricsServiceInitListenerTest {
 
         verify(service, never()).addSessionInitListener(any());
         verify(service, never()).addSessionDestroyListener(any());
-        Assertions.assertTrue(
-                service.getEventBus()
-                        .getListeners(SessionLockRequestedEvent.class).isEmpty(),
+        Assertions.assertTrue(service.getEventBus()
+                .getListeners(SessionLockRequestedEvent.class).isEmpty(),
                 "sessions disabled should not subscribe the lock binder");
     }
 
@@ -242,9 +237,8 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        Assertions.assertTrue(
-                service.getEventBus()
-                        .getListeners(RpcInvocationStartedEvent.class).isEmpty(),
+        Assertions.assertTrue(service.getEventBus()
+                .getListeners(RpcInvocationStartedEvent.class).isEmpty(),
                 "no RPC subscribers when requests and errors are both off");
     }
 
