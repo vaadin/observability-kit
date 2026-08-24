@@ -22,8 +22,10 @@ import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
+import com.vaadin.observability.micrometer.insights.DataQueryCollector;
 import com.vaadin.observability.micrometer.insights.InteractionCollector;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
+import com.vaadin.observability.micrometer.insights.RecentQueries;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
@@ -234,6 +236,18 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             new InteractionCollector(interactions, settings)
                     .register(service.getEventBus());
             ObservabilityKit.setRecentInteractions(interactions);
+        }
+
+        if (settings.isInsights() && settings.isData()
+                && (settings.isErrors() || settings.isRequests())) {
+            // A slow data load never reaches the interaction collector: the
+            // invocation that triggers it only registers a flush, so it ends
+            // in microseconds. Capture the queries themselves.
+            RecentQueries queries = new RecentQueries(
+                    settings.getInsightsCapacity());
+            new DataQueryCollector(queries, settings)
+                    .register(service.getEventBus());
+            ObservabilityKit.setRecentQueries(queries);
         }
 
         if (settings.isTraces() && observationRegistry != null) {

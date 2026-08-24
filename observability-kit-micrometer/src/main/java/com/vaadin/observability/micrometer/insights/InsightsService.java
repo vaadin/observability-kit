@@ -39,6 +39,8 @@ import org.jspecify.annotations.Nullable;
  */
 public class InsightsService {
 
+    private final RecentQueries queries;
+
     private static final int EXAMPLES_PER_INSIGHT = 3;
 
     private final @Nullable RecentInteractions buffer;
@@ -50,6 +52,20 @@ public class InsightsService {
      *            explicitly instead of reporting an empty result
      */
     public InsightsService(@Nullable RecentInteractions buffer) {
+        this(buffer, null);
+    }
+
+    /**
+     * @param buffer
+     *            retained interactions, or {@code null} when the interaction
+     *            collector was not registered
+     * @param queries
+     *            retained data provider queries, or {@code null} when the query
+     *            collector was not registered
+     */
+    public InsightsService(@Nullable RecentInteractions buffer,
+            @Nullable RecentQueries queries) {
+        this.queries = queries;
         this.buffer = buffer;
     }
 
@@ -59,8 +75,16 @@ public class InsightsService {
         payload.put("generated", Instant.now().toString());
         // "no insights" and "nothing was watching" are different answers, and a
         // consumer cannot act on the second one without being told.
-        payload.put("instrumentation", buffer == null ? "inactive" : "active");
-        payload.put("insights", buffer == null ? List.of() : insights());
+        payload.put("instrumentation",
+                buffer == null && queries == null ? "inactive" : "active");
+        List<Map<String, Object>> insights = new ArrayList<>();
+        if (buffer != null) {
+            insights.addAll(insights());
+        }
+        if (queries != null) {
+            insights.addAll(queryInsights());
+        }
+        payload.put("insights", insights);
         return payload;
     }
 
@@ -82,6 +106,132 @@ public class InsightsService {
                         nullSafe(e.component()), nullSafe(e.event())))
                 .forEach(group -> insights.add(slowInsight(group)));
         return insights;
+    }
+
+    /**
+     * Insights for data provider queries: one grouped by component and
+     * exception for failures, one grouped by component and kind for slow
+     * queries.
+     */
+    private List<Map<String, Object>> queryInsights() {
+        List<CapturedQuery> all = queries.snapshot();
+        List<Map<String, Object>> insights = new ArrayList<>();
+        queryGroups(all, q -> CapturedQuery.OUTCOME_ERROR.equals(q.outcome()),
+                q -> String.join("|", nullSafe(q.route()),
+                        nullSafe(q.component()), q.kind(),
+                        nullSafe(q.exceptionType())))
+                .forEach(group -> insights.add(queryErrorInsight(group)));
+        queryGroups(all, q -> CapturedQuery.OUTCOME_SUCCESS.equals(q.outcome()),
+                q -> String.join("|", nullSafe(q.route()),
+                        nullSafe(q.component()), q.kind()))
+                .forEach(group -> insights.add(slowQueryInsight(group)));
+        return insights;
+    }
+
+    private static List<List<CapturedQuery>> queryGroups(
+            List<CapturedQuery> all, Predicate<CapturedQuery> rule,
+            Function<CapturedQuery, String> key) {
+        return List.copyOf(
+                all.stream().filter(rule).collect(Collectors.groupingBy(key,
+                        LinkedHashMap::new, Collectors.toList())).values());
+    }
+
+    private static Map<String, Object> queryErrorInsight(
+            List<CapturedQuery> group) {
+        CapturedQuery latest = group.get(0);
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("type", "data-query-error");
+        insight.put("severity", "error");
+        insight.put("category", "reliability");
+        insight.put("summary",
+                "%s query for %s failed with %s (%d occurrence%s)".formatted(
+                        latest.kind(), simpleName(latest.component()),
+                        simpleName(latest.exceptionType()), group.size(),
+                        group.size() == 1 ? "" : "s"));
+        insight.put("evidence", queryEvidence(group));
+        insight.put("replay", List.of(
+                "Open route '%s'".formatted(nullSafe(latest.route())),
+                "Load data into %s".formatted(simpleName(latest.component())),
+                "Expect the %s query to fail with %s".formatted(latest.kind(),
+                        simpleName(latest.exceptionType()))));
+        insight.put("examples", queryExamples(group));
+        return insight;
+    }
+
+    private static Map<String, Object> slowQueryInsight(
+            List<CapturedQuery> group) {
+        CapturedQuery latest = group.get(0);
+        long medianMs = medianQueryMs(group);
+        long maxMs = group.stream().mapToLong(CapturedQuery::durationMs).max()
+                .orElse(-1);
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("type", "slow-data-query");
+        insight.put("severity", "warning");
+        insight.put("category", "performance");
+        insight.put("summary",
+                ("The %s query for %s takes %d ms (max %d ms), over the %d ms "
+                        + "budget. The component cannot render until it "
+                        + "returns, so this is time the user waits.").formatted(
+                                latest.kind(), simpleName(latest.component()),
+                                medianMs, maxMs, latest.thresholdMs()));
+        insight.put("evidence", queryEvidence(group));
+        insight.put("replay",
+                List.of("Open route '%s'".formatted(nullSafe(latest.route())),
+                        "Load data into %s"
+                                .formatted(simpleName(latest.component())),
+                        "Expect the %s query to take around %d ms"
+                                .formatted(latest.kind(), medianMs)));
+        insight.put("examples", queryExamples(group));
+        return insight;
+    }
+
+    private static long medianQueryMs(List<CapturedQuery> group) {
+        long[] sorted = group.stream().mapToLong(CapturedQuery::durationMs)
+                .sorted().toArray();
+        if (sorted.length == 0) {
+            return -1;
+        }
+        int middle = sorted.length / 2;
+        return sorted.length % 2 == 1 ? sorted[middle]
+                : (sorted[middle - 1] + sorted[middle]) / 2;
+    }
+
+    private static Map<String, Object> queryEvidence(
+            List<CapturedQuery> group) {
+        CapturedQuery latest = group.get(0);
+        Instant firstSeen = group.stream().map(CapturedQuery::timestamp)
+                .min(Comparator.naturalOrder()).orElseThrow();
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("route", latest.route());
+        evidence.put("component", latest.component());
+        evidence.put("queryKind", latest.kind());
+        evidence.put("filtered", latest.filtered());
+        if (CapturedQuery.KIND_FETCH.equals(latest.kind())) {
+            evidence.put("requested", latest.limit());
+            evidence.put("returned", latest.rows());
+        }
+        if (latest.exceptionType() != null) {
+            evidence.put("exception", latest.exceptionType());
+        }
+        evidence.put("occurrences", group.size());
+        evidence.put("firstSeen", firstSeen.toString());
+        evidence.put("lastSeen", latest.timestamp().toString());
+        return evidence;
+    }
+
+    private static List<Map<String, Object>> queryExamples(
+            List<CapturedQuery> group) {
+        return group.stream().limit(EXAMPLES_PER_INSIGHT).map(q -> {
+            Map<String, Object> example = new LinkedHashMap<>();
+            example.put("at", q.timestamp().toString());
+            example.put("durationMs", q.durationMs());
+            if (CapturedQuery.KIND_FETCH.equals(q.kind())) {
+                example.put("offset", q.offset());
+                example.put("limit", q.limit());
+                example.put("rows", q.rows());
+            }
+            return example;
+        }).toList();
     }
 
     private static List<List<CapturedInteraction>> groups(

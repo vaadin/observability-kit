@@ -42,7 +42,7 @@ public class VaadinObservabilityEndpoint {
             // Unknown selector: null renders as 404.
             return null;
         }
-        return new InsightsService(ObservabilityKit.getRecentInteractions())
-                .payload();
+        return new InsightsService(ObservabilityKit.getRecentInteractions(),
+                ObservabilityKit.getRecentQueries()).payload();
     }
 }
