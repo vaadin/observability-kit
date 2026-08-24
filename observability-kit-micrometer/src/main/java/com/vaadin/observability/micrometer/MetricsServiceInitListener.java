@@ -216,6 +216,14 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     .register(service.getEventBus());
         }
 
+        if (settings.isData()) {
+            // Lazy-loading components query their data provider while the
+            // response is being built, after RPC handling, so these queries
+            // are not covered by the RPC binder above.
+            new DataQueryMetricsBinder(registry, observationRegistry, settings)
+                    .register(service.getEventBus());
+        }
+
         if (settings.isInsights()
                 && (settings.isErrors() || settings.isRequests())) {
             // Retain failed and over-UX-budget user interactions so the

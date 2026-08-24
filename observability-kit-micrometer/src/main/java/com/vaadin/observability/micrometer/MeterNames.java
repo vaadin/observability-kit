@@ -67,6 +67,46 @@ public final class MeterNames {
      */
     public static final String DB_FETCH_ROWS = "vaadin.db.fetch.rows";
 
+    /**
+     * Timer: duration of a count query issued to a data provider, that is a
+     * query asking how many items a level holds. Tagged by {@link #TAG_OUTCOME}
+     * and {@link #TAG_FILTERED}.
+     * <p>
+     * A hierarchical component issues one count per expanded parent, so a high
+     * count on this timer within few requests is the signature of an expensive
+     * hierarchy.
+     */
+    public static final String DATA_COUNT_DURATION = "vaadin.data.count.duration";
+
+    /**
+     * Timer: duration of a fetch query issued to a data provider, that is a
+     * query loading one page of items. Measured around consumption of the
+     * items, so it covers the backend round-trip even for a lazily evaluated
+     * stream. Tagged by {@link #TAG_OUTCOME} and {@link #TAG_FILTERED}.
+     */
+    public static final String DATA_FETCH_DURATION = "vaadin.data.fetch.duration";
+
+    /**
+     * DistributionSummary: number of items a fetch query actually returned,
+     * tagged by {@link #TAG_ROUTE}. Compare against
+     * {@link #DATA_FETCH_REQUESTED} to spot a component asking for far more
+     * than it renders, or a data provider returning short pages.
+     */
+    public static final String DATA_FETCH_ROWS = "vaadin.data.fetch.rows";
+
+    /**
+     * DistributionSummary: number of items a fetch query asked for, tagged by
+     * {@link #TAG_ROUTE}.
+     */
+    public static final String DATA_FETCH_REQUESTED = "vaadin.data.fetch.requested";
+
+    /**
+     * Tag key: whether the data provider query carried a filter, which
+     * separates a combo box loading matches for typed text from one loading the
+     * whole data set. Low cardinality: {@code true} or {@code false}.
+     */
+    public static final String TAG_FILTERED = "filtered";
+
     /** Tag key: RPC invocation type. */
     public static final String TAG_TYPE = "type";
 

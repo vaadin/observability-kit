@@ -26,6 +26,7 @@ public class ObservabilityProperties {
     private boolean uis = true;
     private boolean navigation = true;
     private boolean requests = true;
+    private boolean data = true;
     private boolean errors = true;
     private boolean client = true;
     private boolean resync = true;
@@ -136,6 +137,26 @@ public class ObservabilityProperties {
     }
 
     /**
+     * Whether the data provider queries made by lazy-loading components are
+     * measured. On by default.
+     *
+     * @return {@code true} if data query metrics are recorded
+     */
+    public boolean isData() {
+        return data;
+    }
+
+    /**
+     * Sets whether data provider queries are measured.
+     *
+     * @param data
+     *            {@code true} to record data query metrics
+     */
+    public void setData(boolean data) {
+        this.data = data;
+    }
+
+    /**
      * Whether interaction insights may carry potentially sensitive detail: the
      * raw session id, the exception message and the top stack frames. Off by
      * default, since the insights payload is meant to be forwarded.
@@ -203,8 +224,8 @@ public class ObservabilityProperties {
 
     public ObservabilitySettings toSettings() {
         return ObservabilitySettings.builder().sessions(sessions).uis(uis)
-                .navigation(navigation).requests(requests).errors(errors)
-                .client(client).resync(resync).traces(traces)
+                .navigation(navigation).requests(requests).data(data)
+                .errors(errors).client(client).resync(resync).traces(traces)
                 .tracesSessionId(tracesSessionId).database(database)
                 .databaseStatement(databaseStatement).insights(insights)
                 .insightsDetails(insightsDetails)

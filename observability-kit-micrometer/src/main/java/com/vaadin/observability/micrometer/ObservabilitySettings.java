@@ -20,6 +20,7 @@ public final class ObservabilitySettings {
     private final boolean uis;
     private final boolean navigation;
     private final boolean requests;
+    private final boolean data;
     private final boolean errors;
     private final boolean client;
     private final boolean resync;
@@ -38,6 +39,7 @@ public final class ObservabilitySettings {
         this.uis = builder.uis;
         this.navigation = builder.navigation;
         this.requests = builder.requests;
+        this.data = builder.data;
         this.errors = builder.errors;
         this.client = builder.client;
         this.resync = builder.resync;
@@ -66,6 +68,17 @@ public final class ObservabilitySettings {
 
     public boolean isNavigation() {
         return navigation;
+    }
+
+    /**
+     * Whether the data provider queries made by lazy-loading components are
+     * measured. On by default: for a data-heavy view these queries are usually
+     * where a slow interaction spends its time.
+     *
+     * @return {@code true} if data query metrics are recorded
+     */
+    public boolean isData() {
+        return data;
     }
 
     public boolean isRequests() {
@@ -155,6 +168,7 @@ public final class ObservabilitySettings {
         private boolean uis = true;
         private boolean navigation = true;
         private boolean requests = true;
+        private boolean data = true;
         private boolean errors = true;
         private boolean client = true;
         private boolean resync = true;
@@ -183,6 +197,18 @@ public final class ObservabilitySettings {
 
         public Builder navigation(boolean navigation) {
             this.navigation = navigation;
+            return this;
+        }
+
+        /**
+         * Sets whether data provider queries are measured.
+         *
+         * @param data
+         *            {@code true} to record data query metrics
+         * @return this builder
+         */
+        public Builder data(boolean data) {
+            this.data = data;
             return this;
         }
 
