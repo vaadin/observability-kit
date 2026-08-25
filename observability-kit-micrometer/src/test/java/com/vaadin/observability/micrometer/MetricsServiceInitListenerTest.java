@@ -15,6 +15,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
@@ -23,6 +24,9 @@ import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
@@ -207,23 +211,34 @@ class MetricsServiceInitListenerTest {
         // Defaults enable both requests and errors: the RpcMetricsBinder
         // (timing/tracing) and the InteractionCollector (insights)
         // are both registered as RPC invocation listeners.
-        ObservabilityKit.install(new SimpleMeterRegistry(),
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilityKit.install(registry,
                 ObservabilitySettings.builder().build());
-        Assertions.assertEquals(2, rpcEventSubscribers(),
-                "requests enabled should subscribe both the RpcMetricsBinder "
-                        + "and the interaction collector");
+
+        initAndFireFailedInvocation();
+
+        Assertions.assertNotNull(registry.find(MeterNames.RPC_DURATION).timer(),
+                "the metrics binder should have timed the invocation");
+        Assertions.assertFalse(
+                ObservabilityKit.getRecentInteractions().snapshot().isEmpty(),
+                "the collector should have captured the failed interaction");
     }
 
     @Test
     void registersOnlyInteractionCollectorWhenOnlyErrorsEnabled() {
         // Errors on, requests off: the collector is still needed to capture
         // failed interactions, but the RpcMetricsBinder is not.
-        ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().requests(false).errors(true)
-                        .build());
-        Assertions.assertEquals(1, rpcEventSubscribers(),
-                "only the interaction collector should subscribe when requests "
-                        + "are off");
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilityKit.install(registry, ObservabilitySettings.builder()
+                .requests(false).errors(true).build());
+
+        initAndFireFailedInvocation();
+
+        Assertions.assertNull(registry.find(MeterNames.RPC_DURATION).timer(),
+                "no RPC timer when request metrics are off");
+        Assertions.assertFalse(
+                ObservabilityKit.getRecentInteractions().snapshot().isEmpty(),
+                "the collector still captures the failed interaction");
     }
 
     @Test
@@ -231,13 +246,7 @@ class MetricsServiceInitListenerTest {
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().requests(false).errors(false)
                         .build());
-        VaadinService service = licensedService();
-        ServiceInitEvent event = mock(ServiceInitEvent.class);
-        when(event.getSource()).thenReturn(service);
-
-        new MetricsServiceInitListener().serviceInit(event);
-
-        Assertions.assertTrue(service.getEventBus()
+        Assertions.assertTrue(initAndFireFailedInvocation().getEventBus()
                 .getListeners(RpcInvocationStartedEvent.class).isEmpty(),
                 "no RPC subscribers when requests and errors are both off");
     }
@@ -246,11 +255,14 @@ class MetricsServiceInitListenerTest {
     void insightsCanBeDisabledWithoutGivingUpErrorOrRequestMetrics() {
         // Insights is a feature in its own right: switching it off must not
         // force a choice between error metrics and request metrics.
-        ObservabilityKit.install(new SimpleMeterRegistry(),
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilityKit.install(registry,
                 ObservabilitySettings.builder().insights(false).build());
-        Assertions.assertEquals(1, rpcEventSubscribers(),
-                "insights off should leave only the RpcMetricsBinder "
-                        + "subscribed");
+
+        initAndFireFailedInvocation();
+
+        Assertions.assertNotNull(registry.find(MeterNames.RPC_DURATION).timer(),
+                "request metrics should survive insights being off");
         Assertions.assertNull(ObservabilityKit.getRecentInteractions(),
                 "no buffer should be bound when insights are off");
     }
@@ -259,7 +271,7 @@ class MetricsServiceInitListenerTest {
     void insightsBufferHonoursTheConfiguredCapacity() {
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().insightsCapacity(2).build());
-        rpcEventSubscribers();
+        initAndFireFailedInvocation();
 
         RecentInteractions buffer = ObservabilityKit.getRecentInteractions();
         Assertions.assertNotNull(buffer);
@@ -278,20 +290,41 @@ class MetricsServiceInitListenerTest {
     }
 
     /**
-     * Runs {@code serviceInit} against a real event bus and reports how many
-     * subscribers the RPC invocation events ended up with. The binders now
-     * register method references rather than themselves, so the count is what
-     * identifies the wiring: the metrics binder and the interaction collector
-     * subscribe one each.
+     * Runs {@code serviceInit} against a real event bus and then fires one
+     * failed RPC invocation through it.
+     * <p>
+     * Asserting on the effect rather than on the number of subscribers is what
+     * keeps the wirings apart: counting cannot distinguish "only the metrics
+     * binder" from "only the interaction collector", and would pass if the two
+     * were swapped or if one subscribed twice.
+     *
+     * @return the service, so a test can reach the bus it was wired against
      */
-    private static int rpcEventSubscribers() {
+    private static VaadinService initAndFireFailedInvocation() {
         VaadinService service = licensedService();
-        VaadinServiceEventBus eventBus = service.getEventBus();
         ServiceInitEvent event = mock(ServiceInitEvent.class);
         when(event.getSource()).thenReturn(service);
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        return eventBus.getListeners(RpcInvocationStartedEvent.class).size();
+        UI ui = mock(UI.class, RETURNS_DEEP_STUBS);
+        VaadinServiceEventBus bus = service.getEventBus();
+        bus.fireEvent(rpcEvent(RpcInvocationStartedEvent.class, ui));
+        RpcInvocationFailedEvent failed = rpcEvent(
+                RpcInvocationFailedEvent.class, ui);
+        when(failed.getError()).thenReturn(new IllegalStateException("boom"));
+        bus.fireEvent(failed);
+        bus.fireEvent(rpcEvent(RpcInvocationEndedEvent.class, ui));
+        return service;
+    }
+
+    private static <T extends AbstractRpcInvocationEvent> T rpcEvent(
+            Class<T> type, UI ui) {
+        T event = mock(type);
+        when(event.getType()).thenReturn("event");
+        when(event.getName()).thenReturn("click");
+        when(event.getUI()).thenReturn(ui);
+        when(event.getNodeId()).thenReturn(-1);
+        return event;
     }
 }

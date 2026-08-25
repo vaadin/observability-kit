@@ -76,12 +76,8 @@ class RpcMetricsBinderTest {
         RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
 
         binder.invocationStarted(eventStarted);
         binder.invocationEnded(eventEnded);
@@ -101,18 +97,12 @@ class RpcMetricsBinderTest {
         RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
 
         binder.invocationStarted(eventStarted);
-        RpcInvocationFailedEvent eventFailed = Mockito
-                .mock(RpcInvocationFailedEvent.class);
-        Mockito.when(eventFailed.getError())
-                .thenReturn(new RuntimeException("boom"));
+        RpcInvocationFailedEvent eventFailed = failed(
+                new RuntimeException("boom"));
         binder.invocationFailed(eventFailed);
         binder.invocationEnded(eventEnded);
 
@@ -130,13 +120,9 @@ class RpcMetricsBinderTest {
         RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType())
-                .thenReturn("publishedEventHandler");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("publishedEventHandler");
+        RpcInvocationStartedEvent eventStarted = started(
+                "publishedEventHandler");
+        RpcInvocationEndedEvent eventEnded = ended("publishedEventHandler");
 
         binder.invocationStarted(eventStarted);
 
@@ -158,12 +144,8 @@ class RpcMetricsBinderTest {
         RpcMetricsBinder binder = new RpcMetricsBinder(registry,
                 observationRegistry, ObservabilitySettings.builder().build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
 
         binder.invocationStarted(eventStarted);
         binder.invocationEnded(eventEnded);
@@ -191,18 +173,12 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(true).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
 
         binder.invocationStarted(eventStarted);
-        RpcInvocationFailedEvent eventFailed = Mockito
-                .mock(RpcInvocationFailedEvent.class);
-        Mockito.when(eventFailed.getError())
-                .thenReturn(new RuntimeException("boom"));
+        RpcInvocationFailedEvent eventFailed = failed(
+                new RuntimeException("boom"));
         binder.invocationFailed(eventFailed);
         binder.invocationEnded(eventEnded);
 
@@ -231,12 +207,8 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(false).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
 
         binder.invocationStarted(eventStarted);
         binder.invocationEnded(eventEnded);
@@ -258,19 +230,13 @@ class RpcMetricsBinderTest {
         RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
 
         // First invocation: error
         binder.invocationStarted(eventStarted);
-        RpcInvocationFailedEvent eventFailed = Mockito
-                .mock(RpcInvocationFailedEvent.class);
-        Mockito.when(eventFailed.getError())
-                .thenReturn(new RuntimeException("boom"));
+        RpcInvocationFailedEvent eventFailed = failed(
+                new RuntimeException("boom"));
         binder.invocationFailed(eventFailed);
         binder.invocationEnded(eventEnded);
 
@@ -302,12 +268,8 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(true).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
         Mockito.when(eventStarted.getName()).thenReturn("click");
 
         binder.invocationStarted(eventStarted);
@@ -346,12 +308,8 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(true).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
         Mockito.when(eventStarted.getName()).thenReturn(null);
 
         binder.invocationStarted(eventStarted);
@@ -386,12 +344,8 @@ class RpcMetricsBinderTest {
         ui.getElement().appendChild(element);
         int nodeId = element.getNode().getId();
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
         Mockito.when(eventStarted.getUI()).thenReturn(ui);
         Mockito.when(eventStarted.getNodeId()).thenReturn(nodeId);
 
@@ -434,12 +388,8 @@ class RpcMetricsBinderTest {
         ui.getElement().appendChild(root);
         int nodeId = subElement.getNode().getId();
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
         Mockito.when(eventStarted.getUI()).thenReturn(ui);
         Mockito.when(eventStarted.getNodeId()).thenReturn(nodeId);
 
@@ -466,12 +416,8 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(true).build());
 
-        RpcInvocationStartedEvent eventStarted = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(eventStarted.getType()).thenReturn("event");
-        RpcInvocationEndedEvent eventEnded = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(eventEnded.getType()).thenReturn("event");
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
         Mockito.when(eventStarted.getNodeId()).thenReturn(-1);
 
         binder.invocationStarted(eventStarted);
@@ -481,5 +427,29 @@ class RpcMetricsBinderTest {
                 recorder.highCardinalityTags.get(0)
                         .containsKey(ObservationNames.KEY_COMPONENT),
                 "no component attribute should be added when the invocation targets no node");
+    }
+
+    /** A started event of the given RPC type, with no target node. */
+    private static RpcInvocationStartedEvent started(String type) {
+        RpcInvocationStartedEvent event = Mockito
+                .mock(RpcInvocationStartedEvent.class);
+        Mockito.when(event.getType()).thenReturn(type);
+        return event;
+    }
+
+    /** An ended event of the given RPC type. */
+    private static RpcInvocationEndedEvent ended(String type) {
+        RpcInvocationEndedEvent event = Mockito
+                .mock(RpcInvocationEndedEvent.class);
+        Mockito.when(event.getType()).thenReturn(type);
+        return event;
+    }
+
+    /** A failed event carrying the given throwable. */
+    private static RpcInvocationFailedEvent failed(Throwable error) {
+        RpcInvocationFailedEvent event = Mockito
+                .mock(RpcInvocationFailedEvent.class);
+        Mockito.when(event.getError()).thenReturn(error);
+        return event;
     }
 }

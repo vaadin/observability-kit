@@ -36,8 +36,8 @@ import com.vaadin.flow.shared.Registration;
 final class SessionLockMetricsBinder {
 
     private final MeterRegistry registry;
-    private final transient ThreadLocal<Long> waitStart = new ThreadLocal<>();
-    private final transient ThreadLocal<Long> holdStart = new ThreadLocal<>();
+    private final ThreadLocal<Long> waitStart = new ThreadLocal<>();
+    private final ThreadLocal<Long> holdStart = new ThreadLocal<>();
 
     SessionLockMetricsBinder(MeterRegistry registry) {
         this.registry = registry;

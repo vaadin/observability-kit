@@ -141,7 +141,7 @@ public class InteractionCollector {
                         this::invocationEnded));
     }
 
-    public void invocationStarted(RpcInvocationStartedEvent event) {
+    void invocationStarted(RpcInvocationStartedEvent event) {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
@@ -150,7 +150,7 @@ public class InteractionCollector {
         startNanos.set(System.nanoTime());
     }
 
-    public void invocationFailed(RpcInvocationFailedEvent event) {
+    void invocationFailed(RpcInvocationFailedEvent event) {
         Throwable error = event.getError();
         errored.set(Boolean.TRUE);
         if (!captureErrors) {
@@ -165,7 +165,7 @@ public class InteractionCollector {
         }
     }
 
-    public void invocationEnded(RpcInvocationEndedEvent event) {
+    void invocationEnded(RpcInvocationEndedEvent event) {
         long durationMs = elapsedMs();
         String component = componentType.get();
         startNanos.remove();
