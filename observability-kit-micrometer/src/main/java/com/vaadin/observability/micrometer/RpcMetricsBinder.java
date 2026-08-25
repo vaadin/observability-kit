@@ -13,8 +13,11 @@ import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
-import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
@@ -44,7 +47,7 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * These attach to the span only and never become Timer tags, so they enrich
  * traces without affecting metric cardinality.
  */
-final class RpcMetricsBinder implements RpcInvocationListener {
+final class RpcMetricsBinder {
 
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
@@ -65,8 +68,24 @@ final class RpcMetricsBinder implements RpcInvocationListener {
                 && settings.isTraces();
     }
 
-    @Override
-    public void invocationStarted(RpcInvocationEvent event) {
+    /**
+     * Subscribes to the RPC invocation events on the given bus.
+     *
+     * @param eventBus
+     *            the service event bus to listen on
+     * @return a handle removing every subscription made here
+     */
+    Registration register(VaadinServiceEventBus eventBus) {
+        return Registration.combine(
+                eventBus.addListener(RpcInvocationStartedEvent.class,
+                        this::invocationStarted),
+                eventBus.addListener(RpcInvocationFailedEvent.class,
+                        this::invocationFailed),
+                eventBus.addListener(RpcInvocationEndedEvent.class,
+                        this::invocationEnded));
+    }
+
+    void invocationStarted(RpcInvocationStartedEvent event) {
         // Defensively clear any stale thread-local state left by a previous
         // invocation whose invocationEnded was skipped (e.g. mid-request
         // server shutdown). Without this, a pooled thread could carry
@@ -108,8 +127,8 @@ final class RpcMetricsBinder implements RpcInvocationListener {
         }
     }
 
-    @Override
-    public void invocationFailed(RpcInvocationEvent event, Throwable error) {
+    void invocationFailed(RpcInvocationFailedEvent event) {
+        Throwable error = event.getError();
         errored.set(Boolean.TRUE);
         Observation obs = observation.get();
         if (obs != null && error != null) {
@@ -117,8 +136,7 @@ final class RpcMetricsBinder implements RpcInvocationListener {
         }
     }
 
-    @Override
-    public void invocationEnded(RpcInvocationEvent event) {
+    void invocationEnded(RpcInvocationEndedEvent event) {
         boolean wasError = errored.get();
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
