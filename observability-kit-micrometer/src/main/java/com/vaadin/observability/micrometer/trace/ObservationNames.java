@@ -97,6 +97,28 @@ public final class ObservationNames {
     /** Observation/span name for a single JDBC query execution. */
     public static final String DB_QUERY = "vaadin.db.query";
 
+    /** Observation/span name for a data provider count query. */
+    public static final String DATA_COUNT = "vaadin.data.count";
+
+    /** Observation/span name for a data provider fetch query. */
+    public static final String DATA_FETCH = "vaadin.data.fetch";
+
+    /** Span attribute: index of the first item a fetch query asked for. */
+    public static final String KEY_DATA_OFFSET = "vaadin.data.offset";
+
+    /** Span attribute: number of items a fetch query asked for. */
+    public static final String KEY_DATA_LIMIT = "vaadin.data.limit";
+
+    /** Span attribute: number of items a fetch query returned. */
+    public static final String KEY_DATA_ROWS = "vaadin.data.rows";
+
+    /**
+     * High-cardinality span attribute: the class name of the component whose
+     * data is being loaded. Span-only, like {@link #KEY_COMPONENT}, because of
+     * its cardinality.
+     */
+    public static final String KEY_DATA_COMPONENT = "vaadin.data.component";
+
     /** Span attribute: number of rows read from the query's result set. */
     public static final String KEY_DB_ROWS = "db.rows";
 

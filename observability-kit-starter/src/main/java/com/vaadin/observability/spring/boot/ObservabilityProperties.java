@@ -27,6 +27,7 @@ public class ObservabilityProperties {
     private boolean uiState = false;
     private boolean navigation = true;
     private boolean requests = true;
+    private boolean data = true;
     private boolean errors = true;
     private boolean client = true;
     private boolean resync = true;
@@ -147,6 +148,26 @@ public class ObservabilityProperties {
     }
 
     /**
+     * Whether the data provider queries made by lazy-loading components are
+     * measured. On by default.
+     *
+     * @return {@code true} if data query metrics are recorded
+     */
+    public boolean isData() {
+        return data;
+    }
+
+    /**
+     * Sets whether data provider queries are measured.
+     *
+     * @param data
+     *            {@code true} to record data query metrics
+     */
+    public void setData(boolean data) {
+        this.data = data;
+    }
+
+    /**
      * Whether interaction insights may carry potentially sensitive detail: the
      * raw session id, the exception message and the top stack frames. Off by
      * default, since the insights payload is meant to be forwarded.
@@ -216,9 +237,11 @@ public class ObservabilityProperties {
      *         property values
      */
     /**
-     * The hard cap on retained interactions, bounding the memory the insights
-     * buffer can use. Defaults to
-     * {@value com.vaadin.observability.micrometer.insights.RecentInteractions#DEFAULT_CAPACITY}.
+     * Maximum number of records retained for the insights endpoint, applied to
+     * each buffer rather than shared: interactions and data provider queries
+     * are retained separately, so with both active the total is twice this.
+     *
+     * @return the per-buffer capacity
      */
     public int getInsightsCapacity() {
         return insightsCapacity;
@@ -231,10 +254,10 @@ public class ObservabilityProperties {
     public ObservabilitySettings toSettings() {
         return ObservabilitySettings.builder().sessions(sessions).uis(uis)
                 .uiState(uiState).navigation(navigation).requests(requests)
-                .errors(errors).client(client).resync(resync).traces(traces)
-                .tracesSessionId(tracesSessionId).database(database)
-                .databaseStatement(databaseStatement).insights(insights)
-                .insightsDetails(insightsDetails)
+                .data(data).errors(errors).client(client).resync(resync)
+                .traces(traces).tracesSessionId(tracesSessionId)
+                .database(database).databaseStatement(databaseStatement)
+                .insights(insights).insightsDetails(insightsDetails)
                 .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession)
                 .uiStateSampleInterval(uiStateSampleInterval)
