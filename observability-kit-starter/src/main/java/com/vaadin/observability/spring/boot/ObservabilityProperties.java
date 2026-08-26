@@ -24,6 +24,7 @@ public class ObservabilityProperties {
     private boolean enabled = true;
     private boolean sessions = true;
     private boolean uis = true;
+    private boolean uiState = false;
     private boolean navigation = true;
     private boolean requests = true;
     private boolean errors = true;
@@ -37,6 +38,8 @@ public class ObservabilityProperties {
     private boolean insightsDetails = false;
     private int routeCardinalityLimit = 200;
     private int clientRatePerSession = 100;
+    private int uiStateSampleInterval = 10000;
+    private int uiStateBytesPerNode = 0;
     private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
     public boolean isEnabled() {
@@ -61,6 +64,14 @@ public class ObservabilityProperties {
 
     public void setUis(boolean uis) {
         this.uis = uis;
+    }
+
+    public boolean isUiState() {
+        return uiState;
+    }
+
+    public void setUiState(boolean uiState) {
+        this.uiState = uiState;
     }
 
     public boolean isNavigation() {
@@ -180,6 +191,22 @@ public class ObservabilityProperties {
         this.clientRatePerSession = clientRatePerSession;
     }
 
+    public int getUiStateSampleInterval() {
+        return uiStateSampleInterval;
+    }
+
+    public void setUiStateSampleInterval(int uiStateSampleInterval) {
+        this.uiStateSampleInterval = uiStateSampleInterval;
+    }
+
+    public int getUiStateBytesPerNode() {
+        return uiStateBytesPerNode;
+    }
+
+    public void setUiStateBytesPerNode(int uiStateBytesPerNode) {
+        this.uiStateBytesPerNode = uiStateBytesPerNode;
+    }
+
     /**
      * Converts these properties to an {@link ObservabilitySettings} instance.
      * The {@code enabled} flag is not included in settings; it only gates
@@ -203,13 +230,15 @@ public class ObservabilityProperties {
 
     public ObservabilitySettings toSettings() {
         return ObservabilitySettings.builder().sessions(sessions).uis(uis)
-                .navigation(navigation).requests(requests).errors(errors)
-                .client(client).resync(resync).traces(traces)
+                .uiState(uiState).navigation(navigation).requests(requests)
+                .errors(errors).client(client).resync(resync).traces(traces)
                 .tracesSessionId(tracesSessionId).database(database)
                 .databaseStatement(databaseStatement).insights(insights)
                 .insightsDetails(insightsDetails)
                 .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession)
+                .uiStateSampleInterval(uiStateSampleInterval)
+                .uiStateBytesPerNode(uiStateBytesPerNode)
                 .insightsCapacity(insightsCapacity).build();
     }
 }

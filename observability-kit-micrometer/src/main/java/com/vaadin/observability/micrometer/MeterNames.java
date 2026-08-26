@@ -26,6 +26,53 @@ public final class MeterNames {
     public static final String UI_ACTIVE = "vaadin.ui.active";
     public static final String UI_CREATED = "vaadin.ui.created";
 
+    /**
+     * Gauge: state-tree nodes retained across all tracked UIs — how much UI
+     * state the server currently holds for live users. Recorded only when UI
+     * state metrics are enabled.
+     */
+    public static final String UI_STATE_NODES = "vaadin.ui.state.nodes";
+
+    /** Gauge: state-tree nodes held by the largest single UI. */
+    public static final String UI_STATE_NODES_MAX = "vaadin.ui.state.nodes.max";
+
+    /** Gauge: server-side component instances retained across all UIs. */
+    public static final String UI_STATE_COMPONENTS = "vaadin.ui.state.components";
+
+    /**
+     * Gauge: route-target and router-layout instances retained across all UIs.
+     * One navigation into a nested layout retains one per level, so this is a
+     * capacity figure; {@link #UI_STATE_VIEWS_STALE} is the leak signal.
+     */
+    public static final String UI_STATE_VIEWS = "vaadin.ui.state.views";
+
+    /**
+     * Gauge: retained views that are no longer part of their UI's active
+     * navigation, i.e. views that outlived it. Normally zero.
+     */
+    public static final String UI_STATE_VIEWS_STALE = "vaadin.ui.state.views.stale";
+
+    /**
+     * Gauge: retained UI state in bytes, node count times the configured cost
+     * per node. Registered only when
+     * {@link ObservabilitySettings#getUiStateBytesPerNode()} is greater than
+     * zero, because an unmeasured byte figure would be a guess.
+     */
+    public static final String UI_STATE_SIZE = "vaadin.ui.state.size";
+
+    /**
+     * Gauge: age in seconds of the stalest per-UI measurement in the aggregate.
+     * A UI is measured on its own session's thread, so an idle user's state is
+     * as old as their last interaction.
+     */
+    public static final String UI_STATE_SAMPLE_AGE_MAX = "vaadin.ui.state.sample.age.max";
+
+    /** Gauge: state-tree nodes held by the largest single session. */
+    public static final String SESSION_STATE_NODES_MAX = "vaadin.session.state.nodes.max";
+
+    /** Gauge: most UIs (browser tabs) held open by one session. */
+    public static final String SESSION_UIS_MAX = "vaadin.session.uis.max";
+
     public static final String NAVIGATION = "vaadin.navigation";
 
     public static final String REQUEST_DURATION = "vaadin.request.duration";
@@ -42,8 +89,29 @@ public final class MeterNames {
     public static final String CLIENT_THROTTLED = "vaadin.client.throttled";
 
     public static final String TAG_ROUTE = "route";
+
+    /**
+     * Tag key: {@link #OUTCOME_SUCCESS} or {@link #OUTCOME_ERROR}. Also the
+     * low-cardinality key the Observation path uses (aliased there as
+     * {@code ObservationNames.KEY_OUTCOME}), so both paths tag identically.
+     */
     public static final String TAG_OUTCOME = "outcome";
+
     public static final String TAG_EXCEPTION = "exception";
+
+    /**
+     * Tag key: simple class name of the exception that ended the operation, or
+     * {@link #ERROR_NONE} when it raised none. This mirrors the tag that
+     * {@code DefaultMeterObservationHandler} adds by itself on the Observation
+     * path; the binders add it explicitly on their direct-recording path so
+     * both paths publish the same tag-key set. Distinct from
+     * {@link #TAG_EXCEPTION}, which tags the {@link #ERRORS} counter.
+     */
+    public static final String TAG_ERROR = "error";
+
+    /** {@link #TAG_ERROR} value for an operation that raised no exception. */
+    public static final String ERROR_NONE = "none";
+
     public static final String TAG_TRIGGER = "trigger";
     public static final String TAG_KIND = "kind";
     public static final String TAG_CONTEXT = "context";

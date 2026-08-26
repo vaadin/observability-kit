@@ -22,7 +22,9 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
 import com.vaadin.flow.router.Location;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 class InteractionCollectorTest {
@@ -47,7 +49,7 @@ class InteractionCollectorTest {
 
     /** A UI with one attached component, plus a mocked event targeting it. */
     private record Target(UI ui, Component component,
-            RpcInvocationEvent event) {
+            RpcInvocationStartedEvent started, RpcInvocationEndedEvent ended) {
     }
 
     private static Target target() {
@@ -56,13 +58,35 @@ class InteractionCollectorTest {
         Component component = new Component(element) {
         };
         ui.getElement().appendChild(element);
+        int nodeId = element.getNode().getId();
 
-        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        RpcInvocationStartedEvent started = Mockito
+                .mock(RpcInvocationStartedEvent.class);
+        Mockito.when(started.getType()).thenReturn("event");
+        Mockito.when(started.getName()).thenReturn("click");
+        Mockito.when(started.getUI()).thenReturn(ui);
+        Mockito.when(started.getNodeId()).thenReturn(nodeId);
+
+        RpcInvocationEndedEvent ended = Mockito
+                .mock(RpcInvocationEndedEvent.class);
+        Mockito.when(ended.getType()).thenReturn("event");
+        Mockito.when(ended.getName()).thenReturn("click");
+        Mockito.when(ended.getUI()).thenReturn(ui);
+        Mockito.when(ended.getNodeId()).thenReturn(nodeId);
+
+        return new Target(ui, component, started, ended);
+    }
+
+    /** A failure event for the given target, carrying the given throwable. */
+    private static RpcInvocationFailedEvent failedEvent(Target target,
+            Throwable error) {
+        RpcInvocationFailedEvent event = Mockito
+                .mock(RpcInvocationFailedEvent.class);
         Mockito.when(event.getType()).thenReturn("event");
         Mockito.when(event.getName()).thenReturn("click");
-        Mockito.when(event.getUI()).thenReturn(ui);
-        Mockito.when(event.getNodeId()).thenReturn(element.getNode().getId());
-        return new Target(ui, component, event);
+        Mockito.when(event.getUI()).thenReturn(target.ui());
+        Mockito.when(event.getError()).thenReturn(error);
+        return event;
     }
 
     private static RuntimeException failure() {
@@ -82,9 +106,9 @@ class InteractionCollectorTest {
                 settings(true, true));
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), failure());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
 
         List<CapturedInteraction> snapshot = buffer.snapshot();
         Assertions.assertEquals(1, snapshot.size());
@@ -109,8 +133,8 @@ class InteractionCollectorTest {
                 settings(true, true), CAPTURE_ALL);
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationEnded(target.ended());
 
         List<CapturedInteraction> snapshot = buffer.snapshot();
         Assertions.assertEquals(1, snapshot.size());
@@ -131,8 +155,8 @@ class InteractionCollectorTest {
                 settings(true, true), CAPTURE_NONE);
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationEnded(target.ended());
 
         Assertions.assertTrue(buffer.snapshot().isEmpty(),
                 "interactions within the UX budget are not retained");
@@ -147,10 +171,10 @@ class InteractionCollectorTest {
                 settings(true, true), CAPTURE_ALL);
         Target target = target();
 
-        collector.invocationStarted(target.event());
+        collector.invocationStarted(target.started());
         // Simulate the node no longer being resolvable at end time.
-        Mockito.when(target.event().getNodeId()).thenReturn(-1);
-        collector.invocationEnded(target.event());
+        Mockito.when(target.ended().getNodeId()).thenReturn(-1);
+        collector.invocationEnded(target.ended());
 
         CapturedInteraction interaction = buffer.snapshot().get(0);
         Assertions.assertEquals(target.component().getClass().getName(),
@@ -164,9 +188,9 @@ class InteractionCollectorTest {
                 settings(false, true), CAPTURE_NONE);
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), failure());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
 
         Assertions.assertTrue(buffer.snapshot().isEmpty(),
                 "no error interaction should be retained when errors are disabled");
@@ -178,8 +202,8 @@ class InteractionCollectorTest {
                 settings(true, false), CAPTURE_ALL);
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationEnded(target.ended());
 
         Assertions.assertTrue(buffer.snapshot().isEmpty(),
                 "no slow interaction should be retained when requests are disabled");
@@ -193,9 +217,9 @@ class InteractionCollectorTest {
                 settings(true, true), CAPTURE_ALL);
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), failure());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
 
         List<CapturedInteraction> snapshot = buffer.snapshot();
         Assertions.assertEquals(1, snapshot.size(),
@@ -218,9 +242,9 @@ class InteractionCollectorTest {
                 settings(true, true));
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), outer);
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, outer));
+        collector.invocationEnded(target.ended());
 
         List<CapturedInteraction> snapshot = buffer.snapshot();
         Assertions.assertEquals(1, snapshot.size(),
@@ -255,16 +279,29 @@ class InteractionCollectorTest {
             Mockito.when(ui.getInternals().getActiveViewLocation())
                     .thenReturn(new Location("orders/" + id));
 
-            RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
-            Mockito.when(event.getType()).thenReturn("event");
-            Mockito.when(event.getName()).thenReturn("click");
-            Mockito.when(event.getUI()).thenReturn(ui);
+            RpcInvocationStartedEvent started = Mockito
+                    .mock(RpcInvocationStartedEvent.class);
+            Mockito.when(started.getType()).thenReturn("event");
+            Mockito.when(started.getName()).thenReturn("click");
+            Mockito.when(started.getUI()).thenReturn(ui);
             // No target node: this test is about the route, not the component.
-            Mockito.when(event.getNodeId()).thenReturn(-1);
+            Mockito.when(started.getNodeId()).thenReturn(-1);
 
-            collector.invocationStarted(event);
-            collector.invocationFailed(event, failure());
-            collector.invocationEnded(event);
+            RpcInvocationFailedEvent failed = Mockito
+                    .mock(RpcInvocationFailedEvent.class);
+            Mockito.when(failed.getType()).thenReturn("event");
+            Mockito.when(failed.getName()).thenReturn("click");
+            Mockito.when(failed.getUI()).thenReturn(ui);
+            Mockito.when(failed.getNodeId()).thenReturn(-1);
+            Mockito.when(failed.getError()).thenReturn(failure());
+
+            RpcInvocationEndedEvent ended = Mockito
+                    .mock(RpcInvocationEndedEvent.class);
+            Mockito.when(ended.getType()).thenReturn("event");
+
+            collector.invocationStarted(started);
+            collector.invocationFailed(failed);
+            collector.invocationEnded(ended);
         }
 
         List<String> routes = buffer.snapshot().stream()
@@ -290,8 +327,8 @@ class InteractionCollectorTest {
                 settings(true, true), budget);
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationEnded(target.ended());
 
         CapturedInteraction interaction = buffer.snapshot().get(0);
         Assertions.assertEquals(budget, interaction.thresholdMs(),
@@ -307,13 +344,13 @@ class InteractionCollectorTest {
                 settings(true, true), CAPTURE_ALL);
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), failure());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
 
         // Second invocation succeeds; must be captured as slow, not error.
-        collector.invocationStarted(target.event());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationEnded(target.ended());
 
         List<CapturedInteraction> snapshot = buffer.snapshot();
         Assertions.assertEquals(2, snapshot.size());
@@ -333,9 +370,9 @@ class InteractionCollectorTest {
         String realSessionId = target.ui().getSession() == null ? null
                 : target.ui().getSession().getSession().getId();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), failure());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
 
         CapturedInteraction interaction = buffer.snapshot().get(0);
         Assertions.assertFalse(interaction.detailsIncluded(),
@@ -362,9 +399,9 @@ class InteractionCollectorTest {
                 withDetails(true));
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), failure());
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
 
         CapturedInteraction interaction = buffer.snapshot().get(0);
         Assertions.assertTrue(interaction.detailsIncluded());
@@ -385,9 +422,9 @@ class InteractionCollectorTest {
                 withDetails(true));
         Target target = target();
 
-        collector.invocationStarted(target.event());
-        collector.invocationFailed(target.event(), error);
-        collector.invocationEnded(target.event());
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, error));
+        collector.invocationEnded(target.ended());
 
         String message = buffer.snapshot().get(0).exceptionMessage();
         Assertions.assertTrue(message.length() < 5000,
@@ -406,9 +443,9 @@ class InteractionCollectorTest {
         Target target = target();
 
         for (int i = 0; i < 2; i++) {
-            collector.invocationStarted(target.event());
-            collector.invocationFailed(target.event(), failure());
-            collector.invocationEnded(target.event());
+            collector.invocationStarted(target.started());
+            collector.invocationFailed(failedEvent(target, failure()));
+            collector.invocationEnded(target.ended());
         }
 
         List<String> ids = buffer.snapshot().stream()
