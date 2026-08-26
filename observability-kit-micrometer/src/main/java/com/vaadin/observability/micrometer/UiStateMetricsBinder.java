@@ -11,9 +11,11 @@ package com.vaadin.observability.micrometer;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serial;
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.ToDoubleFunction;
 
 import io.micrometer.core.instrument.Gauge;
@@ -21,14 +23,19 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.vaadin.flow.component.ComponentEventListener;
+import com.vaadin.flow.component.DetachEvent;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.router.AfterNavigationEvent;
+import com.vaadin.flow.router.AfterNavigationListener;
 import com.vaadin.flow.server.SessionDestroyEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.UIInitListener;
+import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.VaadinSession;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
-import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.flow.shared.Registration;
 
 /**
  * Publishes how much UI state the server is holding for live users, not just
@@ -57,27 +64,28 @@ import com.vaadin.flow.server.communication.RpcInvocationListener;
  * {@code vaadin.ui.state.sample.age.max} gauge publishes how stale the oldest
  * sample in it is, so a reading can be judged instead of trusted.
  * <p>
- * <strong>What is tracked.</strong> Only a UI that reported itself at init or
- * navigation, and only while it belongs to a session. Those are the two
- * conditions under which an entry can also be removed again — by the UI's own
- * detach listener, or by its session being destroyed — so tracking anything
- * else would retain a component tree that nothing ever drops. An interaction
- * with a UI that is not tracked is therefore ignored rather than used to start
- * tracking it.
+ * <strong>What is tracked.</strong> Every UI whose walk succeeded, for as long
+ * as it belongs to a session. An entry is dropped by the UI's own detach
+ * listener, or by its session being destroyed; the second of those catches a UI
+ * this binder never saw initialize — one restored from a serialized session, or
+ * one whose first walk threw — so an interaction is enough to start tracking a
+ * UI and nothing is held past the life of its session.
  * <p>
  * <strong>Cardinality.</strong> The gauges are aggregates — totals and maxima
  * across all UIs — never one series per session or per UI, which would grow
  * unbounded with traffic. That is the same reason the kit keeps component-level
  * attribution off meter tags.
  * <p>
- * <strong>Serialization.</strong> The per-UI listeners registered below capture
- * this binder, so a serialized session would drag it along. What it tracks is
- * live server state spanning every session, none of which belongs in one
- * session's serialized form, so the map and its cache are {@code transient} and
- * a restored binder starts empty.
+ * <strong>Serialization.</strong> This binder belongs to the service, not to
+ * any one session: it tracks live state spanning every session, and its gauges
+ * are bound to a registry it does not itself hold. The per-UI listeners
+ * therefore reach it through {@link UiListeners}, whose reference to it is
+ * {@code transient}, so a serialized session carries an inert stub rather than
+ * a copy of the binder — a restored UI does no tree walks whose results nothing
+ * reads, and the live binder picks it up again on its next interaction.
  */
-final class UiStateMetricsBinder implements UIInitListener,
-        SessionDestroyListener, RpcInvocationListener {
+final class UiStateMetricsBinder
+        implements UIInitListener, SessionDestroyListener {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -102,26 +110,32 @@ final class UiStateMetricsBinder implements UIInitListener,
      *            state-tree nodes across all tracked UIs
      * @param components
      *            server-side component instances retained
-     * @param viewInstances
-     *            retained route targets
+     * @param views
+     *            route targets and router layouts retained
+     * @param staleViews
+     *            how many of those are no longer part of their UI's active
+     *            navigation
      * @param maxUiNodes
      *            nodes held by the largest single UI
      * @param maxSessionNodes
      *            nodes held by the largest single session
      * @param maxUisPerSession
      *            most UIs held open by one session
-     * @param oldestSampleAtMillis
-     *            when the stalest sample in the aggregate was taken, or
-     *            {@code 0} when nothing is tracked
+     * @param oldestSampleAtNanos
+     *            {@link System#nanoTime()} reading of the stalest sample in the
+     *            aggregate, or {@link Long#MAX_VALUE} when nothing is tracked —
+     *            a sentinel rather than {@code 0}, which is a reading
+     *            {@code nanoTime} may legitimately return
      */
-    private record Totals(int nodes, int components, int viewInstances,
+    private record Totals(int nodes, int components, int views, int staleViews,
             int maxUiNodes, int maxSessionNodes, int maxUisPerSession,
-            long oldestSampleAtMillis) {
+            long oldestSampleAtNanos) {
 
-        static final Totals EMPTY = new Totals(0, 0, 0, 0, 0, 0, 0);
+        static final Totals EMPTY = new Totals(0, 0, 0, 0, 0, 0, 0,
+                Long.MAX_VALUE);
     }
 
-    private final long sampleIntervalMillis;
+    private final long sampleIntervalNanos;
     private final int bytesPerNode;
     private final long totalsCacheNanos;
     private transient Map<UI, Tracked> tracked = new ConcurrentHashMap<>();
@@ -150,7 +164,8 @@ final class UiStateMetricsBinder implements UIInitListener,
      */
     UiStateMetricsBinder(MeterRegistry registry, ObservabilitySettings settings,
             long totalsCacheNanos) {
-        this.sampleIntervalMillis = settings.getUiStateSampleInterval();
+        this.sampleIntervalNanos = TimeUnit.MILLISECONDS
+                .toNanos(settings.getUiStateSampleInterval());
         this.bytesPerNode = settings.getUiStateBytesPerNode();
         this.totalsCacheNanos = totalsCacheNanos;
 
@@ -168,8 +183,15 @@ final class UiStateMetricsBinder implements UIInitListener,
                 "Server-side component instances retained across all UIs",
                 Totals::components);
         gauge(registry, MeterNames.UI_STATE_VIEWS,
-                "Route-target instances retained across all UIs",
-                Totals::viewInstances);
+                "Route-target and router-layout instances retained across all "
+                        + "UIs; one navigation into a nested layout retains "
+                        + "one per level",
+                Totals::views);
+        gauge(registry, MeterNames.UI_STATE_VIEWS_STALE,
+                "Retained views that are no longer part of their UI's active "
+                        + "navigation, i.e. views that outlived it — normally "
+                        + "zero",
+                Totals::staleViews);
         gauge(registry, MeterNames.SESSION_STATE_NODES_MAX,
                 "State-tree nodes held by the largest single session",
                 Totals::maxSessionNodes);
@@ -177,7 +199,7 @@ final class UiStateMetricsBinder implements UIInitListener,
                 "Most UIs (browser tabs) held open by one session",
                 Totals::maxUisPerSession);
         Gauge.builder(MeterNames.UI_STATE_SAMPLE_AGE_MAX, this,
-                self -> self.oldestSampleAgeSeconds())
+                UiStateMetricsBinder::oldestSampleAgeSeconds)
                 .description("Age of the stalest per-UI measurement in the "
                         + "aggregate: a UI is measured on its own session's "
                         + "thread, so an idle user's state is as old as their "
@@ -185,7 +207,7 @@ final class UiStateMetricsBinder implements UIInitListener,
                 .baseUnit("seconds").register(registry);
         if (bytesPerNode > 0) {
             Gauge.builder(MeterNames.UI_STATE_SIZE, this,
-                    self -> (double) self.totals().nodes() * bytesPerNode)
+                    self -> (double) self.totals().nodes() * self.bytesPerNode)
                     .description(
                             "Retained UI state in bytes: node count times the "
                                     + "configured cost per node")
@@ -200,6 +222,19 @@ final class UiStateMetricsBinder implements UIInitListener,
     }
 
     /**
+     * Subscribes to the RPC invocation events on the given bus, so that any
+     * interaction refreshes the UI it touched.
+     *
+     * @param eventBus
+     *            the service event bus to listen on
+     * @return a handle removing every subscription made here
+     */
+    Registration register(VaadinServiceEventBus eventBus) {
+        return eventBus.addListener(RpcInvocationEndedEvent.class,
+                this::invocationEnded);
+    }
+
+    /**
      * Starts tracking a UI and keeps its measurement fresh for the rest of its
      * life.
      */
@@ -207,25 +242,29 @@ final class UiStateMetricsBinder implements UIInitListener,
     public void uiInit(UIInitEvent event) {
         UI ui = event.getUI();
         sample(ui);
-        ui.addDetachListener(detach -> forget(ui));
-        ui.addAfterNavigationListener(navigation -> sample(ui));
+        UiListeners listeners = new UiListeners(this, ui);
+        ui.addDetachListener(listeners);
+        ui.addAfterNavigationListener(listeners);
     }
 
     /**
      * Re-measures the UI an interaction just touched, unless it was measured
-     * within the sampling interval. A UI that is not tracked is left alone:
-     * tracking it here would add an entry that has no detach listener to remove
-     * it again.
+     * within the sampling interval. A UI this binder never saw initialize — one
+     * restored from a serialized session, or one whose first walk threw — is
+     * picked up here rather than staying invisible for its whole life; its
+     * session being destroyed drops it even without a detach listener of ours.
+     * A UI whose walk keeps failing is retried on each interaction instead of
+     * written off, because the reason is usually transient and a failed walk
+     * gives up early.
      */
-    @Override
-    public void invocationEnded(RpcInvocationEvent event) {
+    void invocationEnded(RpcInvocationEndedEvent event) {
         UI ui = event.getUI();
         if (ui == null) {
             return;
         }
         Tracked current = tracked.get(ui);
-        if (current == null || System.currentTimeMillis()
-                - current.sample().sampledAtMillis() < sampleIntervalMillis) {
+        if (current != null && System.nanoTime()
+                - current.sample().sampledAtNanos() < sampleIntervalNanos) {
             return;
         }
         sample(ui);
@@ -273,6 +312,46 @@ final class UiStateMetricsBinder implements UIInitListener,
     }
 
     /**
+     * The per-UI hooks: a detach drops the UI from the aggregate, a navigation
+     * re-measures it.
+     * <p>
+     * The binder is held {@code transient} on purpose. These listeners live on
+     * the UI, so they are written out with a serialized session, and the binder
+     * is service-wide state that has no business there — see the class javadoc.
+     * A restored stub therefore does nothing, and the live binder picks the UI
+     * up again on its next interaction.
+     */
+    private static final class UiListeners
+            implements ComponentEventListener<DetachEvent>,
+            AfterNavigationListener, Serializable {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        private final transient UiStateMetricsBinder binder;
+        private final transient UI ui;
+
+        UiListeners(UiStateMetricsBinder binder, UI ui) {
+            this.binder = binder;
+            this.ui = ui;
+        }
+
+        @Override
+        public void onComponentEvent(DetachEvent event) {
+            if (binder != null) {
+                binder.forget(ui);
+            }
+        }
+
+        @Override
+        public void afterNavigation(AfterNavigationEvent event) {
+            if (binder != null) {
+                binder.sample(ui);
+            }
+        }
+    }
+
+    /**
      * The aggregate, recomputed at most once per {@link #totalsCacheNanos}.
      */
     private Totals totals() {
@@ -293,7 +372,8 @@ final class UiStateMetricsBinder implements UIInitListener,
         }
         int nodes = 0;
         int components = 0;
-        int viewInstances = 0;
+        int views = 0;
+        int staleViews = 0;
         int maxUiNodes = 0;
         long oldest = Long.MAX_VALUE;
         // Per session, so the two "largest single X" gauges can distinguish a
@@ -303,9 +383,10 @@ final class UiStateMetricsBinder implements UIInitListener,
             UiStateSample sample = entry.sample();
             nodes += sample.nodes();
             components += sample.components();
-            viewInstances += sample.viewInstances();
+            views += sample.views();
+            staleViews += sample.staleViews();
             maxUiNodes = Math.max(maxUiNodes, sample.nodes());
-            oldest = Math.min(oldest, sample.sampledAtMillis());
+            oldest = Math.min(oldest, sample.sampledAtNanos());
             int[] session = perSession.computeIfAbsent(entry.session(),
                     key -> new int[2]);
             session[0] += sample.nodes();
@@ -317,18 +398,17 @@ final class UiStateMetricsBinder implements UIInitListener,
             maxSessionNodes = Math.max(maxSessionNodes, session[0]);
             maxUisPerSession = Math.max(maxUisPerSession, session[1]);
         }
-        return new Totals(nodes, components, viewInstances, maxUiNodes,
-                maxSessionNodes, maxUisPerSession,
-                oldest == Long.MAX_VALUE ? 0 : oldest);
+        return new Totals(nodes, components, views, staleViews, maxUiNodes,
+                maxSessionNodes, maxUisPerSession, oldest);
     }
 
     /** How stale the oldest measurement in the aggregate is, in seconds. */
     private double oldestSampleAgeSeconds() {
-        long oldest = totals().oldestSampleAtMillis();
-        if (oldest == 0) {
+        long oldest = totals().oldestSampleAtNanos();
+        if (oldest == Long.MAX_VALUE) {
             return 0;
         }
-        return Math.max(0, System.currentTimeMillis() - oldest) / 1000.0;
+        return Math.max(0, System.nanoTime() - oldest) / 1_000_000_000.0;
     }
 
     @Serial

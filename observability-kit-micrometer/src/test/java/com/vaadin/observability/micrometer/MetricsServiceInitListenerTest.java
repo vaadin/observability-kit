@@ -82,8 +82,8 @@ class MetricsServiceInitListenerTest {
 
     @Test
     void registersUiStateBinderWhenUiStateEnabled() {
-        // Everything else off, so the three listeners verified below can only
-        // come from the UI-state binder.
+        // Everything else off, so the three subscriptions verified below can
+        // only come from the UI-state binder.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().sessions(false).uis(false)
                         .navigation(false).client(false).requests(false)
@@ -96,9 +96,11 @@ class MetricsServiceInitListenerTest {
 
         verify(service).addUIInitListener(any(UIInitListener.class));
         verify(service)
-                .addRpcInvocationListener(any(RpcInvocationListener.class));
-        verify(service)
                 .addSessionDestroyListener(any(SessionDestroyListener.class));
+        Assertions.assertEquals(1,
+                service.getEventBus()
+                        .getListeners(RpcInvocationEndedEvent.class).size(),
+                "ui state enabled should subscribe to RPC invocation ends");
     }
 
     @Test
@@ -114,8 +116,11 @@ class MetricsServiceInitListenerTest {
         new MetricsServiceInitListener().serviceInit(event);
 
         verify(service, never()).addUIInitListener(any());
-        verify(service, never()).addRpcInvocationListener(any());
         verify(service, never()).addSessionDestroyListener(any());
+        Assertions.assertTrue(
+                service.getEventBus()
+                        .getListeners(RpcInvocationEndedEvent.class).isEmpty(),
+                "ui state disabled should subscribe nothing");
     }
 
     @Test

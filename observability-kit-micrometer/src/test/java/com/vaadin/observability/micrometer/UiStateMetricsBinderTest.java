@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -24,19 +26,20 @@ import com.vaadin.flow.dom.ElementFactory;
 import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.AfterNavigationListener;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.router.RouterLayout;
+import com.vaadin.flow.server.RouteRegistry;
 import com.vaadin.flow.server.SessionDestroyEvent;
 import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinSession;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,12 +48,12 @@ import static org.mockito.Mockito.when;
  * and publishes it as the {@code vaadin.ui.state.*} aggregates.
  * <p>
  * A UI is mocked so that the listeners the binder registers can be captured and
- * fired, but its element comes from a real {@link UI} — the point of the
- * measurement is Flow's actual state tree, which a mock has none of.
+ * fired, but its element and internals come from a real {@link UI} — the point
+ * of the measurement is Flow's actual state tree, which a mock has none of.
  */
 class UiStateMetricsBinderTest {
 
-    /** A route target, so retained views can be told from plain components. */
+    /** A route target, so views can be told from plain components. */
     @Route("state-test")
     private static class TestView extends Component {
         TestView() {
@@ -58,13 +61,32 @@ class UiStateMetricsBinderTest {
         }
     }
 
+    /** A layout, which is a view whether or not it is routable itself. */
+    private static class TestLayout extends Component implements RouterLayout {
+        TestLayout() {
+            super(ElementFactory.createDiv());
+        }
+    }
+
     /** A UI whose listeners are observable and whose tree is real. */
-    private record Tab(UI ui, Element root) {
+    private record Tab(UI ui, UI real) {
+
+        Element root() {
+            return real.getElement();
+        }
 
         /** Grows this tab's tree, the way opening a heavy view would. */
         void grow(int elements) {
             for (int i = 0; i < elements; i++) {
-                root.appendChild(ElementFactory.createDiv());
+                root().appendChild(ElementFactory.createDiv());
+            }
+        }
+
+        /** Attaches a component and makes it the UI's active route target. */
+        void navigateTo(Component target) {
+            root().appendChild(target.getElement());
+            if (target instanceof RouterLayout layout) {
+                real.getInternals().setRouterTargetChain(List.of(layout));
             }
         }
     }
@@ -99,12 +121,26 @@ class UiStateMetricsBinderTest {
                 totalsCacheNanos);
     }
 
+    /**
+     * A session whose service knows one route, so that a retained
+     * {@link TestView} is recognized the way Flow's own registry would
+     * recognize it — by lookup, not by reading the {@code @Route} annotation.
+     */
+    private static VaadinSession sessionWithRoutes() {
+        VaadinSession session = mock(VaadinSession.class, RETURNS_DEEP_STUBS);
+        RouteRegistry routes = session.getService().getRouter().getRegistry();
+        when(routes.getTemplate(TestView.class))
+                .thenReturn(Optional.of("state-test"));
+        return session;
+    }
+
     private static Tab tab(VaadinSession session) {
         UI real = new UI();
         UI ui = mock(UI.class);
         when(ui.getElement()).thenReturn(real.getElement());
+        when(ui.getInternals()).thenReturn(real.getInternals());
         when(ui.getSession()).thenReturn(session);
-        return new Tab(ui, real.getElement());
+        return new Tab(ui, real);
     }
 
     /** Runs the UI-init path the service would run for a new browser tab. */
@@ -119,21 +155,24 @@ class UiStateMetricsBinderTest {
     }
 
     @Test
-    void uiInitPublishesNodesComponentsAndRetainedViews() {
+    void uiInitPublishesNodesComponentsAndTheActiveView() {
         Tab tab = tab(mock(VaadinSession.class));
-        tab.root().appendChild(new TestView().getElement());
+        tab.navigateTo(new TestLayout());
         tab.grow(5);
 
         binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
 
-        // The UI element, the view and the five divs are all state-tree nodes;
-        // the exact total is Flow's business, that it counts them is ours.
+        // The UI element, the layout and the five divs are all state-tree
+        // nodes; the exact total is Flow's business, that it counts them is
+        // ours.
         assertTrue(gauge(MeterNames.UI_STATE_NODES) >= 7,
                 "the whole tree should be counted, got "
                         + gauge(MeterNames.UI_STATE_NODES));
         assertEquals(2.0, gauge(MeterNames.UI_STATE_COMPONENTS), 0.0,
-                "the UI and the view are the only components attached");
+                "the UI and the layout are the only components attached");
         assertEquals(1.0, gauge(MeterNames.UI_STATE_VIEWS), 0.0);
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_VIEWS_STALE), 0.0,
+                "the only view is the one the UI is showing");
         assertEquals(gauge(MeterNames.UI_STATE_NODES),
                 gauge(MeterNames.UI_STATE_NODES_MAX), 0.0,
                 "with one UI, the largest UI holds everything");
@@ -141,9 +180,74 @@ class UiStateMetricsBinderTest {
     }
 
     @Test
+    void aNestedLayoutIsNotMistakenForAViewThatOutlivedItsNavigation() {
+        // One navigation into a nested layout legitimately retains a view per
+        // level, and Flow reports the whole chain as active. Reading "more than
+        // one view" as a leak is exactly the misreading this gauge pair exists
+        // to avoid.
+        Tab tab = tab(mock(VaadinSession.class));
+        TestLayout parent = new TestLayout();
+        TestLayout child = new TestLayout();
+        tab.root().appendChild(parent.getElement());
+        parent.getElement().appendChild(child.getElement());
+        tab.real().getInternals().setRouterTargetChain(List.of(child, parent));
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        assertEquals(2.0, gauge(MeterNames.UI_STATE_VIEWS), 0.0,
+                "both levels of the chain are retained views");
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_VIEWS_STALE), 0.0,
+                "neither has outlived the navigation that put it there");
+    }
+
+    @Test
+    void aViewOutsideTheActiveChainIsReportedAsStale() {
+        Tab tab = tab(mock(VaadinSession.class));
+        tab.navigateTo(new TestLayout());
+        // A second layout still hanging in the tree: the navigation that put
+        // it there is over, but something is still holding it.
+        tab.root().appendChild(new TestLayout().getElement());
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        assertEquals(2.0, gauge(MeterNames.UI_STATE_VIEWS), 0.0);
+        assertEquals(1.0, gauge(MeterNames.UI_STATE_VIEWS_STALE), 0.0,
+                "the layout outside the active chain outlived its navigation");
+    }
+
+    @Test
+    void aRetainedRouteIsFoundThroughTheRegistryNotTheAnnotation() {
+        // TestView carries @Route, but the registry is what is asked: that is
+        // what also finds routes added through RouteConfiguration.setRoute.
+        Tab tab = tab(sessionWithRoutes());
+        tab.root().appendChild(new TestView().getElement());
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        assertEquals(1.0, gauge(MeterNames.UI_STATE_VIEWS), 0.0);
+        assertEquals(1.0, gauge(MeterNames.UI_STATE_VIEWS_STALE), 0.0);
+    }
+
+    @Test
+    void aSubclassOfARouteIsStillARoute() {
+        // @Route is not inherited and Flow registers the annotated class, so a
+        // proxy or a specialized subclass is only found by climbing.
+        class SpecializedView extends TestView {
+        }
+        Tab tab = tab(sessionWithRoutes());
+        tab.root().appendChild(new SpecializedView().getElement());
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        assertEquals(1.0, gauge(MeterNames.UI_STATE_VIEWS), 0.0);
+    }
+
+    @Test
     void gaugesAreZeroWhileNothingIsTracked() {
         assertEquals(0.0, gauge(MeterNames.UI_STATE_NODES), 0.0);
         assertEquals(0.0, gauge(MeterNames.UI_STATE_NODES_MAX), 0.0);
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_VIEWS), 0.0);
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_VIEWS_STALE), 0.0);
         assertEquals(0.0, gauge(MeterNames.SESSION_STATE_NODES_MAX), 0.0);
         assertEquals(0.0, gauge(MeterNames.SESSION_UIS_MAX), 0.0);
         assertEquals(0.0, gauge(MeterNames.UI_STATE_SAMPLE_AGE_MAX), 0.0);
@@ -303,7 +407,7 @@ class UiStateMetricsBinderTest {
 
     @Test
     void anInteractionWithoutAUiIsIgnored() {
-        RpcInvocationEvent event = mock(RpcInvocationEvent.class);
+        RpcInvocationEndedEvent event = mock(RpcInvocationEndedEvent.class);
         when(event.getUI()).thenReturn(null);
 
         assertDoesNotThrow(() -> binder.invocationEnded(event));
@@ -311,15 +415,17 @@ class UiStateMetricsBinderTest {
     }
 
     @Test
-    void anInteractionDoesNotStartTrackingAUiThatNeverReportedItself() {
-        // Only uiInit registers the detach listener that removes a UI again,
-        // so a UI picked up here would be held for the life of the service.
-        Tab stranger = tab(mock(VaadinSession.class));
+    void anInteractionPicksUpAUiThatNeverReportedItselfAtInit() {
+        // A UI restored from a serialized session, or one whose first walk
+        // threw, would otherwise stay invisible for its whole life. Its
+        // session being destroyed drops it even with no detach listener of
+        // ours, so nothing is retained past the session.
+        Tab latecomer = tab(mock(VaadinSession.class));
 
-        resample(stranger);
+        resample(latecomer);
 
-        assertEquals(0, binder.trackedUis());
-        verify(stranger.ui(), never()).addDetachListener(any());
+        assertEquals(1, binder.trackedUis());
+        assertTrue(gauge(MeterNames.UI_STATE_NODES) > 0);
     }
 
     @Test
@@ -353,8 +459,7 @@ class UiStateMetricsBinderTest {
 
     /** Fires the end of an RPC invocation on the given tab. */
     private void resample(Tab tab) {
-        RpcInvocationEvent event = mock(RpcInvocationEvent.class);
-        when(event.getUI()).thenReturn(tab.ui());
-        binder.invocationEnded(event);
+        binder.invocationEnded(
+                new RpcInvocationEndedEvent(tab.ui(), "event", 1, "click"));
     }
 }

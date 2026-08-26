@@ -57,6 +57,9 @@ public class UiStateMetricsIT extends AbstractIT {
                 .as("vaadin_ui_state_components").isGreaterThanOrEqualTo(2.0);
         assertThat(meterValue(body, "vaadin_ui_state_views"))
                 .as("vaadin_ui_state_views").isGreaterThanOrEqualTo(1.0);
+        // One navigation, nothing left behind by an earlier one.
+        assertThat(meterValue(body, "vaadin_ui_state_views_stale"))
+                .as("vaadin_ui_state_views_stale").isZero();
         assertThat(meterValue(body, "vaadin_session_state_nodes_max"))
                 .as("vaadin_session_state_nodes_max")
                 .isGreaterThanOrEqualTo(3.0);

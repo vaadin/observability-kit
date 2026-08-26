@@ -39,8 +39,18 @@ public final class MeterNames {
     /** Gauge: server-side component instances retained across all UIs. */
     public static final String UI_STATE_COMPONENTS = "vaadin.ui.state.components";
 
-    /** Gauge: route-target instances retained across all UIs. */
+    /**
+     * Gauge: route-target and router-layout instances retained across all UIs.
+     * One navigation into a nested layout retains one per level, so this is a
+     * capacity figure; {@link #UI_STATE_VIEWS_STALE} is the leak signal.
+     */
     public static final String UI_STATE_VIEWS = "vaadin.ui.state.views";
+
+    /**
+     * Gauge: retained views that are no longer part of their UI's active
+     * navigation, i.e. views that outlived it. Normally zero.
+     */
+    public static final String UI_STATE_VIEWS_STALE = "vaadin.ui.state.views.stale";
 
     /**
      * Gauge: retained UI state in bytes, node count times the configured cost

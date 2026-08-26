@@ -221,7 +221,8 @@ ObservabilitySettings.builder()
 | `vaadin.ui.state.nodes` | Gauge | State-tree nodes retained across all UIs (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.ui.state.nodes.max` | Gauge | State-tree nodes held by the largest single UI (opt-in). |
 | `vaadin.ui.state.components` | Gauge | Server-side component instances retained across all UIs (opt-in). |
-| `vaadin.ui.state.views` | Gauge | Route-target instances retained across all UIs (opt-in). |
+| `vaadin.ui.state.views` | Gauge | Route-target and router-layout instances retained across all UIs; one navigation into a nested layout retains one per level (opt-in). |
+| `vaadin.ui.state.views.stale` | Gauge | Retained views that are no longer part of their UI's active navigation — views that outlived it. Normally zero (opt-in). |
 | `vaadin.ui.state.size` | Gauge | Retained UI state in bytes; opt-in, and registered only when `ui-state-bytes-per-node` is set. |
 | `vaadin.ui.state.sample.age.max` | Gauge | Age in seconds of the stalest per-UI measurement in the aggregate (opt-in). |
 | `vaadin.session.state.nodes.max` | Gauge | State-tree nodes held by the largest single session (opt-in, see `vaadin.observability.ui-state`). |
@@ -257,8 +258,11 @@ Each UI then reports its own state-tree size, and the kit publishes the
 aggregates: `vaadin.ui.state.nodes` (all UI state the server currently holds),
 `vaadin.ui.state.nodes.max` and `vaadin.session.state.nodes.max` (the worst-case
 tab and the worst-case user — the tail is what exhausts a heap, not the mean),
-`vaadin.ui.state.components`, `vaadin.ui.state.views` (route targets still in a
-tree; more than one per UI means views outlive their navigation) and
+`vaadin.ui.state.components`, `vaadin.ui.state.views` (route targets and router
+layouts still in a tree), `vaadin.ui.state.views.stale` (how many of those are
+no longer part of their UI's active navigation, so anything above zero means
+views outlive their navigation — a plain view count cannot say that, because one
+navigation into a nested layout legitimately retains a view per level) and
 `vaadin.session.uis.max`. Charted next to `vaadin.sessions.active`, they answer
 a question the counts cannot: state climbing while the session count is flat
 means capacity is going into what users have open, not into how many of them
