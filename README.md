@@ -158,8 +158,12 @@ public class ObservabilitySetup implements ServletContextListener {
 
 ## Configuration
 
-Every feature is enabled by default. With the Spring Boot starter, configure the
-kit through `vaadin.observability.*` properties:
+Most features are enabled by default. The ones that reach beyond ordinary
+request handling — database monitoring and UI state size — are opt-in, as are
+the two that would add sensitive or high-cardinality detail to what is
+exported (`database-statement`, `traces-session-id`); the table below gives
+every default. With the Spring Boot starter, configure the kit through
+`vaadin.observability.*` properties:
 
 ```properties
 # Turn the whole kit off
@@ -175,6 +179,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.enabled` | `true` | Master switch for the auto-configuration. |
 | `vaadin.observability.sessions` | `true` | Session count, lifetime and lock metrics. |
 | `vaadin.observability.uis` | `true` | UI count metrics. |
+| `vaadin.observability.ui-state` | `false` | Per-UI state size: how much component-tree state the server holds for live users (see [UI state size](#ui-state-size)). |
 | `vaadin.observability.navigation` | `true` | Navigation timing. |
 | `vaadin.observability.requests` | `true` | Server-side request and RPC timing. |
 | `vaadin.observability.errors` | `true` | Error counters. |
@@ -188,6 +193,8 @@ vaadin.observability.traces=false
 | `vaadin.observability.insights-capacity` | `100` | Maximum number of retained interactions; the oldest is evicted once the cap is reached. |
 | `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. |
 | `vaadin.observability.client-rate-per-session` | `100` | Maximum client-side samples accepted per session (throttling guard). |
+| `vaadin.observability.ui-state-sample-interval` | `10000` | Minimum milliseconds between two measurements of the same UI. One measurement walks that UI's whole component tree under its session lock, so this is the knob that bounds the cost of the feature. |
+| `vaadin.observability.ui-state-bytes-per-node` | `0` | Bytes per state-tree node used for `vaadin.ui.state.size`; `0` publishes no byte figure. |
 
 For plain Spring the same keys are read via `@Value`; for standalone use, build an
 `ObservabilitySettings` with the matching builder methods:
@@ -211,6 +218,15 @@ ObservabilitySettings.builder()
 | `vaadin.session.lock.hold` | Timer | Time the session lock is held. |
 | `vaadin.ui.active` | Gauge | Currently active UIs. |
 | `vaadin.ui.created` | Counter | UIs created. |
+| `vaadin.ui.state.nodes` | Gauge | State-tree nodes retained across all UIs (opt-in, see `vaadin.observability.ui-state`). |
+| `vaadin.ui.state.nodes.max` | Gauge | State-tree nodes held by the largest single UI (opt-in). |
+| `vaadin.ui.state.components` | Gauge | Server-side component instances retained across all UIs (opt-in). |
+| `vaadin.ui.state.views` | Gauge | Route-target and router-layout instances retained across all UIs; one navigation into a nested layout retains one per level (opt-in). |
+| `vaadin.ui.state.views.stale` | Gauge | Retained views that are no longer part of their UI's active navigation — views that outlived it. Normally zero (opt-in). |
+| `vaadin.ui.state.size` | Gauge | Retained UI state in bytes; opt-in, and registered only when `ui-state-bytes-per-node` is set. |
+| `vaadin.ui.state.sample.age.max` | Gauge | Age in seconds of the stalest per-UI measurement in the aggregate (opt-in). |
+| `vaadin.session.state.nodes.max` | Gauge | State-tree nodes held by the largest single session (opt-in, see `vaadin.observability.ui-state`). |
+| `vaadin.session.uis.max` | Gauge | Most UIs (browser tabs) held open by one session (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). |
 | `vaadin.request.duration` | Timer | Server-side request handling time. |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
@@ -225,6 +241,68 @@ ObservabilitySettings.builder()
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
 | `vaadin.db.query` | Timer | Duration of a JDBC query, tagged by `route`. Produced alongside the query span when database monitoring and tracing are both on. |
+
+## UI state size
+
+Session and UI counts tell you how many users are connected; they say nothing
+about what each of them costs. Because Flow keeps every open tab's component
+tree in server memory, *size* is the signal that predicts when a server-driven
+application has to scale — a hundred users on a dashboard with three grids cost
+nothing like a hundred users on a login form. Turn the measurement on with:
+
+```properties
+vaadin.observability.ui-state=true
+```
+
+Each UI then reports its own state-tree size, and the kit publishes the
+aggregates: `vaadin.ui.state.nodes` (all UI state the server currently holds),
+`vaadin.ui.state.nodes.max` and `vaadin.session.state.nodes.max` (the worst-case
+tab and the worst-case user — the tail is what exhausts a heap, not the mean),
+`vaadin.ui.state.components`, `vaadin.ui.state.views` (route targets and router
+layouts still in a tree), `vaadin.ui.state.views.stale` (how many of those are
+no longer part of their UI's active navigation, so anything above zero means
+views outlive their navigation — a plain view count cannot say that, because one
+navigation into a nested layout legitimately retains a view per level) and
+`vaadin.session.uis.max`. Charted next to `vaadin.sessions.active`, they answer
+a question the counts cannot: state climbing while the session count is flat
+means capacity is going into what users have open, not into how many of them
+there are.
+
+The gauges are aggregates only — totals and maxima, never one series per session
+or per UI, which would grow unbounded with traffic.
+
+**How measurement is scheduled.** A component tree may only be read under its
+own session lock, so no UI is ever measured by another user's request thread.
+Every UI measures itself: at UI init, after each navigation, and when an RPC
+invocation ends, the last of these throttled to one tree walk per UI per
+`ui-state-sample-interval` milliseconds. This is why the feature is off by
+default — it costs a tree walk that ordinary request handling does not — and why
+an idle user contributes their state as of their last interaction.
+`vaadin.ui.state.sample.age.max` publishes how stale the oldest measurement in
+the aggregate is, so a reading can be judged rather than assumed current.
+
+The cost of one walk is proportional to the size of the tree it measures, and
+it is paid on the request thread while the session lock is held, so the
+interval is what bounds the feature's overhead: tree size times interaction
+rate, capped at one walk per UI per interval. The default of ten seconds keeps
+a capacity trend legible on a grid-heavy application with many concurrent
+users; lower it for a sharper signal, and raise it if the measurement becomes
+visible in `vaadin.session.lock.hold`.
+
+**Nodes, not bytes.** A node count is a proxy for retained heap, not a
+measurement of it: one `Grid` node backed by 100 000 rows counts as a single
+node. The kit therefore publishes no byte figure by default, because a guessed
+per-user cost is worse than a missing one. If you measure the cost for your own
+application — settle the heap, build a number of copies of a representative
+view, keep them reachable, and read the difference from `MemoryMXBean` — set the
+result and the projection becomes available as `vaadin.ui.state.size`:
+
+```properties
+vaadin.observability.ui-state-bytes-per-node=96
+```
+
+Divided into the heap headroom, that is an estimate of how many more tabs the
+instance can hold.
 
 ## Database fetch size
 
