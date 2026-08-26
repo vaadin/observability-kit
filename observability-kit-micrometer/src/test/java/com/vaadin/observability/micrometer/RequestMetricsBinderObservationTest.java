@@ -25,6 +25,7 @@ import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 import io.micrometer.observation.ObservationView;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -44,7 +45,13 @@ class RequestMetricsBinderObservationTest {
         final List<Map<String, String>> tags = new ArrayList<>();
         final List<ObservationView> parents = new ArrayList<>();
         final List<Map<String, String>> highCardinalityTags = new ArrayList<>();
+        final List<String> scopesClosed = new ArrayList<>();
         final AtomicBoolean errored = new AtomicBoolean();
+
+        @Override
+        public void onScopeClosed(Observation.Context ctx) {
+            scopesClosed.add(ctx.getName());
+        }
 
         @Override
         public void onStop(Observation.Context ctx) {
@@ -70,6 +77,18 @@ class RequestMetricsBinderObservationTest {
         public boolean supportsContext(Observation.Context context) {
             return true;
         }
+    }
+
+    /**
+     * Micrometer keeps the current scope in a {@code static} thread-local, so
+     * it is shared by every registry on this thread. A scope a test leaves open
+     * on purpose would otherwise become the parent of the next test's
+     * observations.
+     */
+    @AfterEach
+    void clearCurrentScope() {
+        ObservationRegistry.create().setCurrentObservationScope(null);
+        RequestInteraction.clear();
     }
 
     @Test
@@ -193,6 +212,82 @@ class RequestMetricsBinderObservationTest {
                 "new request span must not be parented on the stale observation");
         Assertions.assertNull(obs.getCurrentObservation(),
                 "no scope should remain current once the request ended");
+    }
+
+    @Test
+    void leakedScopeIsOnlyDroppedWhileAnEnclosingScopeIsCurrent() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getParameter("v-r")).thenReturn("uidl");
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        // A request whose requestEnd never ran leaves its scope open.
+        binder.requestStart(req, resp);
+
+        // Something live then becomes current on the pooled thread, the way a
+        // Spring/Boot HTTP observation wraps the next request.
+        Observation enclosing = Observation.start("http.server.requests", obs);
+        Observation.Scope enclosingScope = enclosing.openScope();
+
+        // Cleaning up the leaked scope must not close it: close() would
+        // reinstate its previous scope and evict the enclosing one.
+        binder.requestStart(req, resp);
+        binder.requestEnd(req, resp, session);
+
+        Assertions.assertEquals(1, recorder.parents.size());
+        Assertions.assertSame(enclosing, recorder.parents.get(0),
+                "the request span must be parented on the enclosing live "
+                        + "observation, not on the stale one below it");
+        Assertions.assertSame(enclosingScope, obs.getCurrentObservationScope(),
+                "the enclosing scope must still be current after the request");
+
+        enclosingScope.close();
+        enclosing.stop();
+    }
+
+    @Test
+    void requestEndUnwindsAScopeLeakedOnTopOfTheRequestScope() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getParameter("v-r")).thenReturn("uidl");
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        binder.requestStart(req, resp);
+        // Nested instrumentation whose end callback never ran, e.g. an RPC
+        // invocation interrupted mid-request.
+        Observation nested = Observation.start("nested.rpc", obs);
+        nested.openScope();
+
+        binder.requestEnd(req, resp, session);
+
+        // Waiting for the next requestStart to clean this up would leave a
+        // dead observation current for anything running on this pooled thread
+        // in between, so the leaked scope must be unwound here, innermost
+        // first, and its handlers notified.
+        Assertions.assertEquals(
+                List.of("nested.rpc", MeterNames.REQUEST_DURATION),
+                recorder.scopesClosed,
+                "the leaked nested scope must be closed before ours");
+        Assertions.assertNull(obs.getCurrentObservationScope(),
+                "no scope should remain current once the request ended");
+
+        nested.stop();
     }
 
     @Test

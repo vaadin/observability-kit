@@ -104,8 +104,12 @@ final class RpcMetricsBinder {
         observation.remove();
         // Close (not just drop) a leaked scope so the stale observation stops
         // being the registry's current one and this invocation's span is not
-        // parented onto it.
-        ObservationScopes.closeStale(observationScope);
+        // parented onto it. By this point requestStart has already made the
+        // new request's scope current, so the leaked RPC scope is no longer
+        // current and is only dropped: closing it would restore the *previous*
+        // request's scope and evict this request's, re-parenting every
+        // remaining RPC, navigation and DB span onto the stale request span.
+        ObservationScopes.closeStale(observationRegistry, observationScope);
 
         // Mark the enclosing UIDL request span as an RPC interaction so the
         // RequestMetricsBinder labels the parent span appropriately.
@@ -171,9 +175,10 @@ final class RpcMetricsBinder {
 
         if (obs != null) {
             obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
-            if (scope != null) {
-                scope.close();
-            }
+            // Unwind anything nested instrumentation leaked on top of our
+            // scope before closing it, so the enclosing request scope is
+            // current again for the rest of the request.
+            ObservationScopes.closeWithNested(observationRegistry, scope);
             obs.stop();
         } else if (s != null) {
             // The error tag replicates the one
