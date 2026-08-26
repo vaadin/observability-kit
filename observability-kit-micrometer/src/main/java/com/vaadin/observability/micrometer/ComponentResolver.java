@@ -15,7 +15,7 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.StateNode;
 import com.vaadin.flow.internal.StateTree;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
+import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
 
 /**
  * Resolves the {@link com.vaadin.flow.component.Component} an RPC invocation
@@ -40,7 +40,7 @@ public final class ComponentResolver {
      * @return the fully-qualified component class name, or empty
      */
     public static Optional<String> resolveComponentType(
-            RpcInvocationEvent event) {
+            AbstractRpcInvocationEvent event) {
         int nodeId = event.getNodeId();
         UI ui = event.getUI();
         if (nodeId < 0 || ui == null) {

@@ -195,8 +195,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             SessionMetricsBinder binder = new SessionMetricsBinder(registry);
             service.addSessionInitListener(binder);
             service.addSessionDestroyListener(binder);
-            service.addSessionLockListener(
-                    new SessionLockMetricsBinder(registry));
+            new SessionLockMetricsBinder(registry)
+                    .register(service.getEventBus());
         }
 
         if (settings.isUis() || settings.isNavigation()
@@ -212,8 +212,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         }
 
         if (settings.isRequests()) {
-            service.addRpcInvocationListener(new RpcMetricsBinder(registry,
-                    observationRegistry, settings));
+            new RpcMetricsBinder(registry, observationRegistry, settings)
+                    .register(service.getEventBus());
         }
 
         if (settings.isInsights()
@@ -223,8 +223,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             // and got an error / it was slow") to a replicable interaction.
             RecentInteractions interactions = new RecentInteractions(
                     settings.getInsightsCapacity());
-            service.addRpcInvocationListener(
-                    new InteractionCollector(interactions, settings));
+            new InteractionCollector(interactions, settings)
+                    .register(service.getEventBus());
             ObservabilityKit.setRecentInteractions(interactions);
         }
 
