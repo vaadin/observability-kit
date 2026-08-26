@@ -42,7 +42,14 @@ public final class MeterNames {
     public static final String CLIENT_THROTTLED = "vaadin.client.throttled";
 
     public static final String TAG_ROUTE = "route";
+
+    /**
+     * Tag key: {@link #OUTCOME_SUCCESS} or {@link #OUTCOME_ERROR}. Also the
+     * low-cardinality key the Observation path uses (aliased there as
+     * {@code ObservationNames.KEY_OUTCOME}), so both paths tag identically.
+     */
     public static final String TAG_OUTCOME = "outcome";
+
     public static final String TAG_EXCEPTION = "exception";
 
     /**

@@ -28,7 +28,9 @@ import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
@@ -143,15 +145,22 @@ class MeterTagParityTest {
                 traces ? meterProducingObservations(registry) : null,
                 ObservabilitySettings.builder().traces(traces).build());
 
-        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
-        Mockito.when(event.getType()).thenReturn("event");
-        Mockito.when(event.getNodeId()).thenReturn(-1);
+        RpcInvocationStartedEvent started = Mockito
+                .mock(RpcInvocationStartedEvent.class);
+        Mockito.when(started.getType()).thenReturn("event");
+        Mockito.when(started.getNodeId()).thenReturn(-1);
+        RpcInvocationEndedEvent ended = Mockito
+                .mock(RpcInvocationEndedEvent.class);
+        Mockito.when(ended.getType()).thenReturn("event");
 
-        binder.invocationStarted(event);
+        binder.invocationStarted(started);
         if (failure != null) {
-            binder.invocationFailed(event, failure);
+            RpcInvocationFailedEvent failed = Mockito
+                    .mock(RpcInvocationFailedEvent.class);
+            Mockito.when(failed.getError()).thenReturn(failure);
+            binder.invocationFailed(failed);
         }
-        binder.invocationEnded(event);
+        binder.invocationEnded(ended);
 
         return tags(registry, MeterNames.RPC_DURATION);
     }

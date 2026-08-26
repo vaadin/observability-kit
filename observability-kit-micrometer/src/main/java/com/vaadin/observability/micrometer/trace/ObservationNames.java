@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer.trace;
 
+import com.vaadin.observability.micrometer.MeterNames;
+
 /**
  * Span name + attribute-key constants for Observability Kit Observations.
  * <p>
@@ -23,7 +25,13 @@ public final class ObservationNames {
     public static final String NAVIGATION = "vaadin.navigation";
     public static final String UI_ACCESS = "vaadin.ui.access";
 
-    public static final String KEY_OUTCOME = "outcome";
+    /**
+     * Low-cardinality key that becomes the {@link MeterNames#TAG_OUTCOME} tag
+     * once a meter-producing observation handler turns the Observation into a
+     * Timer. Aliased rather than re-spelled so the Observation path and the
+     * direct-recording path cannot drift apart.
+     */
+    public static final String KEY_OUTCOME = MeterNames.TAG_OUTCOME;
     public static final String KEY_REQUEST_TYPE = "vaadin.request.type";
     public static final String KEY_INTERACTION = "vaadin.interaction";
     public static final String KEY_ROUTE = "route";
@@ -71,8 +79,11 @@ public final class ObservationNames {
     public static final String UI_ID_UNKNOWN = "_unknown";
     public static final String LOCATION_UNKNOWN = "_unknown";
 
-    public static final String OUTCOME_SUCCESS = "success";
-    public static final String OUTCOME_ERROR = "error";
+    /** @see MeterNames#OUTCOME_SUCCESS */
+    public static final String OUTCOME_SUCCESS = MeterNames.OUTCOME_SUCCESS;
+
+    /** @see MeterNames#OUTCOME_ERROR */
+    public static final String OUTCOME_ERROR = MeterNames.OUTCOME_ERROR;
 
     public static final String REQUEST_TYPE_UIDL = "uidl";
     public static final String REQUEST_TYPE_HEARTBEAT = "heartbeat";
