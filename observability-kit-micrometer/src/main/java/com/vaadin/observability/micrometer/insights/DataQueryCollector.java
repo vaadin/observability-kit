@@ -12,7 +12,6 @@ import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
 import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.data.DataCountEndedEvent;
@@ -155,11 +154,13 @@ public class DataQueryCollector {
             boolean filtered, int offset, int limit, int rows, long durationMs,
             long thresholdMs, String outcome, Throwable error) {
         try {
-            buffer.add(new CapturedQuery(Instant.now(), route(ui),
-                    component == null ? null : component.getClass().getName(),
-                    kind, filtered, offset, limit, rows, durationMs,
-                    thresholdMs, outcome, error == null ? null
-                            : rootCause(error).getClass().getName()));
+            buffer.add(
+                    new CapturedQuery(Instant.now(), routes.tagForUi(ui, null),
+                            component == null ? null
+                                    : component.getClass().getName(),
+                            kind, filtered, offset, limit, rows, durationMs,
+                            thresholdMs, outcome, error == null ? null
+                                    : rootCause(error).getClass().getName()));
         } catch (RuntimeException e) {
             // Collection is best-effort enrichment; never interfere with data
             // loading or the framework's error handling.
@@ -180,21 +181,4 @@ public class DataQueryCollector {
         return cause;
     }
 
-    /**
-     * Resolves the route of the view the query belongs to, from the event's UI
-     * rather than {@code UI.getCurrent()}, which is unset on the executor
-     * thread an asynchronous fetch runs on.
-     */
-    private String route(UI ui) {
-        if (ui == null) {
-            return null;
-        }
-        for (HasElement target : ui.getInternals()
-                .getActiveRouterTargetsChain()) {
-            if (target instanceof Component component) {
-                return routes.tagFor(component.getClass());
-            }
-        }
-        return null;
-    }
 }

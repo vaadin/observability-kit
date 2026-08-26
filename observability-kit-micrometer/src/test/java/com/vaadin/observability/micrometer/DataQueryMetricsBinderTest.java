@@ -11,6 +11,7 @@ package com.vaadin.observability.micrometer;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -140,5 +141,38 @@ class DataQueryMetricsBinderTest {
         Assertions.assertNull(
                 registry.find(MeterNames.DATA_COUNT_DURATION).timer(),
                 "an ended event with no start should not invent a timing");
+    }
+
+    @Test
+    void aNoOpObservationStillProducesATimer() {
+        // An ObservationRegistry with no handlers hands back Observation.NOOP,
+        // which records nothing. Without falling through to the timer path the
+        // query would be measured nowhere at all.
+        DataQueryMetricsBinder binder = new DataQueryMetricsBinder(registry,
+                ObservationRegistry.create(),
+                ObservabilitySettings.builder().traces(true).build());
+
+        binder.countStarted(new DataCountStartedEvent(ui, component, false));
+        binder.countEnded(new DataCountEndedEvent(ui, component, false, 10));
+
+        Assertions.assertNotNull(
+                registry.find(MeterNames.DATA_COUNT_DURATION).timer(),
+                "a no-op observation must not swallow the measurement");
+    }
+
+    @Test
+    void aNoOpObservationStillProducesAFetchTimer() {
+        DataQueryMetricsBinder binder = new DataQueryMetricsBinder(registry,
+                ObservationRegistry.create(),
+                ObservabilitySettings.builder().traces(true).build());
+
+        binder.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        binder.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 0, 50, false, 50));
+
+        Assertions.assertNotNull(
+                registry.find(MeterNames.DATA_FETCH_DURATION).timer(),
+                "a no-op observation must not swallow the measurement");
     }
 }

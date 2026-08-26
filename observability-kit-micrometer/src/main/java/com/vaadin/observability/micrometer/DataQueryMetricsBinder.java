@@ -16,9 +16,6 @@ import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
-import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.HasElement;
-import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.data.AbstractDataCountEvent;
 import com.vaadin.flow.server.data.AbstractDataFetchEvent;
@@ -153,7 +150,7 @@ final class DataQueryMetricsBinder {
         Long started = countStart.get();
         clearCount();
 
-        if (obs != null) {
+        if (obs != null && !obs.isNoop()) {
             obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
             if (scope != null) {
                 scope.close();
@@ -162,8 +159,8 @@ final class DataQueryMetricsBinder {
         } else if (sample != null) {
             sample.stop(countTimer(event, outcome));
         } else if (started != null) {
-            // No sample and no observation: record the elapsed time directly
-            // so a count is never silently dropped.
+            // Reached when the observation turned out to be a no-op, which
+            // records nothing: time it directly rather than lose the query.
             countTimer(event, outcome)
                     .record(Duration.ofNanos(System.nanoTime() - started));
         }
@@ -229,7 +226,7 @@ final class DataQueryMetricsBinder {
         Long started = fetchStart.get();
         clearFetch();
 
-        if (obs != null) {
+        if (obs != null && !obs.isNoop()) {
             obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
             if (!failed) {
                 obs.highCardinalityKeyValue(ObservationNames.KEY_DATA_ROWS,
@@ -242,18 +239,25 @@ final class DataQueryMetricsBinder {
         } else if (sample != null) {
             sample.stop(fetchTimer(event, outcome));
         } else if (started != null) {
+            // See countEnded: a no-op observation records nothing.
             fetchTimer(event, outcome)
                     .record(Duration.ofNanos(System.nanoTime() - started));
         }
 
         if (!failed) {
-            // Asked-for against came-back: a persistent gap means the
-            // component is over-fetching or the provider is returning short
-            // pages.
-            String route = route(event.getUI());
-            summary(MeterNames.DATA_FETCH_REQUESTED, route)
-                    .record(event.getLimit());
-            summary(MeterNames.DATA_FETCH_ROWS, route).record(rows);
+            try {
+                // Asked-for against came-back: a persistent gap means the
+                // component is over-fetching or the provider is returning
+                // short pages.
+                String route = routes.tagForUi(event.getUI(),
+                        MeterNames.ROUTE_UNKNOWN);
+                summary(MeterNames.DATA_FETCH_REQUESTED, route)
+                        .record(event.getLimit());
+                summary(MeterNames.DATA_FETCH_ROWS, route).record(rows);
+            } catch (RuntimeException e) {
+                // Recording is best-effort enrichment. Letting this out would
+                // lose both summaries and log a bus error on every fetch.
+            }
         }
     }
 
@@ -289,21 +293,4 @@ final class DataQueryMetricsBinder {
         return event.getComponent().map(c -> c.getClass().getName());
     }
 
-    /**
-     * Resolves the route of the view the query belongs to. Taken from the
-     * event's UI rather than {@code UI.getCurrent()}, which is not set on the
-     * executor thread an asynchronous fetch runs on.
-     */
-    private String route(UI ui) {
-        if (ui == null) {
-            return MeterNames.ROUTE_UNKNOWN;
-        }
-        for (HasElement target : ui.getInternals()
-                .getActiveRouterTargetsChain()) {
-            if (target instanceof Component component) {
-                return routes.tagFor(component.getClass());
-            }
-        }
-        return MeterNames.ROUTE_UNKNOWN;
-    }
 }
