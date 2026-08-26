@@ -42,8 +42,29 @@ public final class MeterNames {
     public static final String CLIENT_THROTTLED = "vaadin.client.throttled";
 
     public static final String TAG_ROUTE = "route";
+
+    /**
+     * Tag key: {@link #OUTCOME_SUCCESS} or {@link #OUTCOME_ERROR}. Also the
+     * low-cardinality key the Observation path uses (aliased there as
+     * {@code ObservationNames.KEY_OUTCOME}), so both paths tag identically.
+     */
     public static final String TAG_OUTCOME = "outcome";
+
     public static final String TAG_EXCEPTION = "exception";
+
+    /**
+     * Tag key: simple class name of the exception that ended the operation, or
+     * {@link #ERROR_NONE} when it raised none. This mirrors the tag that
+     * {@code DefaultMeterObservationHandler} adds by itself on the Observation
+     * path; the binders add it explicitly on their direct-recording path so
+     * both paths publish the same tag-key set. Distinct from
+     * {@link #TAG_EXCEPTION}, which tags the {@link #ERRORS} counter.
+     */
+    public static final String TAG_ERROR = "error";
+
+    /** {@link #TAG_ERROR} value for an operation that raised no exception. */
+    public static final String ERROR_NONE = "none";
+
     public static final String TAG_TRIGGER = "trigger";
     public static final String TAG_KIND = "kind";
     public static final String TAG_CONTEXT = "context";
