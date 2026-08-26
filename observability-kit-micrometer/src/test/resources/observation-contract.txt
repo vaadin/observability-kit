@@ -1,0 +1,40 @@
+# The public span surface of Observability Kit: every Observation the kit can
+# emit, its span name, and its low- and high-cardinality attribute keys.
+# Span names and attributes are consumed by dashboards and trace queries
+# outside this repository, so treat any change to this file as a breaking
+# change and call it out in the release notes.
+#
+# Values embedding fixture data (e.g. the navigation span name) come from the
+# scenarios in ObservationContractTest, which drives every emitter with all
+# optional attributes present. To update: run the test and copy the actual
+# inventory it prints.
+
+vaadin.data.count.duration
+  span-name: vaadin.data.count
+  low:  filtered, outcome
+  high: vaadin.data.component
+
+vaadin.data.fetch.duration
+  span-name: vaadin.data.fetch
+  low:  filtered, outcome
+  high: vaadin.data.component, vaadin.data.limit, vaadin.data.offset, vaadin.data.rows
+
+vaadin.navigation
+  span-name: vaadin.navigation ContractView
+  low:  outcome, route
+  high: (none)
+
+vaadin.request.duration
+  span-name: vaadin.request.rpc
+  low:  http.method, outcome, vaadin.interaction, vaadin.request.type
+  high: ui.id, vaadin.client.location
+
+vaadin.rpc.duration
+  span-name: vaadin.rpc.event
+  low:  outcome, type
+  high: vaadin.rpc.component, vaadin.rpc.event
+
+vaadin.ui.access
+  span-name: vaadin.ui.access
+  low:  (none)
+  high: (none)
