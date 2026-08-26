@@ -9,6 +9,7 @@
 package com.vaadin.observability.micrometer;
 
 import java.time.Instant;
+import java.util.List;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -75,6 +76,25 @@ class MetricsServiceInitListenerTest {
                 .forClass(VaadinRequestInterceptor.class);
         verify(event, atLeast(0)).addVaadinRequestInterceptor(captor.capture());
         return captor.getAllValues().stream().filter(type::isInstance).count();
+    }
+
+    /**
+     * The registration index of the first interceptor of the given type, or
+     * {@code -1} when none was registered. Vaadin reverses the interceptor
+     * list, so a higher index means the interceptor runs earlier.
+     */
+    private static int indexOfType(ServiceInitEvent event,
+            Class<? extends VaadinRequestInterceptor> type) {
+        ArgumentCaptor<VaadinRequestInterceptor> captor = ArgumentCaptor
+                .forClass(VaadinRequestInterceptor.class);
+        verify(event, atLeast(0)).addVaadinRequestInterceptor(captor.capture());
+        List<VaadinRequestInterceptor> registered = captor.getAllValues();
+        for (int i = 0; i < registered.size(); i++) {
+            if (type.isInstance(registered.get(i))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Test
@@ -218,6 +238,27 @@ class MetricsServiceInitListenerTest {
         new MetricsServiceInitListener().serviceInit(event);
 
         assertEquals(0, interceptorsOfType(event, RequestMetricsBinder.class));
+    }
+
+    @Test
+    void navigationInterceptorRunsBeforeTheRequestInterceptor() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        // Vaadin reverses the interceptor list, so the navigation binder has to
+        // be registered after the request binder in order to run first: its
+        // requestEnd closes the navigation scope, which is only correct while
+        // the enclosing request scope is still open.
+        Assertions.assertTrue(
+                indexOfType(event, NavigationMetricsBinder.class) > indexOfType(
+                        event, RequestMetricsBinder.class),
+                "the navigation interceptor must be registered last so that "
+                        + "Vaadin runs it first");
     }
 
     @Test

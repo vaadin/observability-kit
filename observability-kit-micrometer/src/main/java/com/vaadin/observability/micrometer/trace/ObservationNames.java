@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer.trace;
 
+import com.vaadin.observability.micrometer.MeterNames;
+
 /**
  * Span name + attribute-key constants for Observability Kit Observations.
  * <p>
@@ -16,6 +18,10 @@ package com.vaadin.observability.micrometer.trace;
  * (e.g. {@code vaadin.request} span vs. {@code vaadin.request.duration} timer)
  * so that auto-Timer producers like {@code DefaultMeterObservationHandler} do
  * not collide with the existing manual timers emitted by the binders.
+ * <p>
+ * Attribute <em>values</em> that also appear as a Meter tag value are aliased
+ * from {@link MeterNames} rather than repeated here, so a span and the Timer
+ * beside it can never describe the same outcome with different words.
  */
 public final class ObservationNames {
 
@@ -58,21 +64,17 @@ public final class ObservationNames {
     public static final String UI_ID_UNKNOWN = "_unknown";
     public static final String LOCATION_UNKNOWN = "_unknown";
 
-    public static final String OUTCOME_SUCCESS = "success";
-    public static final String OUTCOME_ERROR = "error";
+    // The outcome vocabulary is shared with the Meter tag of the same name: a
+    // span attribute and a Timer tag describing the same outcome must not read
+    // differently. Aliases rather than copies, so the two cannot drift apart;
+    // see MeterNames for what each value means. Only the attribute *keys* are
+    // separate between the two contracts, not their values.
 
-    /**
-     * {@link #KEY_OUTCOME} value for a navigation replaced by a
-     * {@code rerouteTo} before it completed; a routing decision rather than a
-     * failure.
-     */
-    public static final String OUTCOME_REROUTED = "rerouted";
-
-    /**
-     * {@link #KEY_OUTCOME} value for a navigation replaced by a
-     * {@code forwardTo} before it completed.
-     */
-    public static final String OUTCOME_FORWARDED = "forwarded";
+    public static final String OUTCOME_SUCCESS = MeterNames.OUTCOME_SUCCESS;
+    public static final String OUTCOME_ERROR = MeterNames.OUTCOME_ERROR;
+    public static final String OUTCOME_REROUTED = MeterNames.OUTCOME_REROUTED;
+    public static final String OUTCOME_FORWARDED = MeterNames.OUTCOME_FORWARDED;
+    public static final String OUTCOME_UNKNOWN = MeterNames.OUTCOME_UNKNOWN;
 
     public static final String REQUEST_TYPE_UIDL = "uidl";
     public static final String REQUEST_TYPE_HEARTBEAT = "heartbeat";

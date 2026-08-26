@@ -79,6 +79,11 @@ final class UiMetricsBinder implements UIInitListener {
         if (navigationBinder != null) {
             ui.addBeforeEnterListener(navigationBinder);
             ui.addAfterNavigationListener(navigationBinder);
+            // A navigation started from UI.access() on a background thread
+            // never passes through requestStart/requestEnd, so the
+            // request-scoped backstop cannot close it out. Detach is the last
+            // point at which such a leftover can still be recorded.
+            ui.addDetachListener(e -> navigationBinder.uiDetached(ui));
         }
         if (settings.isTraces() && observationRegistry != null) {
             // Polls are the high-frequency UIDL noise; labelling them lets the

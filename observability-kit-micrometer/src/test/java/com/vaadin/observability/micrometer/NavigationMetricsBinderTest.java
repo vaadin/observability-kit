@@ -44,6 +44,7 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * Covers how {@link NavigationMetricsBinder} closes out navigations, in
@@ -131,8 +132,12 @@ class NavigationMetricsBinderTest {
     }
 
     private AfterNavigationEvent afterNavigation() {
-        return new AfterNavigationEvent(new LocationChangeEvent(router, ui,
-                NavigationTrigger.UI_NAVIGATE, new Location("view"),
+        return afterNavigationOn(ui);
+    }
+
+    private AfterNavigationEvent afterNavigationOn(UI targetUi) {
+        return new AfterNavigationEvent(new LocationChangeEvent(router,
+                targetUi, NavigationTrigger.UI_NAVIGATE, new Location("view"),
                 List.of()));
     }
 
@@ -316,5 +321,105 @@ class NavigationMetricsBinderTest {
         requestEnd(binder);
 
         assertNull(registry.find(MeterNames.NAVIGATION).timer());
+    }
+
+    @Test
+    void reEntrantNavigationRecordsSupersededNavigationAsUnknown() {
+        NavigationMetricsBinder binder = binder();
+
+        // UI.navigate() from a view's beforeEnter or onAttach nests a second
+        // navigation inside the first, which sets no redirect flag: the first
+        // was superseded, not failed, so it must not be tagged as an error.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.beforeEnter(beforeEnter(SecondView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void afterNavigationOnAnotherUiKeepsThisUisBackstop() {
+        NavigationMetricsBinder binder = binder();
+        UI other = new UI();
+
+        // One request touching two UIs: an afterNavigation for a UI with
+        // nothing pending must not drop the marker of the UI that does have a
+        // navigation open, or requestEnd can no longer close it out.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigationOn(other));
+        requestEnd(binder);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void requestEndClosesOutEveryUiItLeftOpen() {
+        NavigationMetricsBinder binder = binder();
+        UI other = new UI();
+
+        // Access tasks queued for several UIs of a session run on the request
+        // thread, so two UIs can have a navigation open at the same time. Both
+        // have to be closed out, not just the one marked last.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.beforeEnter(beforeEnter(SecondView.class, other));
+        requestEnd(binder);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void detachClosesOutANavigationLeftOpenOffRequest() {
+        NavigationMetricsBinder binder = binder();
+
+        // A navigation started from UI.access() never reaches requestEnd, so
+        // detach is what keeps the entry from outliving the UI. Nothing about
+        // a detached UI says the navigation failed, hence unknown.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.uiDetached(ui);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void detachRecordsANavigationOnlyOnce() {
+        NavigationMetricsBinder binder = binder();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+        binder.uiDetached(ui);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+    }
+
+    @Test
+    void requestEndClosesNavigationScopeInsideTheEnclosingRequestScope() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler());
+        NavigationMetricsBinder binder = tracingBinder(obs);
+
+        // The request scope RequestMetricsBinder opens at requestStart. Vaadin
+        // reverses the interceptor list, so the navigation binder — registered
+        // last — is the one that runs first at requestEnd, while this scope is
+        // still open.
+        Observation request = Observation.start(ObservationNames.REQUEST, obs);
+        Observation.Scope requestScope = request.openScope();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        requestEnd(binder);
+
+        // Closing the navigation scope has to restore the enclosing request
+        // observation. Were the two closed in the opposite order, the stopped
+        // request observation would be put back as current here and every
+        // later request on this pooled thread would be parented under it.
+        assertSame(request, obs.getCurrentObservation());
+
+        requestScope.close();
+        request.stop();
+        assertNull(obs.getCurrentObservation());
     }
 }
