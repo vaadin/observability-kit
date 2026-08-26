@@ -154,8 +154,13 @@ public final class ObservabilitySettings {
     }
 
     /**
-     * The hard cap on retained interactions. Memory use of the insights buffer
-     * is bounded by this; the oldest entry is evicted once it is reached.
+     * Maximum number of records retained for the insights endpoint, applied to
+     * <em>each</em> buffer rather than shared between them: interactions and
+     * data provider queries are retained separately, so with both collectors
+     * active the total is twice this value. Keeping them apart means a burst of
+     * slow queries cannot evict the failed interactions, and vice versa.
+     *
+     * @return the per-buffer capacity
      */
     public int getInsightsCapacity() {
         return insightsCapacity;

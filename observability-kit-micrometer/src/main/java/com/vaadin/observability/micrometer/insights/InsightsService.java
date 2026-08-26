@@ -168,12 +168,17 @@ public class InsightsService {
         insight.put("type", "slow-data-query");
         insight.put("severity", "warning");
         insight.put("category", "performance");
+        String scale = CapturedQuery.KIND_COUNT.equals(latest.kind())
+                && latest.rows() >= 0
+                        ? " It counted %,d items.".formatted(latest.rows())
+                        : "";
         insight.put("summary",
                 ("The %s query for %s takes %d ms (max %d ms), over the %d ms "
                         + "budget. The component cannot render until it "
-                        + "returns, so this is time the user waits.").formatted(
-                                latest.kind(), simpleName(latest.component()),
-                                medianMs, maxMs, latest.thresholdMs()));
+                        + "returns, so this is time the user waits.%s")
+                        .formatted(latest.kind(),
+                                simpleName(latest.component()), medianMs, maxMs,
+                                latest.thresholdMs(), scale));
         insight.put("evidence", queryEvidence(group));
         insight.put("replay",
                 List.of("Open route '%s'".formatted(nullSafe(latest.route())),
@@ -209,6 +214,11 @@ public class InsightsService {
         if (CapturedQuery.KIND_FETCH.equals(latest.kind())) {
             evidence.put("requested", latest.limit());
             evidence.put("returned", latest.rows());
+        } else if (latest.rows() >= 0) {
+            // A count carries its result in the same field. Reporting it is
+            // the point of a slow-count insight: "took 4 s" is far less
+            // actionable than "took 4 s counting 2,000,000 items".
+            evidence.put("counted", latest.rows());
         }
         if (latest.exceptionType() != null) {
             evidence.put("exception", latest.exceptionType());

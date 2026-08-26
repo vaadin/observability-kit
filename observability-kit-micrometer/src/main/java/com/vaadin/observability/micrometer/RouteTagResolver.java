@@ -51,11 +51,18 @@ public final class RouteTagResolver {
      * Resolves the tag value for a navigation target against an explicit route
      * registry.
      * <p>
-     * Prefer this over {@link #tagFor(Class)} whenever a registry is at hand.
-     * The session-scoped lookup that {@link #tagFor(Class)} falls back on needs
-     * {@code VaadinSession.getCurrent()}, which is unset on any thread other
-     * than the one handling the request, so a caller running elsewhere would
-     * silently get the class simple name instead of the route template.
+     * Use this when the caller may run off the request thread. The
+     * session-scoped lookup that {@link #tagFor(Class)} falls back on needs
+     * {@code VaadinSession.getCurrent()}, which is unset there, so such a
+     * caller would silently get the class simple name instead of the template.
+     * <p>
+     * The trade is that a UI's router carries the <em>application</em>
+     * registry, while the session registry layers over it. A route registered
+     * with {@code RouteConfiguration.forSessionScope().setRoute(...)} is
+     * therefore not resolvable here and falls back to the class simple name,
+     * even though {@link #tagFor(Class)} would find it. Reading the session
+     * registry instead is not an option for those callers: it needs the session
+     * lock, which the executor thread a fetch runs on does not hold.
      *
      * @param navigationTarget
      *            the navigation target, may be {@code null}

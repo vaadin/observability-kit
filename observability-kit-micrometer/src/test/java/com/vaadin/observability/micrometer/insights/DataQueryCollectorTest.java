@@ -180,4 +180,51 @@ class DataQueryCollectorTest {
                 buffer.snapshot().get(0).exceptionType(),
                 "the walk stops at the loop rather than never returning");
     }
+
+    @Test
+    void aSlowCountInsightReportsWhatItCounted() {
+        // The duration alone does not explain a slow count. The size of the
+        // result does, and the collector already captures it.
+        DataQueryCollector collector = collector(CAPTURE_ALL);
+        collector.countStarted(new DataCountStartedEvent(ui, component, false));
+        collector.countEnded(
+                new DataCountEndedEvent(ui, component, false, 2_000_000));
+
+        Map<String, Object> payload = new InsightsService(null, buffer)
+                .payload();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) payload
+                .get("insights");
+        Map<String, Object> insight = insights.get(0);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+        Assertions.assertEquals(2_000_000, evidence.get("counted"),
+                "a slow count has to say how much it counted");
+        Assertions.assertTrue(
+                insight.get("summary").toString().contains("2,000,000"),
+                "and say it where a reader looks first");
+    }
+
+    @Test
+    void aSlowFetchInsightStillReportsRequestedAgainstReturned() {
+        DataQueryCollector collector = collector(CAPTURE_ALL);
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        collector.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 0, 50, false, 30));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, buffer).payload().get("insights");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insights.get(0)
+                .get("evidence");
+
+        Assertions.assertEquals(50, evidence.get("requested"));
+        Assertions.assertEquals(30, evidence.get("returned"));
+        Assertions.assertNull(evidence.get("counted"),
+                "a fetch reports a range, not a count");
+    }
 }

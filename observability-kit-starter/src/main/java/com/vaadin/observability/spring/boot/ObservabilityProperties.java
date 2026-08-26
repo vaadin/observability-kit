@@ -210,9 +210,11 @@ public class ObservabilityProperties {
      *         property values
      */
     /**
-     * The hard cap on retained interactions, bounding the memory the insights
-     * buffer can use. Defaults to
-     * {@value com.vaadin.observability.micrometer.insights.RecentInteractions#DEFAULT_CAPACITY}.
+     * Maximum number of records retained for the insights endpoint, applied to
+     * each buffer rather than shared: interactions and data provider queries
+     * are retained separately, so with both active the total is twice this.
+     *
+     * @return the per-buffer capacity
      */
     public int getInsightsCapacity() {
         return insightsCapacity;
