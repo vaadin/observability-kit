@@ -6,15 +6,15 @@
  * See <https://vaadin.com/commercial-license-and-service-terms> for the full
  * license.
  */
-package com.vaadin.observability.micrometer;
+package com.vaadin.observability.micrometer.insights;
 
 import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Throwable helpers shared by the collectors.
+ * Throwable helpers shared by the collectors in this package.
  */
-public final class Throwables {
+final class Throwables {
 
     private Throwables() {
     }
@@ -31,7 +31,7 @@ public final class Throwables {
      *            the throwable to unwrap, not {@code null}
      * @return the root cause, or the last cause before the chain looped back
      */
-    public static Throwable rootCause(Throwable error) {
+    static Throwable rootCause(Throwable error) {
         Set<Throwable> visited = new HashSet<>();
         Throwable cause = error;
         visited.add(cause);

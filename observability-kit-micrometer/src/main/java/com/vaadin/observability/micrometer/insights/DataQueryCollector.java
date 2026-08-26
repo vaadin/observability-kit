@@ -23,7 +23,6 @@ import com.vaadin.flow.server.data.DataFetchStartedEvent;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
-import com.vaadin.observability.micrometer.Throwables;
 
 /**
  * Captures data provider queries worth surfacing: ones that threw, and ones

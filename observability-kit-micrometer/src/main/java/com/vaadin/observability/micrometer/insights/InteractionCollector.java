@@ -30,7 +30,6 @@ import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
-import com.vaadin.observability.micrometer.Throwables;
 
 /**
  * Captures interesting client-to-server invocations as
