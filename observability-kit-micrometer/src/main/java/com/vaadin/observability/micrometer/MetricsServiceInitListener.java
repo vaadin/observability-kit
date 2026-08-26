@@ -226,6 +226,17 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     .register(service.getEventBus());
         }
 
+        if (settings.isUiState()) {
+            // One binder, three subscriptions: UIs report their own state size
+            // at init and after navigation, any RPC invocation refreshes the
+            // UI it touched, and a destroyed session drops the UIs it held.
+            UiStateMetricsBinder uiStateBinder = new UiStateMetricsBinder(
+                    registry, settings);
+            service.addUIInitListener(uiStateBinder);
+            service.addSessionDestroyListener(uiStateBinder);
+            uiStateBinder.register(service.getEventBus());
+        }
+
         if (settings.isInsights()
                 && (settings.isErrors() || settings.isRequests())) {
             // Retain failed and over-UX-budget user interactions so the

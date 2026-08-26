@@ -62,6 +62,11 @@ public class ObservabilityConfiguration {
         ObservabilitySettings.Builder builder = ObservabilitySettings.builder();
         this.settings = builder.sessions(flag(environment, "sessions", true))
                 .uis(flag(environment, "uis", true))
+                .uiState(flag(environment, "ui-state", false))
+                .uiStateSampleInterval(
+                        number(environment, "ui-state-sample-interval", 10000))
+                .uiStateBytesPerNode(
+                        number(environment, "ui-state-bytes-per-node", 0))
                 .navigation(flag(environment, "navigation", true))
                 .requests(flag(environment, "requests", true))
                 .data(flag(environment, "data", true))

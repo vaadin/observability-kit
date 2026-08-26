@@ -18,6 +18,7 @@ public final class ObservabilitySettings {
 
     private final boolean sessions;
     private final boolean uis;
+    private final boolean uiState;
     private final boolean navigation;
     private final boolean requests;
     private final boolean data;
@@ -32,11 +33,14 @@ public final class ObservabilitySettings {
     private final boolean insightsDetails;
     private final int routeCardinalityLimit;
     private final int clientRatePerSession;
+    private final int uiStateSampleInterval;
+    private final int uiStateBytesPerNode;
     private final int insightsCapacity;
 
     private ObservabilitySettings(Builder builder) {
         this.sessions = builder.sessions;
         this.uis = builder.uis;
+        this.uiState = builder.uiState;
         this.navigation = builder.navigation;
         this.requests = builder.requests;
         this.data = builder.data;
@@ -51,6 +55,8 @@ public final class ObservabilitySettings {
         this.insightsDetails = builder.insightsDetails;
         this.routeCardinalityLimit = builder.routeCardinalityLimit;
         this.clientRatePerSession = builder.clientRatePerSession;
+        this.uiStateSampleInterval = builder.uiStateSampleInterval;
+        this.uiStateBytesPerNode = builder.uiStateBytesPerNode;
         this.insightsCapacity = builder.insightsCapacity;
     }
 
@@ -64,6 +70,18 @@ public final class ObservabilitySettings {
 
     public boolean isUis() {
         return uis;
+    }
+
+    /**
+     * Whether to measure how much state each UI holds and publish the
+     * {@code vaadin.ui.state.*} aggregates. Off by default: it walks the
+     * component tree of the UI an interaction touched, which costs work outside
+     * the request's own path.
+     *
+     * @return {@code true} if UI state metrics are enabled
+     */
+    public boolean isUiState() {
+        return uiState;
     }
 
     public boolean isNavigation() {
@@ -154,6 +172,42 @@ public final class ObservabilitySettings {
     }
 
     /**
+     * Minimum milliseconds between two measurements of the same UI, so a burst
+     * of interactions costs one tree walk rather than one per event.
+     * <p>
+     * One measurement walks the whole component tree of one UI while its
+     * session lock is held, so the work this setting bounds is proportional to
+     * tree size times interaction rate: on a grid-heavy application with many
+     * concurrent users, a short interval adds measurable time to the lock that
+     * {@code vaadin.session.lock.hold} reports. The gauges describe a capacity
+     * trend rather than a live value, so the default is deliberately coarse.
+     *
+     * @return the per-UI sampling interval in milliseconds
+     */
+    public int getUiStateSampleInterval() {
+        return uiStateSampleInterval;
+    }
+
+    /**
+     * Bytes to attribute to one state-tree node when publishing
+     * {@code vaadin.ui.state.size}, or {@code 0} to publish no byte figure at
+     * all.
+     * <p>
+     * There is no default value that would be right: nodes are a proxy for
+     * retained heap, not a measurement of it, and one {@code Grid} node backed
+     * by 100 000 rows counts as a single node. Measure the cost for the
+     * application at hand — settle the heap, build a number of copies of a
+     * representative view, keep them reachable, and read the difference — and
+     * set the result here. Left at zero, the gauge is not registered, because a
+     * guessed byte figure published as a metric is worse than a missing one.
+     *
+     * @return bytes per state-tree node, or {@code 0} when not configured
+     */
+    public int getUiStateBytesPerNode() {
+        return uiStateBytesPerNode;
+    }
+
+    /**
      * Maximum number of records retained for the insights endpoint, applied to
      * <em>each</em> buffer rather than shared between them: interactions and
      * data provider queries are retained separately, so with both collectors
@@ -171,6 +225,7 @@ public final class ObservabilitySettings {
 
         private boolean sessions = true;
         private boolean uis = true;
+        private boolean uiState = false;
         private boolean navigation = true;
         private boolean requests = true;
         private boolean data = true;
@@ -185,6 +240,8 @@ public final class ObservabilitySettings {
         private boolean insightsDetails = false;
         private int routeCardinalityLimit = 200;
         private int clientRatePerSession = 100;
+        private int uiStateSampleInterval = 10000;
+        private int uiStateBytesPerNode = 0;
         private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
         private Builder() {
@@ -197,6 +254,11 @@ public final class ObservabilitySettings {
 
         public Builder uis(boolean uis) {
             this.uis = uis;
+            return this;
+        }
+
+        public Builder uiState(boolean uiState) {
+            this.uiState = uiState;
             return this;
         }
 
@@ -284,6 +346,26 @@ public final class ObservabilitySettings {
                                 + clientRatePerSession);
             }
             this.clientRatePerSession = clientRatePerSession;
+            return this;
+        }
+
+        public Builder uiStateSampleInterval(int uiStateSampleInterval) {
+            if (uiStateSampleInterval < 0) {
+                throw new IllegalArgumentException(
+                        "uiStateSampleInterval must be >= 0, got "
+                                + uiStateSampleInterval);
+            }
+            this.uiStateSampleInterval = uiStateSampleInterval;
+            return this;
+        }
+
+        public Builder uiStateBytesPerNode(int uiStateBytesPerNode) {
+            if (uiStateBytesPerNode < 0) {
+                throw new IllegalArgumentException(
+                        "uiStateBytesPerNode must be >= 0, got "
+                                + uiStateBytesPerNode);
+            }
+            this.uiStateBytesPerNode = uiStateBytesPerNode;
             return this;
         }
 
