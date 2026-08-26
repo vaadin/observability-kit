@@ -13,11 +13,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import com.vaadin.flow.component.Component;
@@ -32,6 +30,7 @@ import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
+import com.vaadin.observability.micrometer.Throwables;
 
 /**
  * Captures interesting client-to-server invocations as
@@ -196,7 +195,7 @@ public class InteractionCollector {
             AbstractRpcInvocationEvent event, Throwable error, long durationMs,
             String component) {
         UI ui = event.getUI();
-        Throwable rootCause = rootCause(error);
+        Throwable rootCause = Throwables.rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
         // The exception type and the first application frame are always kept:
         // they are what makes the insight actionable and neither is free-form
@@ -287,24 +286,6 @@ public class InteractionCollector {
             return message;
         }
         return message.substring(0, MAX_MESSAGE_LENGTH) + "…";
-    }
-
-    /**
-     * Walks to the root cause, tracking the causes already visited so a cyclic
-     * causal chain terminates. A cycle longer than a self-reference (A caused
-     * by B caused by A) would otherwise spin forever, and this runs while the
-     * server is already handling a failure.
-     *
-     * @return the root cause, or the last cause before the chain looped back
-     */
-    private static Throwable rootCause(Throwable error) {
-        Set<Throwable> visited = new HashSet<>();
-        Throwable cause = error;
-        visited.add(cause);
-        while (cause.getCause() != null && visited.add(cause.getCause())) {
-            cause = cause.getCause();
-        }
-        return cause;
     }
 
     private static Optional<String> firstApplicationFrame(

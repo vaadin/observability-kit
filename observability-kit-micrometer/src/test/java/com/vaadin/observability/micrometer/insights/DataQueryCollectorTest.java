@@ -164,4 +164,20 @@ class DataQueryCollectorTest {
                 "an empty interaction buffer contributes nothing, but the "
                         + "query insight still appears");
     }
+
+    @Test
+    void aCyclicCauseChainDoesNotSpinForever() {
+        // A caused by B caused by A. This runs while the server is already
+        // handling a failure, so looping here would hang the request.
+        RuntimeException a = new RuntimeException("a");
+        RuntimeException b = new RuntimeException("b", a);
+        a.initCause(b);
+
+        collector(CAPTURE_NONE).fetchFailed(
+                new DataFetchFailedEvent(ui, component, 0, 10, false, a));
+
+        Assertions.assertEquals("java.lang.RuntimeException",
+                buffer.snapshot().get(0).exceptionType(),
+                "the walk stops at the loop rather than never returning");
+    }
 }

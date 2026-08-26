@@ -23,6 +23,7 @@ import com.vaadin.flow.server.data.DataFetchStartedEvent;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
+import com.vaadin.observability.micrometer.Throwables;
 
 /**
  * Captures data provider queries worth surfacing: ones that threw, and ones
@@ -159,8 +160,10 @@ public class DataQueryCollector {
                             component == null ? null
                                     : component.getClass().getName(),
                             kind, filtered, offset, limit, rows, durationMs,
-                            thresholdMs, outcome, error == null ? null
-                                    : rootCause(error).getClass().getName()));
+                            thresholdMs, outcome,
+                            error == null ? null
+                                    : Throwables.rootCause(error).getClass()
+                                            .getName()));
         } catch (RuntimeException e) {
             // Collection is best-effort enrichment; never interfere with data
             // loading or the framework's error handling.
@@ -171,14 +174,6 @@ public class DataQueryCollector {
         Long started = start.get();
         return started == null ? -1
                 : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-    }
-
-    private static Throwable rootCause(Throwable error) {
-        Throwable cause = error;
-        while (cause.getCause() != null && cause.getCause() != cause) {
-            cause = cause.getCause();
-        }
-        return cause;
     }
 
 }

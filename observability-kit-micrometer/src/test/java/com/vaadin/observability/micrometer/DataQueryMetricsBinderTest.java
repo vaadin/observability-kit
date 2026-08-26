@@ -8,6 +8,10 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -174,5 +178,50 @@ class DataQueryMetricsBinderTest {
         Assertions.assertNotNull(
                 registry.find(MeterNames.DATA_FETCH_DURATION).timer(),
                 "a no-op observation must not swallow the measurement");
+    }
+
+    @Test
+    void aFetchOnAnotherThreadIsStillMeasured() throws Exception {
+        // A component using DataCommunicator#enablePushUpdates fetches on its
+        // own executor, where none of the getCurrent() thread locals are set.
+        // The started and ended events arrive on that thread, so the timing
+        // state has to live there and the event has to carry its own context.
+        DataQueryMetricsBinder binder = binder();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            executor.submit(() -> {
+                binder.fetchStarted(
+                        new DataFetchStartedEvent(ui, component, 0, 50, false));
+                binder.fetchEnded(new DataFetchEndedEvent(ui, component, 0, 50,
+                        false, 50));
+            }).get(10, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        Assertions.assertNotNull(
+                registry.find(MeterNames.DATA_FETCH_DURATION).timer(),
+                "a fetch off the request thread must still be timed");
+        Assertions.assertEquals(50, registry.find(MeterNames.DATA_FETCH_ROWS)
+                .summary().totalAmount(), "and its rows recorded");
+    }
+
+    @Test
+    void aCountOnTheRequestThreadDoesNotSeeAFetchLeftOnAnother() {
+        // Count and fetch keep separate thread-local slots precisely because
+        // the two can run on different threads for the same component.
+        DataQueryMetricsBinder binder = binder();
+
+        binder.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        binder.countStarted(new DataCountStartedEvent(ui, component, false));
+        binder.countEnded(new DataCountEndedEvent(ui, component, false, 10));
+
+        Assertions.assertEquals(1L,
+                registry.find(MeterNames.DATA_COUNT_DURATION).timer().count(),
+                "the count completes on its own slot");
+        Assertions.assertNull(
+                registry.find(MeterNames.DATA_FETCH_DURATION).timer(),
+                "the still-open fetch is untouched by the count ending");
     }
 }
