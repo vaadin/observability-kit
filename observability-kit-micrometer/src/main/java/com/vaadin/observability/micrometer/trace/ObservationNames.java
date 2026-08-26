@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer.trace;
 
+import com.vaadin.observability.micrometer.MeterNames;
+
 /**
  * Span name + attribute-key constants for Observability Kit Observations.
  * <p>
@@ -23,13 +25,32 @@ public final class ObservationNames {
     public static final String NAVIGATION = "vaadin.navigation";
     public static final String UI_ACCESS = "vaadin.ui.access";
 
-    public static final String KEY_OUTCOME = "outcome";
+    /**
+     * Low-cardinality key that becomes the {@link MeterNames#TAG_OUTCOME} tag
+     * once a meter-producing observation handler turns the Observation into a
+     * Timer. Aliased rather than re-spelled so the Observation path and the
+     * direct-recording path cannot drift apart.
+     */
+    public static final String KEY_OUTCOME = MeterNames.TAG_OUTCOME;
     public static final String KEY_REQUEST_TYPE = "vaadin.request.type";
     public static final String KEY_INTERACTION = "vaadin.interaction";
     public static final String KEY_ROUTE = "route";
     public static final String KEY_HTTP_METHOD = "http.method";
     public static final String KEY_SESSION_ID = "vaadin.session.id";
+
+    /**
+     * High-cardinality span attribute: the id of the UI the request belongs to,
+     * or {@link #UI_ID_UNKNOWN}. Span-only; UI ids are unbounded over an
+     * application's lifetime, so this is never added as a Timer tag.
+     */
     public static final String KEY_UI_ID = "ui.id";
+
+    /**
+     * High-cardinality span attribute: the literal, un-templated browser path
+     * the request was sent from, or {@link #LOCATION_UNKNOWN}. Span-only; use
+     * the {@link #KEY_ROUTE} tag of the navigation meters for templated,
+     * cardinality-capped view attribution.
+     */
     public static final String KEY_CLIENT_LOCATION = "vaadin.client.location";
 
     /**
@@ -58,8 +79,11 @@ public final class ObservationNames {
     public static final String UI_ID_UNKNOWN = "_unknown";
     public static final String LOCATION_UNKNOWN = "_unknown";
 
-    public static final String OUTCOME_SUCCESS = "success";
-    public static final String OUTCOME_ERROR = "error";
+    /** @see MeterNames#OUTCOME_SUCCESS */
+    public static final String OUTCOME_SUCCESS = MeterNames.OUTCOME_SUCCESS;
+
+    /** @see MeterNames#OUTCOME_ERROR */
+    public static final String OUTCOME_ERROR = MeterNames.OUTCOME_ERROR;
 
     public static final String REQUEST_TYPE_UIDL = "uidl";
     public static final String REQUEST_TYPE_HEARTBEAT = "heartbeat";
