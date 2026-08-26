@@ -155,6 +155,30 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         // no-op by default
     }
 
+    /**
+     * Hook for DI integrations to mark the framework-level HTTP observation
+     * (e.g. Spring's {@code ServerHttpObservationFilter} span) as errored.
+     * Called from {@link RequestMetricsBinder} when Vaadin request handling
+     * raises an exception. Vaadin handles exceptions internally, so the servlet
+     * chain never throws and the framework would otherwise report the request
+     * as successful — while several monitoring solutions (New Relic, DataDog)
+     * only watch root or server spans for errors.
+     * <p>
+     * Default implementation no-ops, keeping the framework-agnostic core free
+     * of Spring imports. The Spring/Boot integration modules override this to
+     * call into their respective HTTP-observation APIs.
+     *
+     * @param request
+     *            the current Vaadin request
+     * @param failure
+     *            the exception Vaadin request handling raised, never
+     *            {@code null}
+     */
+    protected void markHttpObservationError(VaadinRequest request,
+            Exception failure) {
+        // no-op by default
+    }
+
     @Override
     public void serviceInit(ServiceInitEvent event) {
         MeterRegistry r = meterRegistry != null ? meterRegistry
@@ -208,9 +232,9 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         }
 
         if (settings.isRequests() || settings.isErrors()) {
-            event.addVaadinRequestInterceptor(
-                    new RequestMetricsBinder(registry, observationRegistry,
-                            settings, this::enrichHttpObservation));
+            event.addVaadinRequestInterceptor(new RequestMetricsBinder(registry,
+                    observationRegistry, settings, this::enrichHttpObservation,
+                    this::markHttpObservationError));
         }
 
         if (settings.isRequests()) {

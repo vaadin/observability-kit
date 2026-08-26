@@ -26,7 +26,8 @@ import com.vaadin.observability.micrometer.ObservabilitySettings;
  * double-emit Timers. HTTP observation enrichment is delegated to
  * {@link SpringHttpObservationEnricher}, making the parent HTTP span render as
  * e.g. {@code http post /vaadin/uidl} instead of the generic
- * {@code http post /**}.
+ * {@code http post /**}, and marking it errored when Vaadin request handling
+ * raises an exception the servlet chain never sees.
  * <p>
  * This class is declared {@code public} so it can be reused by both
  * {@link ObservabilityConfiguration} (plain-Spring import) and the Boot
@@ -65,5 +66,11 @@ public final class SpringMetricsServiceInitListener
     protected void enrichHttpObservation(VaadinRequest request,
             String requestType) {
         SpringHttpObservationEnricher.enrich(request, requestType);
+    }
+
+    @Override
+    protected void markHttpObservationError(VaadinRequest request,
+            Exception failure) {
+        SpringHttpObservationEnricher.error(request, failure);
     }
 }

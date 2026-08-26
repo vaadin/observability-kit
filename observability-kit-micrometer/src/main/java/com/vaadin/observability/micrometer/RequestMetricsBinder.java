@@ -57,11 +57,15 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private static final BiConsumer<VaadinRequest, String> NO_ENRICH = (r,
             t) -> {
     };
+    private static final BiConsumer<VaadinRequest, Exception> NO_MARK = (r,
+            t) -> {
+    };
 
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings settings;
     private final BiConsumer<VaadinRequest, String> httpObservationEnricher;
+    private final BiConsumer<VaadinRequest, Exception> httpObservationErrorMarker;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
@@ -74,25 +78,29 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     RequestMetricsBinder(MeterRegistry registry,
             ObservabilitySettings settings) {
-        this(registry, null, settings, NO_ENRICH);
+        this(registry, null, settings, NO_ENRICH, NO_MARK);
     }
 
     RequestMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings) {
-        this(registry, observationRegistry, settings, NO_ENRICH);
+        this(registry, observationRegistry, settings, NO_ENRICH, NO_MARK);
     }
 
     RequestMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings,
-            BiConsumer<VaadinRequest, String> httpObservationEnricher) {
+            BiConsumer<VaadinRequest, String> httpObservationEnricher,
+            BiConsumer<VaadinRequest, Exception> httpObservationErrorMarker) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
         this.httpObservationEnricher = httpObservationEnricher != null
                 ? httpObservationEnricher
                 : NO_ENRICH;
+        this.httpObservationErrorMarker = httpObservationErrorMarker != null
+                ? httpObservationErrorMarker
+                : NO_MARK;
     }
 
     private boolean useObservation() {
@@ -226,6 +234,18 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         Observation obs = observation.get();
         if (obs != null && t != null) {
             obs.error(t);
+        }
+        if (t != null) {
+            // Also mark the framework-level HTTP observation (e.g. Spring's
+            // ServerHttpObservationFilter span). Vaadin handles exceptions
+            // internally, so the servlet chain never throws and the framework
+            // would otherwise report the request as successful — and several
+            // monitoring solutions (New Relic, DataDog) only watch root or
+            // server spans for errors. No-op for standalone deployments, and
+            // deliberately not gated on the traces or errors settings: this
+            // corrects the status of an observation the framework emits
+            // anyway, rather than emitting new telemetry.
+            httpObservationErrorMarker.accept(request, t);
         }
     }
 
