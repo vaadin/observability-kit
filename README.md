@@ -181,7 +181,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.uis` | `true` | UI count metrics. |
 | `vaadin.observability.ui-state` | `false` | Per-UI state size: how much component-tree state the server holds for live users (see [UI state size](#ui-state-size)). |
 | `vaadin.observability.navigation` | `true` | Navigation timing. |
-| `vaadin.observability.requests` | `true` | Server-side request and RPC timing. |
+| `vaadin.observability.requests` | `true` | Server-side request and RPC timing: the `vaadin.request.duration` and `vaadin.rpc.duration` meters and, when tracing is on, their spans. Error counting and the enrichment of the framework's own HTTP observation are unaffected. |
 | `vaadin.observability.data` | `true` | Data provider count/fetch query timing and page sizes for lazy-loading components. |
 | `vaadin.observability.errors` | `true` | Error counters. |
 | `vaadin.observability.client` | `true` | Browser-side timing collected from the client. |

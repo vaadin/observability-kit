@@ -159,8 +159,17 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             String type = requestType(request);
             // Let DI integrations (Spring/Boot) lift Vaadin type into the
             // parent HTTP span so the trace UI shows the request type
-            // without drilling down. Defaults to no-op for standalone.
+            // without drilling down. Defaults to no-op for standalone. Not
+            // gated on the requests setting: it enriches an observation the
+            // framework emits anyway, rather than timing anything itself.
             httpObservationEnricher.accept(request, type);
+            if (!settings.isRequests()) {
+                // The requests setting turns off the kit's own request
+                // timing, which on this path means the whole request
+                // observation: the Timer is produced from it by the meter
+                // observation handler, so span and Timer cannot be split.
+                return;
+            }
             Observation obs = Observation
                     .createNotStarted(MeterNames.REQUEST_DURATION,
                             observationRegistry)
