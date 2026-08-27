@@ -18,8 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Covers the fallbacks of {@link VaadinTelemetryContext#currentRoute()}, which
- * is read by instrumentation outside the Vaadin runtime and so must always
- * hand back a usable tag value.
+ * is read by instrumentation outside the Vaadin runtime and so must always hand
+ * back a usable tag value.
  */
 class VaadinTelemetryContextTest {
 
