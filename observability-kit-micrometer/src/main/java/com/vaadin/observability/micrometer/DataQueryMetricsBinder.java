@@ -111,7 +111,11 @@ final class DataQueryMetricsBinder {
 
     void countStarted(DataCountStartedEvent event) {
         // Drop anything a previous query left behind, e.g. if its ended event
-        // never arrived because the server was shutting down.
+        // never arrived because the server was shutting down. The scope is
+        // closed rather than merely dropped, so a stale observation stops
+        // being the registry's current one and this query is not parented
+        // onto it.
+        ObservationScopes.closeStale(observationRegistry, countScope);
         clearCount();
         if (useObservation) {
             Observation obs = Observation
@@ -150,11 +154,16 @@ final class DataQueryMetricsBinder {
         Long started = countStart.get();
         clearCount();
 
-        if (obs != null && !obs.isNoop()) {
+        boolean recording = obs != null && !obs.isNoop();
+        if (recording) {
             obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
-            if (scope != null) {
-                scope.close();
-            }
+        }
+        // Closed on every path, not just the recording one: a no-op
+        // observation records nothing but still hands out a real scope that
+        // registers itself in the registry's thread-local, so skipping the
+        // close leaves the dead observation current on this pooled thread.
+        ObservationScopes.closeWithNested(observationRegistry, scope);
+        if (recording) {
             obs.stop();
         } else if (sample != null) {
             sample.stop(countTimer(event, outcome));
@@ -184,6 +193,8 @@ final class DataQueryMetricsBinder {
     // ---------- fetch ----------
 
     void fetchStarted(DataFetchStartedEvent event) {
+        // See countStarted: close, do not merely drop, a leaked scope.
+        ObservationScopes.closeStale(observationRegistry, fetchScope);
         clearFetch();
         if (useObservation) {
             Observation obs = Observation
@@ -226,15 +237,17 @@ final class DataQueryMetricsBinder {
         Long started = fetchStart.get();
         clearFetch();
 
-        if (obs != null && !obs.isNoop()) {
+        boolean recording = obs != null && !obs.isNoop();
+        if (recording) {
             obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
             if (!failed) {
                 obs.highCardinalityKeyValue(ObservationNames.KEY_DATA_ROWS,
                         Integer.toString(rows));
             }
-            if (scope != null) {
-                scope.close();
-            }
+        }
+        // See countEnded: even a no-op observation's scope has to be closed.
+        ObservationScopes.closeWithNested(observationRegistry, scope);
+        if (recording) {
             obs.stop();
         } else if (sample != null) {
             sample.stop(fetchTimer(event, outcome));
