@@ -221,32 +221,34 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     @Override
     public void handleException(VaadinRequest request, VaadinResponse response,
-            VaadinSession vaadinSession, Exception t) {
+            VaadinSession vaadinSession, Exception exception) {
         errored.set(Boolean.TRUE);
-        if (t != null) {
-            errorType.set(t.getClass().getSimpleName());
+        if (exception == null) {
+            return;
         }
-        if (settings.isErrors() && t != null) {
+        errorType.set(exception.getClass().getSimpleName());
+        if (settings.isErrors()) {
             Counter.builder(MeterNames.ERRORS)
-                    .tag(MeterNames.TAG_EXCEPTION, t.getClass().getSimpleName())
+                    .tag(MeterNames.TAG_EXCEPTION,
+                            exception.getClass().getSimpleName())
                     .register(registry).increment();
         }
         Observation obs = observation.get();
-        if (obs != null && t != null) {
-            obs.error(t);
+        if (obs != null) {
+            obs.error(exception);
         }
-        if (t != null) {
-            // Also mark the framework-level HTTP observation (e.g. Spring's
-            // ServerHttpObservationFilter span). Vaadin handles exceptions
-            // internally, so the servlet chain never throws and the framework
-            // would otherwise report the request as successful — and several
-            // monitoring solutions (New Relic, DataDog) only watch root or
-            // server spans for errors. No-op for standalone deployments, and
-            // deliberately not gated on the traces or errors settings: this
-            // corrects the status of an observation the framework emits
-            // anyway, rather than emitting new telemetry.
-            httpObservationErrorMarker.accept(request, t);
-        }
+        // Also mark the framework-level HTTP observation (e.g. Spring's
+        // ServerHttpObservationFilter span). For a UIDL request Vaadin
+        // swallows the exception and responds 200, so the framework would
+        // otherwise record it as successful — and several monitoring
+        // solutions (New Relic, DataDog) only watch root or server spans for
+        // errors. For other request types Vaadin rethrows as ServiceException
+        // and the framework records that itself; there this marker merely
+        // front-runs it with the root cause. No-op for standalone
+        // deployments, and deliberately not gated on the traces or errors
+        // settings: this corrects the status of an observation the framework
+        // emits anyway, rather than emitting new telemetry.
+        httpObservationErrorMarker.accept(request, exception);
     }
 
     @Override

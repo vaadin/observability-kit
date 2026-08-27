@@ -159,10 +159,12 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
      * Hook for DI integrations to mark the framework-level HTTP observation
      * (e.g. Spring's {@code ServerHttpObservationFilter} span) as errored.
      * Called from {@link RequestMetricsBinder} when Vaadin request handling
-     * raises an exception. Vaadin handles exceptions internally, so the servlet
-     * chain never throws and the framework would otherwise report the request
-     * as successful — while several monitoring solutions (New Relic, DataDog)
-     * only watch root or server spans for errors.
+     * raises an exception. For a UIDL request Vaadin swallows the exception and
+     * responds 200, so the framework would otherwise report the request as
+     * successful — while several monitoring solutions (New Relic, DataDog) only
+     * watch root or server spans for errors. For other request types Vaadin
+     * rethrows and the framework records the failure itself; there this hook
+     * merely front-runs it with the root cause.
      * <p>
      * Default implementation no-ops, keeping the framework-agnostic core free
      * of Spring imports. The Spring/Boot integration modules override this to

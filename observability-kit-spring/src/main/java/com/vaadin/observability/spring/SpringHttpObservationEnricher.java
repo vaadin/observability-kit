@@ -63,13 +63,16 @@ final class SpringHttpObservationEnricher {
 
     /**
      * Marks the Spring HTTP observation attached to {@code request} as errored,
-     * if any. Vaadin handles exceptions internally, so the servlet chain never
-     * throws and {@link ServerHttpObservationFilter} would otherwise report the
-     * request as successful. The error lands on the observation context, which
-     * the meter and tracing handlers read when the filter stops the observation
-     * as the chain unwinds — so the parent HTTP span (and its
-     * {@code http.server.requests} Timer) reflect the failure, which is what
-     * error monitoring in APM tools watches.
+     * if any. For a UIDL request Vaadin swallows the exception and responds
+     * 200, so {@link ServerHttpObservationFilter} would otherwise report the
+     * request as successful; for other request types Vaadin rethrows and the
+     * filter records the wrapping {@code ServiceException} itself. The error
+     * lands on the observation context, which the meter and tracing handlers
+     * read when the filter stops the observation as the chain unwinds — so the
+     * parent HTTP span is marked errored, and the {@code exception} tag on
+     * {@code http.server.requests} names the failure. The Timer's
+     * {@code outcome} and {@code status} tags still follow the response status,
+     * which stays 200 on the UIDL error path.
      * <p>
      * Best-effort: silently no-ops if Spring's filter didn't run or the request
      * isn't a servlet request.

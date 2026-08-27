@@ -147,8 +147,11 @@ class RequestMetricsBinderTest {
 
     @Test
     void errorMarkerRunsEvenWhenErrorCountingIsDisabled() {
-        // The marker corrects the status of an observation the framework
-        // emits anyway, so it is deliberately not gated on the errors setting.
+        // The binder does not gate the marker on the errors setting: it
+        // corrects the status of an observation the framework emits anyway.
+        // End to end there is still a registration gate — the interceptor is
+        // only registered under isRequests() || isErrors(), so with both off
+        // the marker never runs.
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         List<Exception> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
