@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.ErrorHandler;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
@@ -26,6 +27,7 @@ import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
@@ -37,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -107,7 +110,10 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(service).addSessionInitListener(any(SessionInitListener.class));
+        Assertions.assertTrue(
+                registeredSessionInitListeners(service).stream()
+                        .anyMatch(l -> l instanceof SessionMetricsBinder),
+                "sessions enabled should register the SessionMetricsBinder");
         verify(service)
                 .addSessionDestroyListener(any(SessionDestroyListener.class));
         Assertions.assertEquals(1,
@@ -180,11 +186,80 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(service, never()).addSessionInitListener(any());
+        // The error binder also hooks session init, so assert on the type
+        // rather than on the hook being unused.
+        Assertions.assertTrue(
+                registeredSessionInitListeners(service).stream()
+                        .noneMatch(l -> l instanceof SessionMetricsBinder),
+                "sessions disabled should not register the SessionMetricsBinder");
         verify(service, never()).addSessionDestroyListener(any());
         Assertions.assertTrue(service.getEventBus()
                 .getListeners(SessionLockRequestedEvent.class).isEmpty(),
                 "sessions disabled should not subscribe the lock binder");
+    }
+
+    @Test
+    void registersErrorBinderWhenErrorsEnabled() {
+        // The session error handler is where Flow routes the failures a user
+        // triggers, so the binder needs all three hooks: session init to
+        // instrument a new session, UI init and RPC start to re-instrument one
+        // whose error handler the application replaced.
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        Assertions.assertTrue(
+                registeredSessionInitListeners(service).stream()
+                        .anyMatch(l -> l instanceof ErrorMetricsBinder),
+                "errors enabled should hook session init");
+        Assertions.assertTrue(
+                registeredUiInitListeners(service).stream()
+                        .anyMatch(l -> l instanceof ErrorMetricsBinder),
+                "errors enabled should hook UI init, which still runs while "
+                        + "the bootstrap request is being handled");
+        // The RPC hook is asserted through its effect: the RPC binder and the
+        // interaction collector subscribe to the same event, so counting
+        // subscribers cannot tell which of them is there.
+        VaadinSession session = mock(VaadinSession.class);
+        ErrorHandler applicationHandler = errorEvent -> {
+        };
+        when(session.getErrorHandler()).thenReturn(applicationHandler);
+        UI ui = mock(UI.class, RETURNS_DEEP_STUBS);
+        when(ui.getSession()).thenReturn(session);
+        VaadinServiceEventBus bus = service.getEventBus();
+        bus.fireEvent(rpcEvent(RpcInvocationStartedEvent.class, ui));
+        // Balanced with the end event: the RPC binder subscribes to the same
+        // start event and opens an observation scope there, which would stay
+        // current on this thread and become the parent of whatever a later
+        // test observes.
+        bus.fireEvent(rpcEvent(RpcInvocationEndedEvent.class, ui));
+
+        ArgumentCaptor<ErrorHandler> instrumented = ArgumentCaptor
+                .forClass(ErrorHandler.class);
+        verify(session).setErrorHandler(instrumented.capture());
+        Assertions.assertNotSame(applicationHandler, instrumented.getValue(),
+                "an RPC invocation should re-instrument the session error "
+                        + "handler, in case the application replaced it");
+    }
+
+    @Test
+    void skipsErrorBinderWhenErrorsDisabled() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().errors(false).build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        Assertions.assertTrue(
+                registeredSessionInitListeners(service).stream()
+                        .noneMatch(l -> l instanceof ErrorMetricsBinder),
+                "errors disabled should not instrument the error handler");
     }
 
     @Test
@@ -197,7 +272,10 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(service).addUIInitListener(any(UIInitListener.class));
+        Assertions.assertTrue(
+                registeredUiInitListeners(service).stream()
+                        .anyMatch(l -> l instanceof UiMetricsBinder),
+                "UIs enabled should register the UiMetricsBinder");
     }
 
     @Test
@@ -211,7 +289,10 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(service).addUIInitListener(any(UIInitListener.class));
+        Assertions.assertTrue(
+                registeredUiInitListeners(service).stream()
+                        .anyMatch(l -> l instanceof UiMetricsBinder),
+                "navigation enabled should register the UiMetricsBinder");
     }
 
     @Test
@@ -225,7 +306,12 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(service, never()).addUIInitListener(any());
+        // The error binder also hooks UI init, so assert on the type rather
+        // than on the hook being unused.
+        Assertions.assertTrue(
+                registeredUiInitListeners(service).stream()
+                        .noneMatch(l -> l instanceof UiMetricsBinder),
+                "UI metrics disabled should not register the UiMetricsBinder");
     }
 
     @Test
@@ -239,7 +325,10 @@ class MetricsServiceInitListenerTest {
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        verify(service).addUIInitListener(any(UIInitListener.class));
+        Assertions.assertTrue(
+                registeredUiInitListeners(service).stream()
+                        .anyMatch(l -> l instanceof UiMetricsBinder),
+                "client metrics enabled should register the UiMetricsBinder");
     }
 
     @Test
@@ -415,6 +504,22 @@ class MetricsServiceInitListenerTest {
                 component, "click", "event",
                 CapturedInteraction.OUTCOME_SUCCESS, 1500, 1000, false, null,
                 null, null, null, "session", 0);
+    }
+
+    private static List<UIInitListener> registeredUiInitListeners(
+            VaadinService service) {
+        ArgumentCaptor<UIInitListener> captor = ArgumentCaptor
+                .forClass(UIInitListener.class);
+        verify(service, atLeastOnce()).addUIInitListener(captor.capture());
+        return captor.getAllValues();
+    }
+
+    private static List<SessionInitListener> registeredSessionInitListeners(
+            VaadinService service) {
+        ArgumentCaptor<SessionInitListener> captor = ArgumentCaptor
+                .forClass(SessionInitListener.class);
+        verify(service, atLeastOnce()).addSessionInitListener(captor.capture());
+        return captor.getAllValues();
     }
 
     /**

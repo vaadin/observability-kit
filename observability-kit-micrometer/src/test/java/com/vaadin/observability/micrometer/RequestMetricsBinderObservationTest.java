@@ -30,6 +30,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import com.vaadin.flow.internal.CurrentInstance;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -312,6 +313,38 @@ class RequestMetricsBinderObservationTest {
         Assertions.assertEquals(ObservationNames.OUTCOME_ERROR,
                 recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
         Assertions.assertTrue(recorder.errored.get());
+    }
+
+    @Test
+    void handledListenerFailureMarksTheRequestSpanAsErrored() {
+        // The exception a component listener throws is caught by Flow and
+        // routed to the session error handler, so it never reaches
+        // handleException. The request span must still report the failure
+        // rather than claiming outcome=success.
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+        CurrentInstance.set(VaadinRequest.class, req);
+        try {
+            binder.requestStart(req, resp);
+            RequestError.markHandled(new IllegalStateException("boom"));
+            binder.requestEnd(req, resp, session);
+        } finally {
+            CurrentInstance.clearAll();
+        }
+
+        Assertions.assertEquals(ObservationNames.OUTCOME_ERROR,
+                recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
+        Assertions.assertTrue(recorder.errored.get(),
+                "the span should carry the handled exception");
     }
 
     @Test

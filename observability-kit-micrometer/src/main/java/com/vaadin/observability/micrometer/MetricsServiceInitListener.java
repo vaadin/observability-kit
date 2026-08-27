@@ -210,10 +210,20 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             navigationBinder = uiBinder.getNavigationBinder();
         }
 
+        // One counter for vaadin.errors, shared by its two writers: the request
+        // interceptor, which sees the exceptions that escape request handling,
+        // and the error binder, which sees the ones Flow routes to the session
+        // error handler. One meter, one cardinality budget — a per-instance cap
+        // would let the same route or exception type be itself on one path and
+        // _other on the other.
+        ErrorCounter errors = settings.isErrors()
+                ? new ErrorCounter(registry, settings)
+                : null;
+
         if (settings.isRequests() || settings.isErrors()) {
             event.addVaadinRequestInterceptor(
                     new RequestMetricsBinder(registry, observationRegistry,
-                            settings, this::enrichHttpObservation));
+                            settings, this::enrichHttpObservation, errors));
         }
 
         if (navigationBinder != null) {
@@ -252,6 +262,18 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             service.addUIInitListener(uiStateBinder);
             service.addSessionDestroyListener(uiStateBinder);
             uiStateBinder.register(service.getEventBus());
+        }
+
+        if (settings.isErrors()) {
+            // Observes the session error handler, which is where Flow routes
+            // every failure a user can trigger. Registered on three hooks: the
+            // session one instruments a session as it is created, the UI and
+            // RPC ones re-instrument a session whose error handler the
+            // application replaced after that.
+            ErrorMetricsBinder errorBinder = new ErrorMetricsBinder(errors);
+            service.addSessionInitListener(errorBinder);
+            service.addUIInitListener(errorBinder);
+            errorBinder.register(service.getEventBus());
         }
 
         if (settings.isInsights()

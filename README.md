@@ -193,7 +193,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions. |
 | `vaadin.observability.insights-details` | `false` | Allow retained interactions to carry the raw session id, exception message and top stack frames. Off by default since the insights payload is meant to be forwarded. |
 | `vaadin.observability.insights-capacity` | `100` | Maximum number of retained interactions; the oldest is evicted once the cap is reached. |
-| `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. |
+| `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. Also caps the `component` and `exception` tag values of `vaadin.errors`. |
 | `vaadin.observability.client-rate-per-session` | `100` | Maximum client-side samples accepted per session (throttling guard). |
 | `vaadin.observability.ui-state-sample-interval` | `10000` | Minimum milliseconds between two measurements of the same UI. One measurement walks that UI's whole component tree under its session lock, so this is the knob that bounds the cost of the feature. |
 | `vaadin.observability.ui-state-bytes-per-node` | `0` | Bytes per state-tree node used for `vaadin.ui.state.size`; `0` publishes no byte figure. |
@@ -236,7 +236,7 @@ ObservabilitySettings.builder()
 | `vaadin.data.fetch.duration` | Timer | Duration of a data provider fetch query, i.e. loading one page of items. Measured around consumption of the items, so it covers the backend round-trip of a lazily evaluated stream (tagged by `outcome`, `filtered`). |
 | `vaadin.data.fetch.requested` | DistributionSummary | Items a fetch query asked for, tagged by `route`. |
 | `vaadin.data.fetch.rows` | DistributionSummary | Items a fetch query actually returned, tagged by `route`. Compared against `vaadin.data.fetch.requested` it shows a component asking for far more than it renders, or a data provider returning short pages. |
-| `vaadin.errors` | Counter | Server-side errors (tagged by `exception`). |
+| `vaadin.errors` | Counter | Server-side errors (tagged by `exception`, `route`, `component`). See [Error metrics](#error-metrics). |
 | `vaadin.resync` | Counter | UIDL message recovery events observed on incoming requests, tagged by `type`: `resend` for a duplicate message the client re-sent because it never got the previous response, `resync` for a full client-requested UI-state rebuild. Both mean the client lost a server message. Disable with `vaadin.observability.resync=false`. |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
 | `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time. |
@@ -336,6 +336,42 @@ vaadin.observability.ui-state-bytes-per-node=96
 
 Divided into the heap headroom, that is an estimate of how many more tabs the
 instance can hold.
+
+## Error metrics
+
+`vaadin.errors` counts every server-side failure the kit observes, tagged by
+exception type, by the route the user was on, and by the component the failure
+was thrown for (`_unknown` where a tag cannot be resolved, `_other` once the
+cardinality limit is reached). All three values are capped at
+`vaadin.observability.route-cardinality-limit`, since all three derive from
+application classes and multiply with each other.
+
+> **Breaking change.** `route` and `component` are new tag keys on an existing
+> meter: previously `vaadin.errors` carried `exception` alone. A dashboard or
+> alert that matches the series by an exact label set (Prometheus
+> `vaadin_errors_total{exception="..."}` without a matcher for the new labels)
+> stops matching and needs the new keys aggregated away, for example
+> `sum by (exception) (vaadin_errors_total)`. The meter name and the `exception`
+> tag itself are unchanged, so anything already aggregating over labels keeps
+> working.
+
+Only exceptions that *escape* request handling surface to a request
+interceptor. Everything a user can trigger — a click listener that throws, a
+`UI.access` body, a detach listener, a `beforeEnter` callback — is caught by
+Flow and routed to `VaadinSession.getErrorHandler()` instead. The kit therefore
+decorates that handler, which is also what lets it attribute a failure to a
+component and mark the enclosing `vaadin.request` span as `outcome=error`.
+
+The decoration always delegates, so an application's own error handler keeps
+receiving every error it received before. It is re-applied at UI init and at
+the start of every RPC invocation, so installing your own handler after session
+init does not switch error metrics off — the UI hook still runs while the
+bootstrap request is being handled, so that request's failures are covered too.
+One consequence: a handler read back from `VaadinSession.getErrorHandler()` is
+the kit's wrapper rather than the instance you set. Delegating to it works as
+expected (the failure is still counted exactly once); an `instanceof` check or a
+cast to your own type does not. Set `vaadin.observability.errors=false` to opt
+out entirely.
 
 ## Database fetch size
 
