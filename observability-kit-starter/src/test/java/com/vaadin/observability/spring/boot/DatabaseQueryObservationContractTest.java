@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -79,12 +80,25 @@ class DatabaseQueryObservationContractTest {
      * being pinned here, mirroring the tripwire in the core module's
      * {@code ObservationContractTest}.
      */
+    /**
+     * Detection is a static-call regex over the sources — a deliberate 80% tool
+     * whose failure modes (an emitter hiding the static call behind another
+     * name, a javadoc spelling out a creation call) are loud rather than
+     * silent.
+     */
     @Test
     void everyObservationEmitterIsPinned() throws IOException {
+        Path root = Path.of("src/main/java");
+        Assertions.assertTrue(Files.isDirectory(root),
+                root + " not found: this test resolves sources against the "
+                        + "module directory, so run it with the module as "
+                        + "working directory (as Surefire does)");
+        Pattern creation = Pattern.compile(
+                "Observation\\s*\\.\\s*(createNotStarted|start)\\s*\\(");
         Set<String> actual;
-        try (Stream<Path> sources = Files.walk(Path.of("src/main/java"))) {
-            actual = sources.filter(p -> p.toString().endsWith(".java")).filter(
-                    DatabaseQueryObservationContractTest::createsObservations)
+        try (Stream<Path> sources = Files.walk(root)) {
+            actual = sources.filter(p -> p.toString().endsWith(".java"))
+                    .filter(p -> creation.matcher(read(p)).find())
                     .map(p -> p.getFileName().toString())
                     .collect(Collectors.toCollection(TreeSet::new));
         }
@@ -93,9 +107,9 @@ class DatabaseQueryObservationContractTest {
                         + "emitter's span surface in a contract test");
     }
 
-    private static boolean createsObservations(Path source) {
+    private static String read(Path source) {
         try {
-            return Files.readString(source).contains("createNotStarted");
+            return Files.readString(source);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

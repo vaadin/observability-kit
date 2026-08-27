@@ -15,9 +15,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -37,6 +41,10 @@ import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
 import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.Location;
+import com.vaadin.flow.router.LocationChangeEvent;
+import com.vaadin.flow.router.NavigationTrigger;
+import com.vaadin.flow.router.Router;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -46,12 +54,14 @@ import com.vaadin.flow.server.data.DataCountEndedEvent;
 import com.vaadin.flow.server.data.DataCountStartedEvent;
 import com.vaadin.flow.server.data.DataFetchEndedEvent;
 import com.vaadin.flow.server.data.DataFetchStartedEvent;
+import com.vaadin.observability.micrometer.trace.ObservationNames;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
 /**
- * Pins the public span surface: every Observation the kit can emit, with its
- * span name and its low- and high-cardinality attribute keys, compared against
- * the golden file {@code src/test/resources/observation-contract.txt}.
+ * Pins the public span surface: every Observation the kit can emit, with the
+ * full set of span names it can produce and its low- and high-cardinality
+ * attribute keys, compared against the golden file
+ * {@code src/test/resources/observation-contract.txt}.
  * <p>
  * Spans are consumed by dashboards and trace queries outside this repository,
  * so a change to this surface is a breaking change for users even though no
@@ -59,11 +69,13 @@ import com.vaadin.observability.micrometer.trace.TracingExecutor;
  * until the golden file is updated, and the golden-file diff *is* the contract
  * change.
  * <p>
- * Complements {@link MeterTagParityTest}, which pins the Timer tag surface and
- * its equality across the two recording paths. Here each binder is driven
- * through the Observation path only, with fixtures chosen so every optional
- * attribute (component class, RPC event name, data rows) is present — the file
- * records the maximal surface.
+ * Complements {@link MeterTagParityTest}, which pins the Timer tag surface —
+ * including the {@code error} tag that {@code DefaultMeterObservationHandler}
+ * derives from the Observation's error and which therefore never appears among
+ * the attribute keys recorded here. Each binder is driven through the
+ * Observation path only, with fixtures chosen so every optional attribute
+ * (component class, RPC event name, data rows) is present and every request
+ * classification is exercised — the file records the maximal surface.
  */
 class ObservationContractTest {
 
@@ -121,7 +133,7 @@ class ObservationContractTest {
 
     @Test
     void observationSurfaceMatchesGoldenFile() {
-        driveRequest();
+        driveRequests();
         driveNavigation();
         driveRpc();
         driveDataCount();
@@ -129,7 +141,7 @@ class ObservationContractTest {
         driveUiAccess();
 
         String actual = render(recorder.snapshots);
-        Assertions.assertEquals(golden(), actual,
+        Assertions.assertEquals(golden(), actual.strip(),
                 """
                         The span surface changed. This is a breaking change for \
                         dashboards and trace queries built on the previous surface. \
@@ -143,9 +155,14 @@ class ObservationContractTest {
 
     /**
      * Fails when a class starts emitting Observations without being driven
-     * here: every source file calling {@code Observation.createNotStarted} must
-     * have a scenario in this test, or the golden file silently under-reports
-     * the surface.
+     * here: every source file creating an Observation must have a scenario in
+     * this test, or the golden file silently under-reports the surface.
+     * <p>
+     * Detection is a static-call regex over the sources — a deliberate 80%
+     * tool. It cannot see an emitter hiding the static call behind another
+     * name, and it flags a file whose javadoc merely spells out a creation
+     * call; both failure modes are loud rather than silent, which is what the
+     * tripwire is for.
      */
     @Test
     void everyObservationEmitterHasAScenario() throws IOException {
@@ -153,24 +170,38 @@ class ObservationContractTest {
                 "NavigationMetricsBinder.java", "RpcMetricsBinder.java",
                 "DataQueryMetricsBinder.java", "TracingExecutor.java");
 
-        Set<String> actual;
-        try (Stream<Path> sources = Files.walk(Path.of("src/main/java"))) {
-            actual = sources.filter(p -> p.toString().endsWith(".java"))
-                    .filter(ObservationContractTest::createsObservations)
-                    .map(p -> p.getFileName().toString())
-                    .collect(Collectors.toCollection(TreeSet::new));
-        }
-
-        Assertions.assertEquals(new TreeSet<>(expected), actual,
+        Assertions.assertEquals(new TreeSet<>(expected),
+                observationEmitters(Path.of("src/main/java")),
                 "the set of observation-emitting classes changed: add a "
                         + "scenario for the new emitter to "
                         + "observationSurfaceMatchesGoldenFile, update the "
                         + "golden file, and extend this list");
     }
 
-    private static boolean createsObservations(Path source) {
+    /**
+     * Names of the source files under {@code root} that create Observations
+     * through the static {@code Observation.createNotStarted(..)} or
+     * {@code Observation.start(..)} entry points (with or without an
+     * {@code ObservationConvention}, which goes through the same statics).
+     */
+    static Set<String> observationEmitters(Path root) throws IOException {
+        Assertions.assertTrue(Files.isDirectory(root),
+                root + " not found: this test resolves sources against the "
+                        + "module directory, so run it with the module as "
+                        + "working directory (as Surefire does)");
+        Pattern creation = Pattern.compile(
+                "Observation\\s*\\.\\s*(createNotStarted|start)\\s*\\(");
+        try (Stream<Path> sources = Files.walk(root)) {
+            return sources.filter(p -> p.toString().endsWith(".java"))
+                    .filter(p -> creation.matcher(read(p)).find())
+                    .map(p -> p.getFileName().toString())
+                    .collect(Collectors.toCollection(TreeSet::new));
+        }
+    }
+
+    private static String read(Path source) {
         try {
-            return Files.readString(source).contains("createNotStarted");
+            return Files.readString(source);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -179,23 +210,62 @@ class ObservationContractTest {
     // ---------- scenarios ----------
 
     /**
-     * A UIDL POST with no poll/navigation marker, which resolves to the
-     * {@code rpc} interaction. The Referer yields the client location.
+     * Drives every request classification, so the golden file pins the full
+     * {@code vaadin.request.*} span-name set: each non-UIDL type keeps its
+     * type-based name, while a UIDL request is renamed after the interaction a
+     * listener marked during handling ({@code rpc} when nothing marked — the
+     * {@code none} interaction value never becomes a span name).
      */
-    private void driveRequest() {
-        RequestMetricsBinder binder = new RequestMetricsBinder(registry,
-                observations, settings);
+    private void driveRequests() {
+        // UIDL, no marker: defaults to the rpc interaction.
+        driveRequest(uidlRequest(), null);
+        // UIDL, marked by the poll listener during handling.
+        driveRequest(uidlRequest(), ObservationNames.INTERACTION_POLL);
+        // UIDL, marked by the navigation listener during handling.
+        driveRequest(uidlRequest(), ObservationNames.INTERACTION_NAVIGATION);
+        // The non-UIDL types keep their type-based span name.
+        driveRequest(request(r -> Mockito.when(r.getParameter("v-r"))
+                .thenReturn("heartbeat")), null);
+        driveRequest(request(
+                r -> Mockito.when(r.getPathInfo()).thenReturn("/PUSH/xyz")),
+                null);
+        driveRequest(request(r -> Mockito.when(r.getPathInfo())
+                .thenReturn("/VAADIN/build/app.js")), null);
+        driveRequest(request(r -> {
+        }), null);
+    }
 
+    private interface RequestCustomizer {
+        void accept(VaadinRequest request);
+    }
+
+    private static VaadinRequest request(RequestCustomizer customizer) {
         VaadinRequest request = Mockito.mock(VaadinRequest.class);
-        Mockito.when(request.getParameter("v-r")).thenReturn("uidl");
-        Mockito.when(request.getParameter("v-uiId")).thenReturn("1");
         Mockito.when(request.getMethod()).thenReturn("POST");
         Mockito.when(request.getHeader("Referer"))
                 .thenReturn("http://localhost/contract");
+        customizer.accept(request);
+        return request;
+    }
+
+    private static VaadinRequest uidlRequest() {
+        return request(r -> {
+            Mockito.when(r.getParameter("v-r")).thenReturn("uidl");
+            Mockito.when(r.getParameter("v-uiId")).thenReturn("1");
+        });
+    }
+
+    private void driveRequest(VaadinRequest request, String interactionMark) {
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry,
+                observations, settings);
         VaadinResponse response = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
         binder.requestStart(request, response);
+        if (interactionMark != null) {
+            // What the poll/navigation listeners do during request handling.
+            RequestInteraction.mark(interactionMark);
+        }
         binder.requestEnd(request, response, session);
     }
 
@@ -216,12 +286,18 @@ class ObservationContractTest {
         Mockito.doReturn(ContractView.class).when(enter).getNavigationTarget();
 
         binder.beforeEnter(enter);
-        binder.afterNavigation(Mockito.mock(AfterNavigationEvent.class));
+        binder.afterNavigation(new AfterNavigationEvent(new LocationChangeEvent(
+                Mockito.mock(Router.class), ui, NavigationTrigger.UI_NAVIGATE,
+                new Location("view"), List.of())));
     }
 
     /**
      * An RPC invocation carrying an event name and targeting an attached
-     * element, so both high-cardinality attributes are present.
+     * element, so both high-cardinality attributes are present. The span name
+     * is {@code vaadin.rpc.<type>}, where the type passes through Flow's
+     * invocation type verbatim — the set of types is owned by Flow's RPC
+     * handlers, so the golden file pins the pattern through one representative,
+     * not Flow's enumeration.
      */
     private void driveRpc() {
         RpcMetricsBinder binder = new RpcMetricsBinder(registry, observations,
@@ -278,13 +354,40 @@ class ObservationContractTest {
 
     // ---------- golden file ----------
 
+    /**
+     * Renders one block per observation name, with the full sorted set of span
+     * names the scenarios produced. The attribute keys must not depend on which
+     * span name a sample took, so key sets are required to agree across every
+     * snapshot of the same observation.
+     */
     private static String render(List<Snapshot> snapshots) {
-        return snapshots.stream().sorted((a, b) -> a.name().compareTo(b.name()))
-                .map(s -> s.name() + "\n" //
-                        + "  span-name: " + s.spanName() + "\n" //
-                        + "  low:  " + keyList(s.lowCardinalityKeys()) + "\n" //
-                        + "  high: " + keyList(s.highCardinalityKeys()) + "\n")
-                .collect(Collectors.joining("\n"));
+        Map<String, List<Snapshot>> byName = snapshots.stream()
+                .collect(Collectors.groupingBy(Snapshot::name, TreeMap::new,
+                        Collectors.toList()));
+        StringBuilder out = new StringBuilder();
+        byName.forEach((name, group) -> {
+            Set<String> spanNames = group.stream().map(Snapshot::spanName)
+                    .collect(Collectors.toCollection(TreeSet::new));
+            Map<Set<String>, Set<String>> keyShapes = new LinkedHashMap<>();
+            group.forEach(s -> keyShapes.put(s.lowCardinalityKeys(),
+                    s.highCardinalityKeys()));
+            Assertions.assertEquals(1, keyShapes.size(),
+                    name + " produced differing attribute key sets across "
+                            + "span names; the golden format assumes one key "
+                            + "shape per observation");
+            Snapshot first = group.get(0);
+            if (out.length() > 0) {
+                out.append('\n');
+            }
+            out.append(name).append('\n') //
+                    .append("  span-names: ")
+                    .append(String.join(", ", spanNames)).append('\n') //
+                    .append("  low:  ")
+                    .append(keyList(first.lowCardinalityKeys())).append('\n') //
+                    .append("  high: ")
+                    .append(keyList(first.highCardinalityKeys())).append('\n');
+        });
+        return out.toString();
     }
 
     /**
@@ -302,10 +405,11 @@ class ObservationContractTest {
                     GOLDEN_RESOURCE + " is missing from test resources");
             String content = new String(in.readAllBytes(),
                     StandardCharsets.UTF_8);
-            // Strip the explanatory header: comment lines and the blank line
-            // separating them from the inventory.
+            // Strip the explanatory header, and normalize the edges so an
+            // accidental leading or trailing blank line cannot produce a
+            // mismatch that is invisible in the failure diff.
             return content.lines().filter(line -> !line.startsWith("#"))
-                    .collect(Collectors.joining("\n")).stripLeading() + "\n";
+                    .collect(Collectors.joining("\n")).strip();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
