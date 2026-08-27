@@ -54,6 +54,14 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * from: {@code error} at {@code requestEnd}, where the view being instantiated
  * is what failed the navigation, and {@code unknown} otherwise, where it was
  * merely superseded or its UI went away.
+ * <p>
+ * Both paths publish {@link MeterNames#NAVIGATION} with the same tag keys:
+ * {@code route}, {@code outcome} and {@code error}. A failed navigation is
+ * reported through {@code outcome} rather than as an errored observation, so
+ * {@code error} is always {@link MeterNames#ERROR_NONE} — the key is still
+ * emitted because {@code DefaultMeterObservationHandler} emits it on the
+ * Observation path, and a metrics backend such as Prometheus rejects same-named
+ * meters whose tag-key sets differ.
  */
 final class NavigationMetricsBinder implements BeforeEnterListener,
         AfterNavigationListener, VaadinRequestInterceptor {
@@ -267,7 +275,8 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
             pending.sample()
                     .stop(registry.timer(MeterNames.NAVIGATION,
                             MeterNames.TAG_ROUTE, pending.route(),
-                            MeterNames.TAG_OUTCOME, resolved.value));
+                            MeterNames.TAG_OUTCOME, resolved.value,
+                            MeterNames.TAG_ERROR, MeterNames.ERROR_NONE));
         }
         // A scope may only be closed on the thread that opened it; doing it
         // from another thread would restore that thread's observation onto

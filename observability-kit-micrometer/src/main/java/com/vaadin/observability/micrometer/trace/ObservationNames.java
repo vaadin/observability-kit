@@ -29,13 +29,32 @@ public final class ObservationNames {
     public static final String NAVIGATION = "vaadin.navigation";
     public static final String UI_ACCESS = "vaadin.ui.access";
 
-    public static final String KEY_OUTCOME = "outcome";
+    /**
+     * Low-cardinality key that becomes the {@link MeterNames#TAG_OUTCOME} tag
+     * once a meter-producing observation handler turns the Observation into a
+     * Timer. Aliased rather than re-spelled so the Observation path and the
+     * direct-recording path cannot drift apart.
+     */
+    public static final String KEY_OUTCOME = MeterNames.TAG_OUTCOME;
     public static final String KEY_REQUEST_TYPE = "vaadin.request.type";
     public static final String KEY_INTERACTION = "vaadin.interaction";
     public static final String KEY_ROUTE = "route";
     public static final String KEY_HTTP_METHOD = "http.method";
     public static final String KEY_SESSION_ID = "vaadin.session.id";
+
+    /**
+     * High-cardinality span attribute: the id of the UI the request belongs to,
+     * or {@link #UI_ID_UNKNOWN}. Span-only; UI ids are unbounded over an
+     * application's lifetime, so this is never added as a Timer tag.
+     */
     public static final String KEY_UI_ID = "ui.id";
+
+    /**
+     * High-cardinality span attribute: the literal, un-templated browser path
+     * the request was sent from, or {@link #LOCATION_UNKNOWN}. Span-only; use
+     * the {@link #KEY_ROUTE} tag of the navigation meters for templated,
+     * cardinality-capped view attribution.
+     */
     public static final String KEY_CLIENT_LOCATION = "vaadin.client.location";
 
     /**
@@ -87,6 +106,28 @@ public final class ObservationNames {
 
     /** Observation/span name for a single JDBC query execution. */
     public static final String DB_QUERY = "vaadin.db.query";
+
+    /** Observation/span name for a data provider count query. */
+    public static final String DATA_COUNT = "vaadin.data.count";
+
+    /** Observation/span name for a data provider fetch query. */
+    public static final String DATA_FETCH = "vaadin.data.fetch";
+
+    /** Span attribute: index of the first item a fetch query asked for. */
+    public static final String KEY_DATA_OFFSET = "vaadin.data.offset";
+
+    /** Span attribute: number of items a fetch query asked for. */
+    public static final String KEY_DATA_LIMIT = "vaadin.data.limit";
+
+    /** Span attribute: number of items a fetch query returned. */
+    public static final String KEY_DATA_ROWS = "vaadin.data.rows";
+
+    /**
+     * High-cardinality span attribute: the class name of the component whose
+     * data is being loaded. Span-only, like {@link #KEY_COMPONENT}, because of
+     * its cardinality.
+     */
+    public static final String KEY_DATA_COMPONENT = "vaadin.data.component";
 
     /** Span attribute: number of rows read from the query's result set. */
     public static final String KEY_DB_ROWS = "db.rows";
