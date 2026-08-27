@@ -98,9 +98,9 @@ public class LatencyView extends VerticalLayout {
 }
 ```
 
-The built-in server-side request timer is `vaadin.request.duration`; the
-browser-observed round trip (when client metrics are enabled) is
-`vaadin.client.rpc.duration`. See [Metrics](#metrics) for the full list.
+The built-in server-side request timer is `vaadin.request.duration`, and
+server-side RPC invocations are timed as `vaadin.rpc.duration`. See
+[Metrics](#metrics) for the full list.
 
 ## Other setups
 
@@ -233,7 +233,6 @@ ObservabilitySettings.builder()
 | `vaadin.errors` | Counter | Server-side errors (tagged by `exception`). |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
 | `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time. |
-| `vaadin.client.rpc.duration` | Timer | Browser-observed server round trip. |
 | `vaadin.client.web_vitals.lcp` | Timer | Largest Contentful Paint. |
 | `vaadin.client.web_vitals.fcp` | Timer | First Contentful Paint. |
 | `vaadin.client.errors` | Counter | Errors reported by the browser. |
