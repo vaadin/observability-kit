@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -111,12 +112,19 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
     private final ObservabilitySettings config;
     private final RouteTagResolver routes;
     /**
-     * The UIs with an unfinished navigation on this request thread. A request
-     * can touch more than one UI of the same session — the access tasks queued
-     * for it are run on the request thread — so this is a set rather than a
-     * single slot: one UI completing must not cost another its backstop.
+     * The UIs with an unfinished navigation on this thread. A request can touch
+     * more than one UI of the same session — the access tasks queued for it are
+     * run on the request thread — so this is a set rather than a single slot:
+     * one UI completing must not cost another its backstop.
+     *
+     * <p>
+     * The UIs are held weakly. A navigation started off-request through
+     * {@code UI.access()} marks the executor thread that ran the access task,
+     * and no {@code requestEnd} ever runs there to drain the set: a strong
+     * reference would pin every such UI to a pooled thread for the life of the
+     * server. Ordered, so nested scopes unwind most-recent-first.
      */
-    private final ThreadLocal<Set<UI>> pendingUis = new ThreadLocal<>();
+    private final ThreadLocal<Set<WeakReference<UI>>> pendingUis = new ThreadLocal<>();
 
     NavigationMetricsBinder(MeterRegistry registry, RouteTagResolver routes) {
         this(registry, null, ObservabilitySettings.builder().build(), routes);
@@ -169,12 +177,12 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
                     null, Thread.currentThread());
         }
         ComponentUtil.setData(ui, PENDING_KEY, pending);
-        Set<UI> marked = pendingUis.get();
+        Set<WeakReference<UI>> marked = pendingUis.get();
         if (marked == null) {
             marked = new LinkedHashSet<>();
             pendingUis.set(marked);
         }
-        marked.add(ui);
+        marked.add(new WeakReference<>(ui));
     }
 
     @Override
@@ -210,16 +218,19 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // this method first: the navigation scope has to close while the
         // enclosing request scope is still open, or closing it would restore
         // the already stopped request observation onto the thread.
-        Set<UI> marked = pendingUis.get();
+        Set<WeakReference<UI>> marked = pendingUis.get();
         if (marked == null) {
             return;
         }
         // Over a copy: finish removes the UI it closes out from the set. The
         // most recently marked UI first, so nested scopes unwind in order.
-        List<UI> uis = new ArrayList<>(marked);
-        for (int i = uis.size() - 1; i >= 0; i--) {
-            finish(uis.get(i), null, Outcome.ERROR);
+        List<WeakReference<UI>> refs = new ArrayList<>(marked);
+        for (int i = refs.size() - 1; i >= 0; i--) {
+            finish(refs.get(i).get(), null, Outcome.ERROR);
         }
+        // Every marked UI has been closed out, and a reference cleared in the
+        // meantime leaves nothing to close: the request is over either way.
+        pendingUis.remove();
     }
 
     /**
@@ -259,9 +270,14 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // Only this UI's marker may be dropped: a request that touches two UIs
         // would otherwise lose the first UI's marker to the second UI's
         // afterNavigation, and the requestEnd backstop would never fire for it.
-        Set<UI> marked = pendingUis.get();
+        Set<WeakReference<UI>> marked = pendingUis.get();
         if (marked != null) {
-            marked.remove(ui);
+            // Cleared references go with it: on an executor thread nothing else
+            // ever prunes them.
+            marked.removeIf(ref -> {
+                UI referent = ref.get();
+                return referent == null || referent == ui;
+            });
             if (marked.isEmpty()) {
                 pendingUis.remove();
             }

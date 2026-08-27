@@ -8,11 +8,15 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import io.micrometer.common.KeyValue;
 import io.micrometer.core.instrument.Timer;
@@ -45,6 +49,7 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Covers how {@link NavigationMetricsBinder} closes out navigations, in
@@ -421,5 +426,47 @@ class NavigationMetricsBinderTest {
         requestScope.close();
         request.stop();
         assertNull(obs.getCurrentObservation());
+    }
+
+    @Test
+    void aNavigationAbandonedOffRequestDoesNotPinItsUiToThatThread()
+            throws Exception {
+        NavigationMetricsBinder binder = binder();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        // The UI is reached through a holder so that the task handed to the
+        // executor captures no reference of its own.
+        UI[] offRequest = { new UI() };
+        try {
+            // A navigation started from UI.access() on a background thread
+            // marks that thread, and no requestEnd ever runs there to drain
+            // the marker.
+            executor.submit(() -> binder
+                    .beforeEnter(beforeEnter(FirstView.class, offRequest[0])))
+                    .get(10, TimeUnit.SECONDS);
+            // Detach runs on whichever thread drops the UI, so it closes the
+            // navigation out but cannot reach the executor thread's marker.
+            binder.uiDetached(offRequest[0]);
+
+            WeakReference<UI> ref = new WeakReference<>(offRequest[0]);
+            offRequest[0] = null;
+
+            assertTrue(collected(ref),
+                    "a marker left on a pooled thread must not keep the UI alive");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    /**
+     * Whether {@code ref} has been cleared, giving the collector a bounded
+     * number of chances to get to it.
+     */
+    private static boolean collected(WeakReference<?> ref)
+            throws InterruptedException {
+        for (int i = 0; i < 50 && ref.get() != null; i++) {
+            System.gc();
+            Thread.sleep(10);
+        }
+        return ref.get() == null;
     }
 }
