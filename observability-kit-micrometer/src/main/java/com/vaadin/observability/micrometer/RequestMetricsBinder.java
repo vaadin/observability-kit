@@ -109,7 +109,11 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         errorType.remove();
         sample.remove();
         observation.remove();
-        observationScope.remove();
+        // Close (not just drop) a leaked scope so the stale observation stops
+        // being the registry's current one and this request's span is not
+        // parented onto it. Only closed while it is still current, so an
+        // enclosing live scope (the Spring/Boot HTTP observation) survives.
+        ObservationScopes.closeStale(observationRegistry, observationScope);
         // Drop any interaction marker left by a previous request on this
         // pooled thread; poll/navigation listeners re-mark during handling.
         RequestInteraction.clear();
@@ -240,9 +244,12 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                 : MeterNames.OUTCOME_SUCCESS;
         Observation.Scope scope = observationScope.get();
         observationScope.remove();
-        if (scope != null) {
-            scope.close();
-        }
+        // Unwind anything nested instrumentation leaked on top of our scope
+        // before closing it, so the thread is left exactly as it was found.
+        // Cleaning up only at the next requestStart would leave a dead
+        // observation current for whatever runs on this pooled thread in
+        // between, including ContextSnapshot.captureAll() in TracingExecutor.
+        ObservationScopes.closeWithNested(observationRegistry, scope);
         Observation obs = observation.get();
         observation.remove();
         // Consume whatever a poll/navigation listener recorded for this
