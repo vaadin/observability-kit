@@ -146,6 +146,30 @@ public final class MeterNames {
     public static final String OUTCOME_SUCCESS = "success";
     public static final String OUTCOME_ERROR = "error";
 
+    /**
+     * {@link #TAG_OUTCOME} value for a navigation that was replaced by a
+     * {@code rerouteTo} before it completed. Kept apart from
+     * {@link #OUTCOME_ERROR} because rerouting is a normal routing decision (an
+     * access guard sending the user elsewhere), not a failure.
+     */
+    public static final String OUTCOME_REROUTED = "rerouted";
+
+    /**
+     * {@link #TAG_OUTCOME} value for a navigation that was replaced by a
+     * {@code forwardTo} before it completed.
+     */
+    public static final String OUTCOME_FORWARDED = "forwarded";
+
+    /**
+     * {@link #TAG_OUTCOME} value for a navigation that was abandoned without
+     * any redirect flag and outside of a request that could have failed it, so
+     * neither success nor failure can be attributed to it. A re-entrant
+     * {@code UI.navigate()} from a view's {@code beforeEnter} or
+     * {@code onAttach} supersedes the navigation in flight this way, as does a
+     * UI detached while a navigation was still open.
+     */
+    public static final String OUTCOME_UNKNOWN = "unknown";
+
     public static final String CONTEXT_REQUEST = "request";
     public static final String CONTEXT_ACCESS = "access";
 

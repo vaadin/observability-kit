@@ -11,6 +11,8 @@ package com.vaadin.observability.micrometer.insights;
 import java.time.Instant;
 import java.util.List;
 
+import com.vaadin.observability.micrometer.MeterNames;
+
 /**
  * One captured user interaction worth surfacing as an insight, with everything
  * needed to backtrack and replicate it: which route, which component, which
@@ -78,6 +80,8 @@ public record CapturedInteraction(Instant timestamp, String route,
         String applicationFrame, List<String> stackTop, String sessionId,
         int uiId) {
 
-    public static final String OUTCOME_SUCCESS = "success";
-    public static final String OUTCOME_ERROR = "error";
+    // Aliased from the Meter tag values rather than repeated, so an insight
+    // and the meter it can be correlated with cannot drift apart.
+    public static final String OUTCOME_SUCCESS = MeterNames.OUTCOME_SUCCESS;
+    public static final String OUTCOME_ERROR = MeterNames.OUTCOME_ERROR;
 }

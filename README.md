@@ -182,8 +182,10 @@ vaadin.observability.traces=false
 | `vaadin.observability.ui-state` | `false` | Per-UI state size: how much component-tree state the server holds for live users (see [UI state size](#ui-state-size)). |
 | `vaadin.observability.navigation` | `true` | Navigation timing. |
 | `vaadin.observability.requests` | `true` | Server-side request and RPC timing. |
+| `vaadin.observability.data` | `true` | Data provider count/fetch query timing and page sizes for lazy-loading components. |
 | `vaadin.observability.errors` | `true` | Error counters. |
 | `vaadin.observability.client` | `true` | Browser-side timing collected from the client. |
+| `vaadin.observability.resync` | `true` | Observe UIDL message resends and client-requested resynchronizations. |
 | `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route and (when tracing is on) emit a span per query (Spring Boot starter only). |
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
@@ -227,10 +229,15 @@ ObservabilitySettings.builder()
 | `vaadin.ui.state.sample.age.max` | Gauge | Age in seconds of the stalest per-UI measurement in the aggregate (opt-in). |
 | `vaadin.session.state.nodes.max` | Gauge | State-tree nodes held by the largest single session (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.session.uis.max` | Gauge | Most UIs (browser tabs) held open by one session (opt-in, see `vaadin.observability.ui-state`). |
-| `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). |
+| `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). See [Navigation outcomes](#navigation-outcomes) for what a navigation that never completes is recorded as. |
 | `vaadin.request.duration` | Timer | Server-side request handling time. |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
+| `vaadin.data.count.duration` | Timer | Duration of a data provider count query, i.e. how many items a level holds (tagged by `outcome`, `filtered`). One count per expanded parent, so many counts within few requests is the signature of an expensive hierarchy. Disable with `vaadin.observability.data=false`. |
+| `vaadin.data.fetch.duration` | Timer | Duration of a data provider fetch query, i.e. loading one page of items. Measured around consumption of the items, so it covers the backend round-trip of a lazily evaluated stream (tagged by `outcome`, `filtered`). |
+| `vaadin.data.fetch.requested` | DistributionSummary | Items a fetch query asked for, tagged by `route`. |
+| `vaadin.data.fetch.rows` | DistributionSummary | Items a fetch query actually returned, tagged by `route`. Compared against `vaadin.data.fetch.requested` it shows a component asking for far more than it renders, or a data provider returning short pages. |
 | `vaadin.errors` | Counter | Server-side errors (tagged by `exception`, `route`, `component`). See [Error metrics](#error-metrics). |
+| `vaadin.resync` | Counter | UIDL message recovery events observed on incoming requests, tagged by `type`: `resend` for a duplicate message the client re-sent because it never got the previous response, `resync` for a full client-requested UI-state rebuild. Both mean the client lost a server message. Disable with `vaadin.observability.resync=false`. |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
 | `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time. |
 | `vaadin.client.web_vitals.lcp` | Timer | Largest Contentful Paint. |
@@ -240,6 +247,33 @@ ObservabilitySettings.builder()
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
 | `vaadin.db.query` | Timer | Duration of a JDBC query, tagged by `route`. Produced alongside the query span when database monitoring and tracing are both on. |
+
+### Navigation outcomes
+
+`vaadin.navigation` is timed from `beforeEnter` to `afterNavigation`, and every
+navigation that starts is recorded — including the ones that never complete,
+which would otherwise leave a span dangling. The `outcome` tag says how it
+ended:
+
+| `outcome` | Recorded for |
+| --- | --- |
+| `success` | The navigation reached `afterNavigation`. |
+| `rerouted` | A listener called `rerouteTo`, so this navigation was replaced by another. A routing decision (an access guard sending the user elsewhere), not a failure. |
+| `forwarded` | A listener called `forwardTo`, `forwardToUrl`, or handed off to a client-side route. |
+| `error` | The navigation failed: `rerouteToError`, or an exception while the view was being built. |
+| `unknown` | The navigation was neither completed nor redirected: a re-entrant `UI.navigate()` from a view's `beforeEnter` or `onAttach` superseded it, or its UI was detached while it was still open. |
+
+Two things to keep in mind when building an error rate on this timer, both of
+which follow from timing the router's own chain — an error view is a navigation
+in its own right, and it is one that succeeds:
+
+- an unknown URL never reaches a `beforeEnter` that could fail, so it is
+  recorded as the error view rendering successfully:
+  `route=RouteNotFoundError, outcome=success`. Alert on that route rather than
+  on `outcome`;
+- a view that throws while being built produces two samples — the failed
+  navigation to the view (`outcome=error`) and the navigation to the error view
+  that replaces it (`route=InternalServerError, outcome=success`).
 
 ## UI state size
 
