@@ -37,6 +37,20 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
  * <p>
+ * Both paths publish {@link MeterNames#REQUEST_DURATION} with the same tag
+ * keys, all bounded: {@code vaadin.request.type}, {@code vaadin.interaction},
+ * {@code http.method}, {@code outcome} and {@code error}. Keeping the two in
+ * step matters because a metrics backend such as Prometheus rejects same-named
+ * meters whose tag-key sets differ, and dashboards must not have to know which
+ * path recorded a sample. The {@code error} tag is the one
+ * {@code DefaultMeterObservationHandler} adds by itself on the Observation
+ * path, so the direct-recording path adds it explicitly.
+ * <p>
+ * The UI id and the client location are attached as high-cardinality
+ * key-values, so they enrich the span without multiplying the Timer's time
+ * series: a UI id is unbounded over an application's lifetime, and the client
+ * location is deliberately kept un-templated.
+ * <p>
  * This interceptor only ever sees exceptions that <em>escape</em> request
  * handling. The failures a user triggers are caught by Flow and routed to the
  * session error handler, where {@link ErrorMetricsBinder} counts them and
@@ -57,6 +71,10 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
+    // Simple class name of the exception passed to handleException, mirroring
+    // what DefaultMeterObservationHandler reads off the Observation context so
+    // the direct-recording path can tag its Timer the same way.
+    private final ThreadLocal<String> errorType = new ThreadLocal<>();
     private final ThreadLocal<Observation> observation = new ThreadLocal<>();
     private final ThreadLocal<Observation.Scope> observationScope = new ThreadLocal<>();
 
@@ -95,6 +113,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // this a pooled thread could carry errored=TRUE into the next request
         // and misreport it as an error.
         errored.remove();
+        errorType.remove();
         sample.remove();
         observation.remove();
         observationScope.remove();
@@ -117,9 +136,12 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                             type)
                     .lowCardinalityKeyValue(ObservationNames.KEY_HTTP_METHOD,
                             httpMethod(request))
-                    .lowCardinalityKeyValue(ObservationNames.KEY_UI_ID,
+                    // Span-only: the UI id is unbounded over an application's
+                    // lifetime and the client location is un-templated, so
+                    // neither may become a Timer tag.
+                    .highCardinalityKeyValue(ObservationNames.KEY_UI_ID,
                             uiId(request))
-                    .lowCardinalityKeyValue(
+                    .highCardinalityKeyValue(
                             ObservationNames.KEY_CLIENT_LOCATION,
                             clientLocation(request))
                     // Always emit the interaction key so every
@@ -155,11 +177,12 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     /**
      * Extracts the page path the UIDL request was sent from. Falls back to the
-     * Referer header path so we always emit something useful for dashboards
-     * filtering by view, without ever exposing PII (the path goes through the
-     * parent navigation observation's route template mapping in dashboards; we
-     * deliberately keep it un-templated here so the span captures the literal
-     * client path).
+     * Referer header path so we always emit something useful when reading a
+     * trace, without ever exposing PII. The path is deliberately kept
+     * un-templated so the span captures the literal client path; that is also
+     * why it is attached as a high-cardinality key-value and never as a Timer
+     * tag. For a templated, cardinality-capped view attribution use the
+     * {@code route} tag of the navigation meters instead.
      */
     private static String clientLocation(VaadinRequest request) {
         if (request == null) {
@@ -201,6 +224,9 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     public void handleException(VaadinRequest request, VaadinResponse response,
             VaadinSession vaadinSession, Exception t) {
         errored.set(Boolean.TRUE);
+        if (t != null) {
+            errorType.set(t.getClass().getSimpleName());
+        }
         // Flow reports the same throwable to the session error handler right
         // after this call; mark it so ErrorMetricsBinder does not count the
         // one failure a second time.
@@ -217,20 +243,21 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             VaadinSession session) {
         boolean interceptorError = errored.get();
         errored.remove();
+        String error = errorType.get();
+        errorType.remove();
         // An exception Flow routed to the session error handler (a failing
         // component listener, UI.access body or navigation callback) never
         // reaches handleException, yet the interaction the request carried did
         // fail; without this the span would claim outcome=success.
         Throwable handledError = RequestError.takeHandled();
         boolean wasError = interceptorError || handledError != null;
+        if (error == null && handledError != null) {
+            // Parity with the Observation path, where the obs.error() below
+            // makes DefaultMeterObservationHandler add the error tag for us.
+            error = handledError.getClass().getSimpleName();
+        }
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
-        Timer.Sample s = sample.get();
-        sample.remove();
-        if (s != null) {
-            s.stop(registry.timer(MeterNames.REQUEST_DURATION,
-                    MeterNames.TAG_OUTCOME, outcome));
-        }
         Observation.Scope scope = observationScope.get();
         observationScope.remove();
         if (scope != null) {
@@ -242,14 +269,36 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // request so the span name reflects what actually happened instead
         // of the opaque protocol-level "uidl".
         String interaction = RequestInteraction.take();
+        String type = requestType(request);
+        // Resolve the interaction once, for whichever path records: a UIDL
+        // request takes the listener's marker (defaulting to the generic
+        // "rpc"), anything else has no interaction to report.
+        String kind = ObservationNames.REQUEST_TYPE_UIDL.equals(type)
+                ? (interaction != null ? interaction
+                        : ObservationNames.INTERACTION_RPC)
+                : ObservationNames.INTERACTION_NONE;
+        Timer.Sample s = sample.get();
+        sample.remove();
+        if (s != null) {
+            // Tag with the very constants the Observation path uses above, so
+            // the two paths cannot drift into publishing
+            // vaadin.request.duration under differing tag-key sets. The error
+            // tag replicates the one DefaultMeterObservationHandler adds for
+            // us there.
+            s.stop(Timer.builder(MeterNames.REQUEST_DURATION)
+                    .tag(ObservationNames.KEY_REQUEST_TYPE, type)
+                    .tag(ObservationNames.KEY_HTTP_METHOD, httpMethod(request))
+                    .tag(ObservationNames.KEY_INTERACTION, kind)
+                    .tag(ObservationNames.KEY_OUTCOME, outcome)
+                    .tag(MeterNames.TAG_ERROR,
+                            error != null ? error : MeterNames.ERROR_NONE)
+                    .register(registry));
+        }
         if (obs != null) {
             if (handledError != null && !interceptorError) {
                 obs.error(handledError);
             }
-            String type = requestType(request);
             if (ObservationNames.REQUEST_TYPE_UIDL.equals(type)) {
-                String kind = interaction != null ? interaction
-                        : ObservationNames.INTERACTION_RPC;
                 obs.lowCardinalityKeyValue(ObservationNames.KEY_INTERACTION,
                         kind);
                 obs.contextualName(ObservationNames.REQUEST + "." + kind);

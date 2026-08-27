@@ -22,8 +22,10 @@ import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
+import com.vaadin.observability.micrometer.insights.DataQueryCollector;
 import com.vaadin.observability.micrometer.insights.InteractionCollector;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
+import com.vaadin.observability.micrometer.insights.RecentQueries;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
@@ -195,8 +197,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             SessionMetricsBinder binder = new SessionMetricsBinder(registry);
             service.addSessionInitListener(binder);
             service.addSessionDestroyListener(binder);
-            service.addSessionLockListener(
-                    new SessionLockMetricsBinder(registry));
+            new SessionLockMetricsBinder(registry)
+                    .register(service.getEventBus());
         }
 
         if (settings.isUis() || settings.isNavigation()
@@ -212,8 +214,27 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         }
 
         if (settings.isRequests()) {
-            service.addRpcInvocationListener(new RpcMetricsBinder(registry,
-                    observationRegistry, settings));
+            new RpcMetricsBinder(registry, observationRegistry, settings)
+                    .register(service.getEventBus());
+        }
+
+        if (settings.isData()) {
+            // Lazy-loading components query their data provider while the
+            // response is being built, after RPC handling, so these queries
+            // are not covered by the RPC binder above.
+            new DataQueryMetricsBinder(registry, observationRegistry, settings)
+                    .register(service.getEventBus());
+        }
+
+        if (settings.isUiState()) {
+            // One binder, three subscriptions: UIs report their own state size
+            // at init and after navigation, any RPC invocation refreshes the
+            // UI it touched, and a destroyed session drops the UIs it held.
+            UiStateMetricsBinder uiStateBinder = new UiStateMetricsBinder(
+                    registry, settings);
+            service.addUIInitListener(uiStateBinder);
+            service.addSessionDestroyListener(uiStateBinder);
+            uiStateBinder.register(service.getEventBus());
         }
 
         if (settings.isErrors()) {
@@ -236,9 +257,21 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             // and got an error / it was slow") to a replicable interaction.
             RecentInteractions interactions = new RecentInteractions(
                     settings.getInsightsCapacity());
-            service.addRpcInvocationListener(
-                    new InteractionCollector(interactions, settings));
+            new InteractionCollector(interactions, settings)
+                    .register(service.getEventBus());
             ObservabilityKit.setRecentInteractions(interactions);
+        }
+
+        if (settings.isInsights() && settings.isData()
+                && (settings.isErrors() || settings.isRequests())) {
+            // A slow data load never reaches the interaction collector: the
+            // invocation that triggers it only registers a flush, so it ends
+            // in microseconds. Capture the queries themselves.
+            RecentQueries queries = new RecentQueries(
+                    settings.getInsightsCapacity());
+            new DataQueryCollector(queries, settings)
+                    .register(service.getEventBus());
+            ObservabilityKit.setRecentQueries(queries);
         }
 
         if (settings.isTraces() && observationRegistry != null) {

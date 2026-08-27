@@ -16,6 +16,7 @@ import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
+import com.vaadin.observability.micrometer.insights.RecentQueries;
 
 /**
  * Programmatic bootstrap for standalone (non-Spring) deployments. Call
@@ -44,6 +45,7 @@ public final class ObservabilityKit {
      * insights endpoint.
      */
     private static final AtomicReference<RecentInteractions> RECENT_INTERACTIONS = new AtomicReference<>();
+    private static final AtomicReference<RecentQueries> RECENT_QUERIES = new AtomicReference<>();
 
     private ObservabilityKit() {
     }
@@ -93,9 +95,23 @@ public final class ObservabilityKit {
     }
 
     /**
-     * Records the recent-interactions buffer instrumentation was bound to.
-     * Called from {@code MetricsServiceInitListener} for all deployment types.
+     * Records the recent-queries buffer instrumentation was bound to. Called
+     * from {@code MetricsServiceInitListener} for all deployment types.
      */
+    static void setRecentQueries(RecentQueries buffer) {
+        RECENT_QUERIES.set(buffer);
+    }
+
+    /**
+     * Gets the retained data provider queries, or {@code null} when the query
+     * collector was not registered.
+     *
+     * @return the query buffer, or {@code null}
+     */
+    public static RecentQueries getRecentQueries() {
+        return RECENT_QUERIES.get();
+    }
+
     static void setRecentInteractions(RecentInteractions buffer) {
         RECENT_INTERACTIONS.set(buffer);
     }
@@ -126,5 +142,6 @@ public final class ObservabilityKit {
         SETTINGS.set(null);
         ACTIVE_METER_REGISTRY.set(null);
         RECENT_INTERACTIONS.set(null);
+        RECENT_QUERIES.set(null);
     }
 }

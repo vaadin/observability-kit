@@ -30,6 +30,14 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * {@code DefaultMeterObservationHandler}, the Timer). Otherwise the binder
  * falls back to direct Timer recording. Per-UI state is stored as a UI
  * attribute so concurrent UIs are tracked independently.
+ * <p>
+ * Both paths publish {@link MeterNames#NAVIGATION} with the same tag keys:
+ * {@code route}, {@code outcome} and {@code error}. A navigation that throws
+ * never reaches {@code afterNavigation}, so no sample is recorded for it on
+ * either path and {@code error} is always {@link MeterNames#ERROR_NONE} — the
+ * key is still emitted because {@code DefaultMeterObservationHandler} emits it
+ * on the Observation path, and a metrics backend such as Prometheus rejects
+ * same-named meters whose tag-key sets differ.
  */
 final class NavigationMetricsBinder
         implements BeforeEnterListener, AfterNavigationListener {
@@ -109,7 +117,8 @@ final class NavigationMetricsBinder
         if (sample instanceof Timer.Sample s) {
             s.stop(registry.timer(MeterNames.NAVIGATION, MeterNames.TAG_ROUTE,
                     route instanceof String r ? r : MeterNames.ROUTE_UNKNOWN,
-                    MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS));
+                    MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS,
+                    MeterNames.TAG_ERROR, MeterNames.ERROR_NONE));
         }
         if (scopeObj instanceof Observation.Scope scope) {
             scope.close();

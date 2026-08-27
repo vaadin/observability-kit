@@ -11,12 +11,13 @@ package com.vaadin.observability.spring;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 /**
  * Plain-Spring (non-Boot) configuration for Observability Kit.
@@ -42,63 +43,62 @@ public class ObservabilityConfiguration {
     private final ObservabilitySettings settings;
 
     /**
-     * Binds {@code vaadin.observability.*} properties (all optional, each with
-     * a sensible default) and builds the {@link ObservabilitySettings} used by
-     * the instrumentation.
+     * Binds {@code vaadin.observability.*} from the environment and builds the
+     * {@link ObservabilitySettings} used by the instrumentation. All properties
+     * are optional and default to the same values as
+     * {@link ObservabilitySettings#builder()}.
+     * <p>
+     * Read from the {@link Environment} rather than declared as one
+     * {@code @Value} parameter per property: with a parameter list the class
+     * became a second source of truth for the settings, and drifted from it.
+     * The {@code data}, {@code resync}, {@code database} and
+     * {@code database-statement} settings were all unbindable here while
+     * working in the Boot starter.
      *
-     * @param sessions
-     *            whether to track session metrics (default {@code true})
-     * @param uis
-     *            whether to track UI metrics (default {@code true})
-     * @param navigation
-     *            whether to track navigation metrics (default {@code true})
-     * @param requests
-     *            whether to track request metrics (default {@code true})
-     * @param errors
-     *            whether to track error metrics (default {@code true})
-     * @param traces
-     *            whether to emit traces (default {@code true})
-     * @param tracesSessionId
-     *            whether to include session ID in traces (default
-     *            {@code false})
-     * @param routeCardinalityLimit
-     *            maximum number of distinct route tag values (default
-     *            {@code 200})
-     * @param client
-     *            whether to track client-side metrics (default {@code true})
-     * @param clientRatePerSession
-     *            maximum client-side metric events per session (default
-     *            {@code 100})
-     * @param insights
-     *            whether to retain failed and over-budget interactions for the
-     *            insights endpoint (default {@code true})
-     * @param insightsDetails
-     *            whether retained interactions may carry sensitive detail
-     *            (default {@code false})
-     * @param insightsCapacity
-     *            maximum number of retained interactions (default {@code 100})
+     * @param environment
+     *            the Spring environment to read the properties from
      */
-    ObservabilityConfiguration(
-            @Value("${vaadin.observability.sessions:true}") boolean sessions,
-            @Value("${vaadin.observability.uis:true}") boolean uis,
-            @Value("${vaadin.observability.navigation:true}") boolean navigation,
-            @Value("${vaadin.observability.requests:true}") boolean requests,
-            @Value("${vaadin.observability.errors:true}") boolean errors,
-            @Value("${vaadin.observability.traces:true}") boolean traces,
-            @Value("${vaadin.observability.traces-session-id:false}") boolean tracesSessionId,
-            @Value("${vaadin.observability.route-cardinality-limit:200}") int routeCardinalityLimit,
-            @Value("${vaadin.observability.client:true}") boolean client,
-            @Value("${vaadin.observability.client-rate-per-session:100}") int clientRatePerSession,
-            @Value("${vaadin.observability.insights:true}") boolean insights,
-            @Value("${vaadin.observability.insights-details:false}") boolean insightsDetails,
-            @Value("${vaadin.observability.insights-capacity:100}") int insightsCapacity) {
-        this.settings = ObservabilitySettings.builder().sessions(sessions)
-                .uis(uis).navigation(navigation).requests(requests)
-                .errors(errors).traces(traces).tracesSessionId(tracesSessionId)
-                .routeCardinalityLimit(routeCardinalityLimit).client(client)
-                .clientRatePerSession(clientRatePerSession).insights(insights)
-                .insightsDetails(insightsDetails)
-                .insightsCapacity(insightsCapacity).build();
+    ObservabilityConfiguration(Environment environment) {
+        ObservabilitySettings.Builder builder = ObservabilitySettings.builder();
+        this.settings = builder.sessions(flag(environment, "sessions", true))
+                .uis(flag(environment, "uis", true))
+                .uiState(flag(environment, "ui-state", false))
+                .uiStateSampleInterval(
+                        number(environment, "ui-state-sample-interval", 10000))
+                .uiStateBytesPerNode(
+                        number(environment, "ui-state-bytes-per-node", 0))
+                .navigation(flag(environment, "navigation", true))
+                .requests(flag(environment, "requests", true))
+                .data(flag(environment, "data", true))
+                .errors(flag(environment, "errors", true))
+                .client(flag(environment, "client", true))
+                .resync(flag(environment, "resync", true))
+                .traces(flag(environment, "traces", true))
+                .tracesSessionId(flag(environment, "traces-session-id", false))
+                .database(flag(environment, "database", false))
+                .databaseStatement(
+                        flag(environment, "database-statement", false))
+                .insights(flag(environment, "insights", true))
+                .insightsDetails(flag(environment, "insights-details", false))
+                .routeCardinalityLimit(
+                        number(environment, "route-cardinality-limit", 200))
+                .clientRatePerSession(
+                        number(environment, "client-rate-per-session", 100))
+                .insightsCapacity(number(environment, "insights-capacity",
+                        RecentInteractions.DEFAULT_CAPACITY))
+                .build();
+    }
+
+    private static boolean flag(Environment environment, String name,
+            boolean defaultValue) {
+        return environment.getProperty("vaadin.observability." + name,
+                Boolean.class, defaultValue);
+    }
+
+    private static int number(Environment environment, String name,
+            int defaultValue) {
+        return environment.getProperty("vaadin.observability." + name,
+                Integer.class, defaultValue);
     }
 
     /**

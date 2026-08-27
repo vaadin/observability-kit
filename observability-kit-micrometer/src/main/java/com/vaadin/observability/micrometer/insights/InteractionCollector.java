@@ -13,16 +13,18 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
-import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
+import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
@@ -33,14 +35,15 @@ import com.vaadin.observability.micrometer.RouteTagResolver;
  * and ones slower than the {@link #UX_BUDGET_MS UX budget} (when request
  * metrics are enabled).
  * <p>
- * Hooks Flow's {@link RpcInvocationListener} (the same hook
- * {@code RpcMetricsBinder} uses for RPC spans): {@code invocationFailed}
- * delivers the exact "user action + exception" pair, timing between
- * {@code invocationStarted} and {@code invocationEnded} gives the handling
- * duration, and the event carries the target state node from which the
- * interacted component is resolved. Works in production mode.
+ * Listens for the RPC invocation events on the service event bus, the same
+ * events {@code RpcMetricsBinder} uses for RPC spans:
+ * {@link RpcInvocationFailedEvent} delivers the exact "user action + exception"
+ * pair, timing between {@link RpcInvocationStartedEvent} and
+ * {@link RpcInvocationEndedEvent} gives the handling duration, and the events
+ * carry the target state node from which the interacted component is resolved.
+ * Works in production mode.
  */
-public class InteractionCollector implements RpcInvocationListener {
+public class InteractionCollector {
 
     /**
      * Absolute per-interaction latency budget for good UX, in milliseconds.
@@ -117,8 +120,24 @@ public class InteractionCollector implements RpcInvocationListener {
         this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
     }
 
-    @Override
-    public void invocationStarted(RpcInvocationEvent event) {
+    /**
+     * Subscribes to the RPC invocation events on the given bus.
+     *
+     * @param eventBus
+     *            the service event bus to listen on
+     * @return a handle removing every subscription made here
+     */
+    public Registration register(VaadinServiceEventBus eventBus) {
+        return Registration.combine(
+                eventBus.addListener(RpcInvocationStartedEvent.class,
+                        this::invocationStarted),
+                eventBus.addListener(RpcInvocationFailedEvent.class,
+                        this::invocationFailed),
+                eventBus.addListener(RpcInvocationEndedEvent.class,
+                        this::invocationEnded));
+    }
+
+    void invocationStarted(RpcInvocationStartedEvent event) {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
@@ -127,8 +146,8 @@ public class InteractionCollector implements RpcInvocationListener {
         startNanos.set(System.nanoTime());
     }
 
-    @Override
-    public void invocationFailed(RpcInvocationEvent event, Throwable error) {
+    void invocationFailed(RpcInvocationFailedEvent event) {
+        Throwable error = event.getError();
         errored.set(Boolean.TRUE);
         if (!captureErrors) {
             return;
@@ -142,8 +161,7 @@ public class InteractionCollector implements RpcInvocationListener {
         }
     }
 
-    @Override
-    public void invocationEnded(RpcInvocationEvent event) {
+    void invocationEnded(RpcInvocationEndedEvent event) {
         long durationMs = elapsedMs();
         String component = componentType.get();
         startNanos.remove();
@@ -170,10 +188,11 @@ public class InteractionCollector implements RpcInvocationListener {
         return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
     }
 
-    private CapturedInteraction errorInteraction(RpcInvocationEvent event,
-            Throwable error, long durationMs, String component) {
+    private CapturedInteraction errorInteraction(
+            AbstractRpcInvocationEvent event, Throwable error, long durationMs,
+            String component) {
         UI ui = event.getUI();
-        Throwable rootCause = rootCause(error);
+        Throwable rootCause = Throwables.rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
         // The exception type and the first application frame are always kept:
         // they are what makes the insight actionable and neither is free-form
@@ -190,8 +209,9 @@ public class InteractionCollector implements RpcInvocationListener {
                 sessionId(ui), ui != null ? ui.getUIId() : -1);
     }
 
-    private CapturedInteraction slowInteraction(RpcInvocationEvent event,
-            long durationMs, String component) {
+    private CapturedInteraction slowInteraction(
+            AbstractRpcInvocationEvent event, long durationMs,
+            String component) {
         UI ui = event.getUI();
         // The budget this interaction was actually measured against travels
         // with it, so a report never has to assume the default.
@@ -254,24 +274,6 @@ public class InteractionCollector implements RpcInvocationListener {
             return message;
         }
         return message.substring(0, MAX_MESSAGE_LENGTH) + "…";
-    }
-
-    /**
-     * Walks to the root cause, tracking the causes already visited so a cyclic
-     * causal chain terminates. A cycle longer than a self-reference (A caused
-     * by B caused by A) would otherwise spin forever, and this runs while the
-     * server is already handling a failure.
-     *
-     * @return the root cause, or the last cause before the chain looped back
-     */
-    private static Throwable rootCause(Throwable error) {
-        Set<Throwable> visited = new HashSet<>();
-        Throwable cause = error;
-        visited.add(cause);
-        while (cause.getCause() != null && visited.add(cause.getCause())) {
-            cause = cause.getCause();
-        }
-        return cause;
     }
 
     private static Optional<String> firstApplicationFrame(
