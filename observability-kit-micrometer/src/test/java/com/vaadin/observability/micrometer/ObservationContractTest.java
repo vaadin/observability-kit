@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -151,6 +150,24 @@ class ObservationContractTest {
 
                         %s"""
                         .formatted(actual));
+    }
+
+    /**
+     * The key-shape guard in {@link #render(List)} must trip on a divergent
+     * high-cardinality set even when the low sets agree — a failing data fetch,
+     * which legitimately omits {@code vaadin.data.rows}, is exactly that shape
+     * and must be reconciled in the scenarios rather than silently absorbed
+     * into the golden file.
+     */
+    @Test
+    void keyShapeGuardTripsOnDivergentHighCardinalityKeys() {
+        List<Snapshot> divergent = List.of(
+                new Snapshot("vaadin.x", "vaadin.x.a", Set.of("outcome"),
+                        Set.of("rows")),
+                new Snapshot("vaadin.x", "vaadin.x.b", Set.of("outcome"),
+                        Set.of()));
+        Assertions.assertThrows(AssertionError.class, () -> render(divergent),
+                "same low keys with different high keys must not pass");
     }
 
     /**
@@ -368,13 +385,17 @@ class ObservationContractTest {
         byName.forEach((name, group) -> {
             Set<String> spanNames = group.stream().map(Snapshot::spanName)
                     .collect(Collectors.toCollection(TreeSet::new));
-            Map<Set<String>, Set<String>> keyShapes = new LinkedHashMap<>();
-            group.forEach(s -> keyShapes.put(s.lowCardinalityKeys(),
-                    s.highCardinalityKeys()));
+            // Keyed on the (low, high) pair: keying a Map on the low set
+            // alone would let a divergent high set overwrite silently.
+            Set<List<Set<String>>> keyShapes = group.stream()
+                    .map(s -> List.of(s.lowCardinalityKeys(),
+                            s.highCardinalityKeys()))
+                    .collect(Collectors.toSet());
             Assertions.assertEquals(1, keyShapes.size(),
                     name + " produced differing attribute key sets across "
                             + "span names; the golden format assumes one key "
-                            + "shape per observation");
+                            + "shape per observation, so drive the scenario "
+                            + "with every optional attribute present");
             Snapshot first = group.get(0);
             if (out.length() > 0) {
                 out.append('\n');
