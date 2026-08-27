@@ -12,11 +12,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -111,10 +114,15 @@ class RequestMetricsBinderTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         List<Exception> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
-                ObservabilitySettings.builder().traces(false).build(), null,
-                new ErrorCounter(registry,
-                        ObservabilitySettings.builder().build()),
-                (request, failure) -> marked.add(failure));
+                ObservabilitySettings.builder().traces(false).build(),
+                new HttpObservationHooks() {
+                    @Override
+                    public void error(VaadinRequest request,
+                            Exception failure) {
+                        marked.add(failure);
+                    }
+                }, new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()));
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
@@ -134,10 +142,15 @@ class RequestMetricsBinderTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         List<Exception> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
-                ObservabilitySettings.builder().traces(false).build(), null,
-                new ErrorCounter(registry,
-                        ObservabilitySettings.builder().build()),
-                (request, failure) -> marked.add(failure));
+                ObservabilitySettings.builder().traces(false).build(),
+                new HttpObservationHooks() {
+                    @Override
+                    public void error(VaadinRequest request,
+                            Exception failure) {
+                        marked.add(failure);
+                    }
+                }, new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()));
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
@@ -161,7 +174,13 @@ class RequestMetricsBinderTest {
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).errors(false)
                         .build(),
-                null, null, (request, failure) -> marked.add(failure));
+                new HttpObservationHooks() {
+                    @Override
+                    public void error(VaadinRequest request,
+                            Exception failure) {
+                        marked.add(failure);
+                    }
+                }, null);
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
@@ -174,5 +193,109 @@ class RequestMetricsBinderTest {
         Assertions.assertEquals(1, marked.size());
         Assertions.assertNull(registry.find(MeterNames.ERRORS).counter(),
                 "vaadin.errors stays gated on the errors setting");
+    }
+
+    private static final class RouteRecordingHooks
+            implements HttpObservationHooks {
+        final List<String> routes = new ArrayList<>();
+
+        @Override
+        public void route(VaadinRequest request, String routeTemplate) {
+            routes.add(routeTemplate);
+        }
+    }
+
+    private static RequestMetricsBinder observedBinder(
+            SimpleMeterRegistry registry, HttpObservationHooks hooks) {
+        ObservationRegistry observations = ObservationRegistry.create();
+        observations.observationConfig().observationHandler(
+                new DefaultMeterObservationHandler(registry));
+        return new RequestMetricsBinder(registry, observations,
+                ObservabilitySettings.builder().build(), hooks);
+    }
+
+    private static VaadinRequest uidlRequest() {
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getParameter("v-r")).thenReturn("uidl");
+        return req;
+    }
+
+    @Test
+    void routeHookNotCalledWhenNoUiWasMarked() {
+        // A UIDL request in which no RPC, navigation or poll handler ran
+        // leaves the RequestUi relay empty, and there is no view to report.
+        RouteRecordingHooks hooks = new RouteRecordingHooks();
+        RequestMetricsBinder binder = observedBinder(new SimpleMeterRegistry(),
+                hooks);
+        VaadinRequest req = uidlRequest();
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+        binder.requestStart(req, res);
+        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+
+        Assertions.assertTrue(hooks.routes.isEmpty(),
+                "no UI was marked during handling, so no route to report");
+    }
+
+    @Test
+    void routeHookReportsRootForUiAtRootLocation() {
+        // A UI whose active view location is empty resolves to a blank
+        // template, which is the root route: for a UIDL request a view is
+        // always active, so blank cannot mean "no view". The UI arrives
+        // through the RequestUi relay, marked by an RPC, navigation or poll
+        // handler during request handling — UI.getCurrent() is already
+        // cleared when requestEnd runs.
+        RouteRecordingHooks hooks = new RouteRecordingHooks();
+        RequestMetricsBinder binder = observedBinder(new SimpleMeterRegistry(),
+                hooks);
+        VaadinRequest req = uidlRequest();
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+        binder.requestStart(req, res);
+        RequestUi.mark(new UI());
+        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+
+        Assertions.assertEquals(List.of(""), hooks.routes,
+                "the root route reports a blank template");
+    }
+
+    @Test
+    void routeHookNotCalledForNonUidlRequests() {
+        RouteRecordingHooks hooks = new RouteRecordingHooks();
+        RequestMetricsBinder binder = observedBinder(new SimpleMeterRegistry(),
+                hooks);
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getPathInfo()).thenReturn("/VAADIN/build/app.js");
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+        binder.requestStart(req, res);
+        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+
+        Assertions.assertTrue(hooks.routes.isEmpty(),
+                "static resources have no view to attribute");
+    }
+
+    @Test
+    void staticClassifierCoversThemesAndServiceWorker() {
+        for (String path : new String[] { "/themes/mytheme/styles.css",
+                "/sw.js" }) {
+            SimpleMeterRegistry registry = new SimpleMeterRegistry();
+            ObservationRegistry observations = ObservationRegistry.create();
+            observations.observationConfig().observationHandler(
+                    new DefaultMeterObservationHandler(registry));
+            RequestMetricsBinder binder = new RequestMetricsBinder(registry,
+                    observations, ObservabilitySettings.builder().build());
+            VaadinRequest req = Mockito.mock(VaadinRequest.class);
+            Mockito.when(req.getPathInfo()).thenReturn(path);
+            VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+            binder.requestStart(req, res);
+            binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+
+            Assertions.assertNotNull(
+                    registry.find(MeterNames.REQUEST_DURATION)
+                            .tag("vaadin.request.type", "static").timer(),
+                    path + " should classify as a static resource");
+        }
     }
 }

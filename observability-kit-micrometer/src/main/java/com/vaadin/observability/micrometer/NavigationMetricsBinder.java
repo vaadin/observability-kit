@@ -162,8 +162,10 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         VaadinTelemetryContext.setCurrentRoute(ui, route);
         Pending pending;
         if (useObservation()) {
-            // Tell the enclosing request span this UIDL request navigated.
+            // Tell the enclosing request span this UIDL request navigated,
+            // and relay the UI so the route resolves at request end.
             RequestInteraction.mark(ObservationNames.INTERACTION_NAVIGATION);
+            RequestUi.mark(ui);
             Observation obs = Observation
                     .createNotStarted(MeterNames.NAVIGATION,
                             observationRegistry)
