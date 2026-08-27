@@ -499,6 +499,41 @@ class NavigationMetricsBinderTest {
                 "no observation may be started outside the observation path");
     }
 
+    /**
+     * A navigation target Flow could not resolve has to land under
+     * {@link MeterNames#ROUTE_UNKNOWN} rather than drop the meter or throw.
+     */
+    @Test
+    void aNullNavigationTargetIsRecordedAsAnUnknownRoute() {
+        NavigationMetricsBinder binder = binder();
+        // The real event asserts a non-null target, so this input can only be
+        // expressed through a mock.
+        BeforeEnterEvent event = Mockito.mock(BeforeEnterEvent.class);
+        Mockito.when(event.getUI()).thenReturn(ui);
+
+        binder.beforeEnter(event);
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(MeterNames.ROUTE_UNKNOWN,
+                MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void theShortConstructorRecordsDirectlyDespiteTracesDefaultingOn() {
+        // Tracing is on by default, so the absent ObservationRegistry is the
+        // only thing keeping this binder off the observation path.
+        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
+                new RouteTagResolver(100));
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertNull(RequestInteraction.take(),
+                "only the observation path has an enclosing request span to "
+                        + "label, so the direct path must mark nothing");
+    }
+
     @Test
     void navigationsToDifferentRoutesAreRecordedSeparately() {
         NavigationMetricsBinder binder = binder();
