@@ -55,10 +55,18 @@ final class ObservationScopes {
             return;
         }
         if (registry.getCurrentObservationScope() != stale) {
-            // Something live is current above the stale scope; unwinding
-            // now would evict it. Leaving the dead scope in the chain is
-            // harmless: it is never a parent while the live scope is
-            // current, and the scope above it restores past it on close.
+            // Something live is current above the stale scope; unwinding now
+            // would evict it, so the reference is only dropped. That leaves a
+            // known corner case: when the live scope above closes it restores
+            // the stale one as current, and with the holder already cleared
+            // nothing closes it afterwards, so work started on this thread
+            // outside a Vaadin request (the next HTTP request, an actuator
+            // scrape) is parented on the dead observation until the next
+            // requestStart clears it. Micrometer offers no way to remove a
+            // scope from the middle of the chain, and reaching this branch at
+            // all needs an end callback to have been skipped, so the trade is
+            // deliberate: a rare stale parent outside a request beats
+            // corrupting the parenting of every live one.
             return;
         }
         closeQuietly(stale);
