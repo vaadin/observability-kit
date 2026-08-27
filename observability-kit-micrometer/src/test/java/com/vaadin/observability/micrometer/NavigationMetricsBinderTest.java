@@ -24,8 +24,11 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
@@ -73,11 +76,13 @@ class NavigationMetricsBinderTest {
             implements ObservationHandler<Observation.Context> {
 
         final List<String> names = new ArrayList<>();
+        final List<String> contextualNames = new ArrayList<>();
         final List<Map<String, String>> tags = new ArrayList<>();
 
         @Override
         public void onStop(Observation.Context ctx) {
             names.add(ctx.getName());
+            contextualNames.add(ctx.getContextualName());
             Map<String, String> snap = new HashMap<>();
             for (KeyValue kv : ctx.getLowCardinalityKeyValues()) {
                 snap.put(kv.getKey(), kv.getValue());
@@ -100,6 +105,12 @@ class NavigationMetricsBinderTest {
         registry = new SimpleMeterRegistry();
         router = Mockito.mock(Router.class);
         ui = new UI();
+    }
+
+    @AfterEach
+    void tearDown() {
+        UI.setCurrent(null);
+        RequestInteraction.clear();
     }
 
     private NavigationMetricsBinder binder() {
@@ -455,6 +466,143 @@ class NavigationMetricsBinderTest {
         } finally {
             executor.shutdownNow();
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Path selection and what each path publishes
+    // -----------------------------------------------------------------
+
+    /**
+     * The binder only observes when tracing is on <em>and</em> an
+     * {@link ObservationRegistry} was supplied; every other combination falls
+     * back to recording the Timer directly and must not start an observation.
+     */
+    @ParameterizedTest(name = "traces={0}, observationRegistry present={1}")
+    @CsvSource({ "false, false", "false, true", "true, false" })
+    void directTimerPathRecordsTimerAndSkipsObservation(boolean traces,
+            boolean withObservationRegistry) {
+        RecordingHandler recorder = new RecordingHandler();
+        ObservationRegistry obs = null;
+        if (withObservationRegistry) {
+            obs = ObservationRegistry.create();
+            obs.observationConfig().observationHandler(recorder);
+        }
+        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
+                obs, ObservabilitySettings.builder().traces(traces).build(),
+                new RouteTagResolver(100));
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertTrue(recorder.names.isEmpty(),
+                "no observation may be started outside the observation path");
+    }
+
+    /**
+     * A navigation target Flow could not resolve has to land under
+     * {@link MeterNames#ROUTE_UNKNOWN} rather than drop the meter or throw.
+     */
+    @Test
+    void aNullNavigationTargetIsRecordedAsAnUnknownRoute() {
+        NavigationMetricsBinder binder = binder();
+        // The real event asserts a non-null target, so this input can only be
+        // expressed through a mock.
+        BeforeEnterEvent event = Mockito.mock(BeforeEnterEvent.class);
+        Mockito.when(event.getUI()).thenReturn(ui);
+
+        binder.beforeEnter(event);
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(MeterNames.ROUTE_UNKNOWN,
+                MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void theShortConstructorRecordsDirectlyDespiteTracesDefaultingOn() {
+        // Tracing is on by default, so the absent ObservationRegistry is the
+        // only thing keeping this binder off the observation path.
+        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
+                new RouteTagResolver(100));
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertNull(RequestInteraction.take(),
+                "only the observation path has an enclosing request span to "
+                        + "label, so the direct path must mark nothing");
+    }
+
+    @Test
+    void navigationsToDifferentRoutesAreRecordedSeparately() {
+        NavigationMetricsBinder binder = binder();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+        binder.beforeEnter(beforeEnter(SecondView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void navigationsToTheSameRouteAccumulate() {
+        NavigationMetricsBinder binder = binder();
+
+        for (int i = 0; i < 3; i++) {
+            binder.beforeEnter(beforeEnter(FirstView.class));
+            binder.afterNavigation(afterNavigation());
+        }
+
+        assertEquals(3, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void observationPathNamesTheSpanAfterTheRoute() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+        NavigationMetricsBinder binder = tracingBinder(obs);
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+
+        // The meter name alone would leave every navigation span looking
+        // alike in a trace view.
+        assertEquals(ObservationNames.NAVIGATION + " " + FIRST,
+                recorder.contextualNames.get(0));
+    }
+
+    @Test
+    void beforeEnterMarksTheRequestInteractionAsNavigation() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler());
+        NavigationMetricsBinder binder = tracingBinder(obs);
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+
+        assertEquals(ObservationNames.INTERACTION_NAVIGATION,
+                RequestInteraction.take(),
+                "the enclosing request span has to learn that this UIDL "
+                        + "request was a navigation");
+
+        binder.afterNavigation(afterNavigation());
+    }
+
+    @Test
+    void beforeEnterPublishesTheRouteToTheTelemetryContext() {
+        NavigationMetricsBinder binder = binder();
+        UI.setCurrent(ui);
+
+        // Set before the view renders, so instrumentation outside the Flow
+        // runtime can attribute construction-time work to the target view.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+
+        assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
+
+        binder.afterNavigation(afterNavigation());
     }
 
     /**
