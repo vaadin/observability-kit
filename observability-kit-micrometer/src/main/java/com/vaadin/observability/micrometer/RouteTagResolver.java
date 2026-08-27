@@ -10,8 +10,6 @@ package com.vaadin.observability.micrometer;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
@@ -28,11 +26,10 @@ import com.vaadin.flow.server.RouteRegistry;
  */
 public final class RouteTagResolver {
 
-    private final int limit;
-    private final Set<String> seen = ConcurrentHashMap.newKeySet();
+    private final BoundedTagValues values;
 
     public RouteTagResolver(int limit) {
-        this.limit = limit;
+        this.values = new BoundedTagValues(limit, MeterNames.ROUTE_OTHER);
     }
 
     /**
@@ -118,6 +115,34 @@ public final class RouteTagResolver {
         return fallback;
     }
 
+    /**
+     * Resolves the tag value for the view a UI currently shows, preferring the
+     * route <em>template</em> of the innermost active navigation target so that
+     * {@code orders/17} and {@code orders/18} share one tag value. Falls back
+     * to the concrete location when no navigation target can be resolved, and
+     * to {@link MeterNames#ROUTE_UNKNOWN} when there is no UI or its state
+     * cannot be read (for example because it has been detached).
+     *
+     * @param ui
+     *            the UI to resolve the active route of, may be {@code null}
+     * @return the route tag value, never {@code null}
+     */
+    public String tagForActiveRoute(UI ui) {
+        if (ui == null) {
+            return MeterNames.ROUTE_UNKNOWN;
+        }
+        try {
+            String tag = tagForUi(ui, null);
+            return tag != null ? tag
+                    : tagForTemplate(ui.getInternals().getActiveViewLocation()
+                            .getPath());
+        } catch (RuntimeException e) {
+            // Resolution is best-effort enrichment of a measurement; never let
+            // it break the caller.
+            return MeterNames.ROUTE_UNKNOWN;
+        }
+    }
+
     private Optional<String> resolveTemplate(
             Class<? extends Component> navigationTarget) {
         try {
@@ -138,17 +163,10 @@ public final class RouteTagResolver {
         if (template == null) {
             return MeterNames.ROUTE_UNKNOWN;
         }
-        if (seen.contains(template)) {
-            return template;
-        }
-        if (seen.size() < limit) {
-            seen.add(template);
-            return template;
-        }
-        return MeterNames.ROUTE_OTHER;
+        return values.admit(template);
     }
 
     int trackedCount() {
-        return seen.size();
+        return values.trackedCount();
     }
 }

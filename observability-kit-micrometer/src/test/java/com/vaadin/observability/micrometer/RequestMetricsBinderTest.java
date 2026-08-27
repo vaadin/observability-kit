@@ -112,6 +112,8 @@ class RequestMetricsBinderTest {
         List<Exception> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build(), null,
+                new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()),
                 (request, failure) -> marked.add(failure));
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
@@ -133,6 +135,8 @@ class RequestMetricsBinderTest {
         List<Exception> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build(), null,
+                new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()),
                 (request, failure) -> marked.add(failure));
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
@@ -157,7 +161,7 @@ class RequestMetricsBinderTest {
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).errors(false)
                         .build(),
-                null, (request, failure) -> marked.add(failure));
+                null, null, (request, failure) -> marked.add(failure));
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);

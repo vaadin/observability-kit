@@ -77,6 +77,15 @@ public final class MeterNames {
 
     public static final String REQUEST_DURATION = "vaadin.request.duration";
 
+    /**
+     * Counter: server-side errors, tagged by {@link #TAG_EXCEPTION},
+     * {@link #TAG_ROUTE} and {@link #TAG_COMPONENT}.
+     * <p>
+     * Counts both the exceptions that escape request handling and the ones Flow
+     * routes to the session {@code ErrorHandler} — the failures of component
+     * listeners, {@code UI.access} bodies and navigation callbacks, which is
+     * what a user actually experiences as a broken interaction.
+     */
     public static final String ERRORS = "vaadin.errors";
 
     public static final String CLIENT_BOOTSTRAP_DURATION = "vaadin.client.bootstrap.duration";
@@ -97,7 +106,20 @@ public final class MeterNames {
      */
     public static final String TAG_OUTCOME = "outcome";
 
+    /**
+     * Tag key: simple class name of the counted exception, capped at the route
+     * cardinality limit — a proxy or generated exception type can otherwise
+     * produce an unbounded stream of values, and here it multiplies with
+     * {@link #TAG_ROUTE} and {@link #TAG_COMPONENT}. Types beyond the limit are
+     * bucketed as {@link #EXCEPTION_OTHER}.
+     */
     public static final String TAG_EXCEPTION = "exception";
+
+    /**
+     * {@link #TAG_EXCEPTION} value for exception types beyond the cardinality
+     * limit.
+     */
+    public static final String EXCEPTION_OTHER = "_other";
 
     /**
      * Tag key: simple class name of the exception that ended the operation, or
@@ -115,15 +137,51 @@ public final class MeterNames {
     public static final String TAG_TRIGGER = "trigger";
     public static final String TAG_KIND = "kind";
     public static final String TAG_CONTEXT = "context";
+    /**
+     * Tag key: the Vaadin {@code Component} a measurement is attributed to, by
+     * simple class name.
+     */
+    public static final String TAG_COMPONENT = "component";
 
     public static final String OUTCOME_SUCCESS = "success";
     public static final String OUTCOME_ERROR = "error";
+
+    /**
+     * {@link #TAG_OUTCOME} value for a navigation that was replaced by a
+     * {@code rerouteTo} before it completed. Kept apart from
+     * {@link #OUTCOME_ERROR} because rerouting is a normal routing decision (an
+     * access guard sending the user elsewhere), not a failure.
+     */
+    public static final String OUTCOME_REROUTED = "rerouted";
+
+    /**
+     * {@link #TAG_OUTCOME} value for a navigation that was replaced by a
+     * {@code forwardTo} before it completed.
+     */
+    public static final String OUTCOME_FORWARDED = "forwarded";
+
+    /**
+     * {@link #TAG_OUTCOME} value for a navigation that was abandoned without
+     * any redirect flag and outside of a request that could have failed it, so
+     * neither success nor failure can be attributed to it. A re-entrant
+     * {@code UI.navigate()} from a view's {@code beforeEnter} or
+     * {@code onAttach} supersedes the navigation in flight this way, as does a
+     * UI detached while a navigation was still open.
+     */
+    public static final String OUTCOME_UNKNOWN = "unknown";
 
     public static final String CONTEXT_REQUEST = "request";
     public static final String CONTEXT_ACCESS = "access";
 
     public static final String ROUTE_OTHER = "_other";
     public static final String ROUTE_UNKNOWN = "_unknown";
+
+    /** {@link #TAG_COMPONENT} value when no component could be resolved. */
+    public static final String COMPONENT_UNKNOWN = "_unknown";
+    /**
+     * {@link #TAG_COMPONENT} value for components beyond the cardinality limit.
+     */
+    public static final String COMPONENT_OTHER = "_other";
 
     /** Timer: server-side RPC invocation duration. */
     public static final String RPC_DURATION = "vaadin.rpc.duration";

@@ -24,6 +24,7 @@ import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -80,11 +81,14 @@ class UiLifecycleTest {
         assertEquals(1.0, registry.find(MeterNames.UI_ACTIVE).gauge().value(),
                 0.0);
 
-        // Capture and invoke the detach listener to simulate UI detach
+        // Capture and invoke the detach listeners to simulate UI detach. The
+        // navigation binder adds one of its own, so every listener runs.
         ArgumentCaptor<ComponentEventListener<DetachEvent>> captor = ArgumentCaptor
                 .forClass(ComponentEventListener.class);
-        verify(ui).addDetachListener(captor.capture());
-        captor.getValue().onComponentEvent(mock(DetachEvent.class));
+        verify(ui, atLeastOnce()).addDetachListener(captor.capture());
+        DetachEvent detach = mock(DetachEvent.class);
+        captor.getAllValues()
+                .forEach(listener -> listener.onComponentEvent(detach));
 
         assertEquals(0.0, registry.find(MeterNames.UI_ACTIVE).gauge().value(),
                 0.0);
@@ -118,6 +122,20 @@ class UiLifecycleTest {
 
         verify(ui).addBeforeEnterListener(any());
         verify(ui).addAfterNavigationListener(any());
+    }
+
+    @Test
+    void registersNavigationDetachHookWhenUiTrackingIsOff() {
+        // uis=false, so the only detach listener is the navigation binder's:
+        // a navigation started from UI.access() misses requestEnd, and detach
+        // is the last point at which it can still be closed out.
+        binder = new UiMetricsBinder(registry, null, ObservabilitySettings
+                .builder().uis(false).navigation(true).build());
+        UI ui = mock(UI.class);
+
+        binder.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
+
+        verify(ui).addDetachListener(any());
     }
 
     @Test
