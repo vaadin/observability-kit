@@ -34,7 +34,7 @@ import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinSession;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 
@@ -72,8 +72,8 @@ class ErrorMetricsBinderTest {
     @BeforeEach
     void setUp() {
         registry = new SimpleMeterRegistry();
-        binder = new ErrorMetricsBinder(registry,
-                ObservabilitySettings.builder().build());
+        binder = new ErrorMetricsBinder(new ErrorCounter(registry,
+                ObservabilitySettings.builder().build()));
         application = new RecordingHandler();
         handler = new AtomicReference<>(application);
         session = Mockito.mock(VaadinSession.class);
@@ -324,10 +324,11 @@ class ErrorMetricsBinderTest {
                 "the background failure must not mark this request as failed");
     }
 
-    private RpcInvocationEvent rpcEvent() {
+    private RpcInvocationStartedEvent rpcEvent() {
         UI ui = Mockito.mock(UI.class);
         Mockito.when(ui.getSession()).thenReturn(session);
-        RpcInvocationEvent event = Mockito.mock(RpcInvocationEvent.class);
+        RpcInvocationStartedEvent event = Mockito
+                .mock(RpcInvocationStartedEvent.class);
         Mockito.when(event.getUI()).thenReturn(ui);
         return event;
     }

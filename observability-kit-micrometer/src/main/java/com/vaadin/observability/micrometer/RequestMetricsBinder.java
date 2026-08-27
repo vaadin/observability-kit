@@ -93,10 +93,27 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings,
             BiConsumer<VaadinRequest, String> httpObservationEnricher) {
+        this(registry, observationRegistry, settings, httpObservationEnricher,
+                settings.isErrors() ? new ErrorCounter(registry, settings)
+                        : null);
+    }
+
+    /**
+     * @param errors
+     *            the counter shared with {@link ErrorMetricsBinder}, or
+     *            {@code null} when error metrics are off — this interceptor is
+     *            also installed for request metrics alone, and then there is
+     *            nothing to count
+     */
+    RequestMetricsBinder(MeterRegistry registry,
+            ObservationRegistry observationRegistry,
+            ObservabilitySettings settings,
+            BiConsumer<VaadinRequest, String> httpObservationEnricher,
+            ErrorCounter errors) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
-        this.errors = new ErrorCounter(registry, settings);
+        this.errors = errors;
         this.httpObservationEnricher = httpObservationEnricher != null
                 ? httpObservationEnricher
                 : NO_ENRICH;
@@ -227,11 +244,13 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         if (t != null) {
             errorType.set(t.getClass().getSimpleName());
         }
-        // Flow reports the same throwable to the session error handler right
-        // after this call; mark it so ErrorMetricsBinder does not count the
-        // one failure a second time.
-        errors.increment(t, null);
-        RequestError.markCounted(t);
+        if (errors != null) {
+            // Flow reports the same throwable to the session error handler
+            // right after this call; mark it so ErrorMetricsBinder does not
+            // count the one failure a second time.
+            errors.increment(t, null);
+            RequestError.markCounted(t);
+        }
         Observation obs = observation.get();
         if (obs != null && t != null) {
             obs.error(t);

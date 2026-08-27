@@ -191,7 +191,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions. |
 | `vaadin.observability.insights-details` | `false` | Allow retained interactions to carry the raw session id, exception message and top stack frames. Off by default since the insights payload is meant to be forwarded. |
 | `vaadin.observability.insights-capacity` | `100` | Maximum number of retained interactions; the oldest is evicted once the cap is reached. |
-| `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. |
+| `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. Also caps the `component` and `exception` tag values of `vaadin.errors`. |
 | `vaadin.observability.client-rate-per-session` | `100` | Maximum client-side samples accepted per session (throttling guard). |
 | `vaadin.observability.ui-state-sample-interval` | `10000` | Minimum milliseconds between two measurements of the same UI. One measurement walks that UI's whole component tree under its session lock, so this is the knob that bounds the cost of the feature. |
 | `vaadin.observability.ui-state-bytes-per-node` | `0` | Bytes per state-tree node used for `vaadin.ui.state.size`; `0` publishes no byte figure. |
@@ -308,7 +308,18 @@ instance can hold.
 `vaadin.errors` counts every server-side failure the kit observes, tagged by
 exception type, by the route the user was on, and by the component the failure
 was thrown for (`_unknown` where a tag cannot be resolved, `_other` once the
-cardinality limit is reached).
+cardinality limit is reached). All three values are capped at
+`vaadin.observability.route-cardinality-limit`, since all three derive from
+application classes and multiply with each other.
+
+> **Breaking change.** `route` and `component` are new tag keys on an existing
+> meter: previously `vaadin.errors` carried `exception` alone. A dashboard or
+> alert that matches the series by an exact label set (Prometheus
+> `vaadin_errors_total{exception="..."}` without a matcher for the new labels)
+> stops matching and needs the new keys aggregated away, for example
+> `sum by (exception) (vaadin_errors_total)`. The meter name and the `exception`
+> tag itself are unchanged, so anything already aggregating over labels keeps
+> working.
 
 Only exceptions that *escape* request handling surface to a request
 interceptor. Everything a user can trigger — a click listener that throws, a

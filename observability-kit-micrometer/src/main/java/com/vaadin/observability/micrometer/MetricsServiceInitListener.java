@@ -207,10 +207,20 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     observationRegistry, settings));
         }
 
+        // One counter for vaadin.errors, shared by its two writers: the request
+        // interceptor, which sees the exceptions that escape request handling,
+        // and the error binder, which sees the ones Flow routes to the session
+        // error handler. One meter, one cardinality budget — a per-instance cap
+        // would let the same route or exception type be itself on one path and
+        // _other on the other.
+        ErrorCounter errors = settings.isErrors()
+                ? new ErrorCounter(registry, settings)
+                : null;
+
         if (settings.isRequests() || settings.isErrors()) {
             event.addVaadinRequestInterceptor(
                     new RequestMetricsBinder(registry, observationRegistry,
-                            settings, this::enrichHttpObservation));
+                            settings, this::enrichHttpObservation, errors));
         }
 
         if (settings.isRequests()) {
@@ -243,11 +253,10 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             // session one instruments a session as it is created, the UI and
             // RPC ones re-instrument a session whose error handler the
             // application replaced after that.
-            ErrorMetricsBinder errorBinder = new ErrorMetricsBinder(registry,
-                    settings);
+            ErrorMetricsBinder errorBinder = new ErrorMetricsBinder(errors);
             service.addSessionInitListener(errorBinder);
             service.addUIInitListener(errorBinder);
-            service.addRpcInvocationListener(errorBinder);
+            errorBinder.register(service.getEventBus());
         }
 
         if (settings.isInsights()

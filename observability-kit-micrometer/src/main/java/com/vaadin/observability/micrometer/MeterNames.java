@@ -106,7 +106,20 @@ public final class MeterNames {
      */
     public static final String TAG_OUTCOME = "outcome";
 
+    /**
+     * Tag key: simple class name of the counted exception, capped at the route
+     * cardinality limit — a proxy or generated exception type can otherwise
+     * produce an unbounded stream of values, and here it multiplies with
+     * {@link #TAG_ROUTE} and {@link #TAG_COMPONENT}. Types beyond the limit are
+     * bucketed as {@link #EXCEPTION_OTHER}.
+     */
     public static final String TAG_EXCEPTION = "exception";
+
+    /**
+     * {@link #TAG_EXCEPTION} value for exception types beyond the cardinality
+     * limit.
+     */
+    public static final String EXCEPTION_OTHER = "_other";
 
     /**
      * Tag key: simple class name of the exception that ended the operation, or

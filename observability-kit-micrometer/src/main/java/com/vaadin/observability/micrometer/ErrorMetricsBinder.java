@@ -8,7 +8,6 @@
  */
 package com.vaadin.observability.micrometer;
 
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,9 +18,10 @@ import com.vaadin.flow.server.SessionInitEvent;
 import com.vaadin.flow.server.SessionInitListener;
 import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.UIInitListener;
+import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.VaadinSession;
-import com.vaadin.flow.server.communication.RpcInvocationEvent;
-import com.vaadin.flow.server.communication.RpcInvocationListener;
+import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
+import com.vaadin.flow.shared.Registration;
 
 /**
  * Counts the failures a user actually experiences, by observing the session
@@ -39,22 +39,40 @@ import com.vaadin.flow.server.communication.RpcInvocationListener;
  * than by exception class alone.
  * <p>
  * The session's handler is decorated (never replaced) at session init, and the
- * decoration is re-applied when an RPC invocation starts: applications commonly
- * install their own error handler from a {@code SessionInitListener}/{@code UI}
- * of their own, and whichever ran last would otherwise silently switch error
- * metrics off. Decorating is idempotent and the wrapper always delegates, so an
+ * decoration is re-applied at UI init and on the
+ * {@link RpcInvocationStartedEvent}: applications commonly install their own
+ * error handler from a {@code SessionInitListener}/{@code UI} of their own, and
+ * whichever ran last would otherwise silently switch error metrics off.
+ * Decorating is idempotent and the wrapper always delegates, so an
  * application's own handler keeps seeing every error it saw before.
  */
-final class ErrorMetricsBinder
-        implements SessionInitListener, UIInitListener, RpcInvocationListener {
+final class ErrorMetricsBinder implements SessionInitListener, UIInitListener {
 
     private static final Logger LOGGER = LoggerFactory
             .getLogger(ErrorMetricsBinder.class);
 
     private final ErrorCounter errors;
 
-    ErrorMetricsBinder(MeterRegistry registry, ObservabilitySettings settings) {
-        this.errors = new ErrorCounter(registry, settings);
+    /**
+     * @param errors
+     *            the counter to record into, shared with the request
+     *            interceptor so both writers of {@link MeterNames#ERRORS} draw
+     *            on one cardinality budget
+     */
+    ErrorMetricsBinder(ErrorCounter errors) {
+        this.errors = errors;
+    }
+
+    /**
+     * Subscribes to the RPC invocation start event on the given bus.
+     *
+     * @param eventBus
+     *            the service event bus to listen on
+     * @return a handle removing the subscription made here
+     */
+    Registration register(VaadinServiceEventBus eventBus) {
+        return eventBus.addListener(RpcInvocationStartedEvent.class,
+                this::invocationStarted);
     }
 
     @Override
@@ -70,8 +88,7 @@ final class ErrorMetricsBinder
         }
     }
 
-    @Override
-    public void invocationStarted(RpcInvocationEvent event) {
+    void invocationStarted(RpcInvocationStartedEvent event) {
         UI ui = event.getUI();
         if (ui != null) {
             instrument(ui.getSession());
@@ -98,7 +115,11 @@ final class ErrorMetricsBinder
             }
             session.setErrorHandler(
                     new InstrumentedErrorHandler(current, errors));
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | AssertionError e) {
+            // AssertionError too: VaadinSession's getErrorHandler and
+            // setErrorHandler check the session lock with an assert, so a
+            // future call site that runs without the lock would otherwise
+            // break session init rather than just lose a measurement.
             LOGGER.debug("Could not instrument the session error handler; "
                     + "errors handled by it will not be counted.", e);
         }
@@ -163,9 +184,10 @@ final class ErrorMetricsBinder
                     errors.increment(error, event.getComponent().orElse(null));
                 }
                 RequestError.markHandled(error);
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | AssertionError e) {
                 // Instrumentation must never keep the application's own error
-                // handling from running.
+                // handling from running — not even when a Flow assertion about
+                // the session lock fails on the thread that failed.
                 LOGGER.debug("Could not record a handled error.", e);
             }
         }

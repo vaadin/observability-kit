@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.ErrorHandler;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
@@ -26,10 +27,10 @@ import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
-import com.vaadin.flow.server.communication.RpcInvocationListener;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
@@ -166,9 +167,9 @@ class MetricsServiceInitListenerTest {
     @Test
     void registersErrorBinderWhenErrorsEnabled() {
         // The session error handler is where Flow routes the failures a user
-        // triggers, so the binder needs both hooks: session init to instrument
-        // a new session, RPC start to re-instrument one whose error handler
-        // the application replaced.
+        // triggers, so the binder needs all three hooks: session init to
+        // instrument a new session, UI init and RPC start to re-instrument one
+        // whose error handler the application replaced.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().build());
         VaadinService service = licensedService();
@@ -186,13 +187,24 @@ class MetricsServiceInitListenerTest {
                         .anyMatch(l -> l instanceof ErrorMetricsBinder),
                 "errors enabled should hook UI init, which still runs while "
                         + "the bootstrap request is being handled");
-        ArgumentCaptor<RpcInvocationListener> rpc = ArgumentCaptor
-                .forClass(RpcInvocationListener.class);
-        verify(service, atLeastOnce()).addRpcInvocationListener(rpc.capture());
-        Assertions.assertTrue(
-                rpc.getAllValues().stream()
-                        .anyMatch(l -> l instanceof ErrorMetricsBinder),
-                "errors enabled should hook RPC invocation start");
+        // The RPC hook is asserted through its effect: the RPC binder and the
+        // interaction collector subscribe to the same event, so counting
+        // subscribers cannot tell which of them is there.
+        VaadinSession session = mock(VaadinSession.class);
+        ErrorHandler applicationHandler = errorEvent -> {
+        };
+        when(session.getErrorHandler()).thenReturn(applicationHandler);
+        UI ui = mock(UI.class, RETURNS_DEEP_STUBS);
+        when(ui.getSession()).thenReturn(session);
+        service.getEventBus()
+                .fireEvent(rpcEvent(RpcInvocationStartedEvent.class, ui));
+
+        ArgumentCaptor<ErrorHandler> instrumented = ArgumentCaptor
+                .forClass(ErrorHandler.class);
+        verify(session).setErrorHandler(instrumented.capture());
+        Assertions.assertNotSame(applicationHandler, instrumented.getValue(),
+                "an RPC invocation should re-instrument the session error "
+                        + "handler, in case the application replaced it");
     }
 
     @Test
