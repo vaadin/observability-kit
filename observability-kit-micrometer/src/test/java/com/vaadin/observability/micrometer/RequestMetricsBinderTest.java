@@ -8,6 +8,9 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Assertions;
@@ -101,5 +104,75 @@ class RequestMetricsBinderTest {
                         .tag(MeterNames.TAG_EXCEPTION, "IllegalStateException")
                         .counter().count(),
                 0.0);
+    }
+
+    @Test
+    void exceptionInvokesHttpObservationErrorMarker() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        List<Exception> marked = new ArrayList<>();
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
+                ObservabilitySettings.builder().traces(false).build(), null,
+                new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()),
+                (request, failure) -> marked.add(failure));
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        IllegalStateException failure = new IllegalStateException("boom");
+        binder.requestStart(req, res);
+        binder.handleException(req, res, session, failure);
+        binder.requestEnd(req, res, session);
+
+        Assertions.assertEquals(List.of(failure), marked,
+                "the framework HTTP observation must be told about the "
+                        + "exception Vaadin swallowed");
+    }
+
+    @Test
+    void successfulRequestDoesNotInvokeHttpObservationErrorMarker() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        List<Exception> marked = new ArrayList<>();
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
+                ObservabilitySettings.builder().traces(false).build(), null,
+                new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()),
+                (request, failure) -> marked.add(failure));
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        binder.requestStart(req, res);
+        binder.requestEnd(req, res, session);
+
+        Assertions.assertTrue(marked.isEmpty(),
+                "no exception, nothing to mark");
+    }
+
+    @Test
+    void errorMarkerRunsEvenWhenErrorCountingIsDisabled() {
+        // The binder does not gate the marker on the errors setting: it
+        // corrects the status of an observation the framework emits anyway.
+        // End to end there is still a registration gate — the interceptor is
+        // only registered under isRequests() || isErrors(), so with both off
+        // the marker never runs.
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        List<Exception> marked = new ArrayList<>();
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
+                ObservabilitySettings.builder().traces(false).errors(false)
+                        .build(),
+                null, null, (request, failure) -> marked.add(failure));
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        binder.requestStart(req, res);
+        binder.handleException(req, res, session,
+                new IllegalStateException("boom"));
+        binder.requestEnd(req, res, session);
+
+        Assertions.assertEquals(1, marked.size());
+        Assertions.assertNull(registry.find(MeterNames.ERRORS).counter(),
+                "vaadin.errors stays gated on the errors setting");
     }
 }

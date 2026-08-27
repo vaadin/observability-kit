@@ -68,4 +68,42 @@ class SpringHttpObservationEnricherTest {
         assertThat(context.getContextualName())
                 .isEqualTo("http post vaadin uidl");
     }
+
+    @Test
+    void errorWithNullRequestDoesNotThrow() {
+        assertThatCode(() -> SpringHttpObservationEnricher.error(null,
+                new IllegalStateException("boom"))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void errorWithNullFailureDoesNotThrow(@Mock VaadinRequest request) {
+        assertThatCode(() -> SpringHttpObservationEnricher.error(request, null))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void errorWithMissingObservationContextDoesNotThrow(
+            @Mock VaadinRequest request) {
+        when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(null);
+        assertThatCode(() -> SpringHttpObservationEnricher.error(request,
+                new IllegalStateException("boom"))).doesNotThrowAnyException();
+    }
+
+    @Test
+    void errorMarksObservationContext(@Mock VaadinRequest request,
+            @Mock HttpServletRequest httpRequest,
+            @Mock HttpServletResponse httpResponse) {
+        ServerRequestObservationContext context = new ServerRequestObservationContext(
+                httpRequest, httpResponse);
+        when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(context);
+
+        IllegalStateException failure = new IllegalStateException("boom");
+        SpringHttpObservationEnricher.error(request, failure);
+
+        assertThat(context.getError()).isSameAs(failure);
+    }
 }

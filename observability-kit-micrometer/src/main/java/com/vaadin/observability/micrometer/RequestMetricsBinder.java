@@ -62,12 +62,16 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private static final BiConsumer<VaadinRequest, String> NO_ENRICH = (r,
             t) -> {
     };
+    private static final BiConsumer<VaadinRequest, Exception> NO_MARK = (r,
+            t) -> {
+    };
 
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings settings;
     private final ErrorCounter errors;
     private final BiConsumer<VaadinRequest, String> httpObservationEnricher;
+    private final BiConsumer<VaadinRequest, Exception> httpObservationErrorMarker;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
@@ -95,7 +99,8 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             BiConsumer<VaadinRequest, String> httpObservationEnricher) {
         this(registry, observationRegistry, settings, httpObservationEnricher,
                 settings.isErrors() ? new ErrorCounter(registry, settings)
-                        : null);
+                        : null,
+                NO_MARK);
     }
 
     /**
@@ -104,12 +109,16 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
      *            {@code null} when error metrics are off — this interceptor is
      *            also installed for request metrics alone, and then there is
      *            nothing to count
+     * @param httpObservationErrorMarker
+     *            marks the framework-level HTTP observation errored, or
+     *            {@code null} for none (standalone deployments)
      */
     RequestMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings,
             BiConsumer<VaadinRequest, String> httpObservationEnricher,
-            ErrorCounter errors) {
+            ErrorCounter errors,
+            BiConsumer<VaadinRequest, Exception> httpObservationErrorMarker) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
@@ -117,6 +126,9 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         this.httpObservationEnricher = httpObservationEnricher != null
                 ? httpObservationEnricher
                 : NO_ENRICH;
+        this.httpObservationErrorMarker = httpObservationErrorMarker != null
+                ? httpObservationErrorMarker
+                : NO_MARK;
     }
 
     private boolean useObservation() {
@@ -243,22 +255,35 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     @Override
     public void handleException(VaadinRequest request, VaadinResponse response,
-            VaadinSession vaadinSession, Exception t) {
+            VaadinSession vaadinSession, Exception exception) {
         errored.set(Boolean.TRUE);
-        if (t != null) {
-            errorType.set(t.getClass().getSimpleName());
+        if (exception == null) {
+            return;
         }
+        errorType.set(exception.getClass().getSimpleName());
         if (errors != null) {
             // Flow reports the same throwable to the session error handler
             // right after this call; mark it so ErrorMetricsBinder does not
             // count the one failure a second time.
-            errors.increment(t, null);
-            RequestError.markCounted(t);
+            errors.increment(exception, null);
+            RequestError.markCounted(exception);
         }
         Observation obs = observation.get();
-        if (obs != null && t != null) {
-            obs.error(t);
+        if (obs != null) {
+            obs.error(exception);
         }
+        // Also mark the framework-level HTTP observation (e.g. Spring's
+        // ServerHttpObservationFilter span). For a UIDL request Vaadin
+        // swallows the exception and responds 200, so the framework would
+        // otherwise record it as successful — and several monitoring
+        // solutions (New Relic, DataDog) only watch root or server spans for
+        // errors. For other request types Vaadin rethrows as ServiceException
+        // and the framework records that itself; there this marker merely
+        // front-runs it with the root cause. No-op for standalone
+        // deployments, and deliberately not gated on the traces or errors
+        // settings: this corrects the status of an observation the framework
+        // emits anyway, rather than emitting new telemetry.
+        httpObservationErrorMarker.accept(request, exception);
     }
 
     @Override
