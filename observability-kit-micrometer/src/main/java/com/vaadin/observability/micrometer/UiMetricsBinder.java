@@ -57,6 +57,17 @@ final class UiMetricsBinder implements UIInitListener {
                 : null;
     }
 
+    /**
+     * The navigation binder attached to every UI, or {@code null} when
+     * navigation metrics are disabled. Exposed so the service init listener can
+     * also register it as a request interceptor: a navigation that never
+     * reaches {@code afterNavigation} has to be closed out before the request
+     * thread is recycled.
+     */
+    NavigationMetricsBinder getNavigationBinder() {
+        return navigationBinder;
+    }
+
     @Override
     public void uiInit(UIInitEvent event) {
         UI ui = event.getUI();
@@ -68,6 +79,11 @@ final class UiMetricsBinder implements UIInitListener {
         if (navigationBinder != null) {
             ui.addBeforeEnterListener(navigationBinder);
             ui.addAfterNavigationListener(navigationBinder);
+            // A navigation started from UI.access() on a background thread
+            // never passes through requestStart/requestEnd, so the
+            // request-scoped backstop cannot close it out. Detach is the last
+            // point at which such a leftover can still be recorded.
+            ui.addDetachListener(e -> navigationBinder.uiDetached(ui));
         }
         if (settings.isTraces() && observationRegistry != null) {
             // Polls are the high-frequency UIDL noise; labelling them lets the

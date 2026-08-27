@@ -8,14 +8,18 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import io.micrometer.common.KeyValue;
 import io.micrometer.core.instrument.Timer;
-import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
@@ -25,50 +29,60 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
-import com.vaadin.flow.component.ComponentUtil;
+import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.Location;
+import com.vaadin.flow.router.LocationChangeEvent;
+import com.vaadin.flow.router.NavigationHandler;
+import com.vaadin.flow.router.NavigationState;
+import com.vaadin.flow.router.NavigationTrigger;
+import com.vaadin.flow.router.NotFoundException;
+import com.vaadin.flow.router.Router;
+import com.vaadin.flow.router.internal.ErrorTargetEntry;
+import com.vaadin.flow.server.VaadinRequest;
+import com.vaadin.flow.server.VaadinResponse;
+import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.when;
 
+/**
+ * Covers how {@link NavigationMetricsBinder} closes out navigations, in
+ * particular the ones that never reach {@code afterNavigation} because they
+ * were rerouted away or aborted.
+ */
 class NavigationMetricsBinderTest {
 
-    private static final String SAMPLE_KEY = NavigationMetricsBinder.class
-            .getName() + ".sample";
-    private static final String ROUTE_KEY = NavigationMetricsBinder.class
-            .getName() + ".route";
-    private static final String OBSERVATION_KEY = NavigationMetricsBinder.class
-            .getName() + ".observation";
-    private static final String OBSERVATION_SCOPE_KEY = NavigationMetricsBinder.class
-            .getName() + ".observation.scope";
+    @Tag("first-view")
+    private static class FirstView extends Component {
+    }
 
-    /**
-     * Recording handler that captures observation names, low-cardinality tags,
-     * and the last context for verification.
-     */
+    @Tag("second-view")
+    private static class SecondView extends Component {
+    }
+
+    private static final String FIRST = FirstView.class.getSimpleName();
+    private static final String SECOND = SecondView.class.getSimpleName();
+
     private static final class RecordingHandler
             implements ObservationHandler<Observation.Context> {
 
         final List<String> names = new ArrayList<>();
+        final List<String> contextualNames = new ArrayList<>();
         final List<Map<String, String>> tags = new ArrayList<>();
-        Observation.Context lastContext;
 
         @Override
         public void onStop(Observation.Context ctx) {
-            lastContext = ctx;
             names.add(ctx.getName());
+            contextualNames.add(ctx.getContextualName());
             Map<String, String> snap = new HashMap<>();
             for (KeyValue kv : ctx.getLowCardinalityKeyValues()) {
                 snap.put(kv.getKey(), kv.getValue());
@@ -82,34 +96,380 @@ class NavigationMetricsBinderTest {
         }
     }
 
-    /** Simple navigation target for testing route resolution. */
-    static class HomeView extends Component {
-    }
-
-    /** Another navigation target, for testing multiple routes. */
-    static class UsersView extends Component {
-    }
-
-    private MockedStatic<UI> uiMockedStatic;
-    private UI mockUi;
-    private RouteTagResolver routes;
+    private SimpleMeterRegistry registry;
+    private Router router;
+    private UI ui;
 
     @BeforeEach
     void setUp() {
-        mockUi = mock(UI.class);
-        uiMockedStatic = mockStatic(UI.class);
-        uiMockedStatic.when(UI::getCurrent).thenReturn(mockUi);
-        routes = new RouteTagResolver(200);
+        registry = new SimpleMeterRegistry();
+        router = Mockito.mock(Router.class);
+        ui = new UI();
     }
 
     @AfterEach
     void tearDown() {
-        uiMockedStatic.close();
+        UI.setCurrent(null);
         RequestInteraction.clear();
     }
 
+    private NavigationMetricsBinder binder() {
+        return new NavigationMetricsBinder(registry, new RouteTagResolver(100));
+    }
+
+    private NavigationMetricsBinder tracingBinder(ObservationRegistry obs) {
+        return new NavigationMetricsBinder(registry, obs,
+                ObservabilitySettings.builder().traces(true).build(),
+                new RouteTagResolver(100));
+    }
+
+    private BeforeEnterEvent beforeEnter(Class<? extends Component> target) {
+        return beforeEnter(target, ui);
+    }
+
+    private BeforeEnterEvent beforeEnter(Class<? extends Component> target,
+            UI targetUi) {
+        return new BeforeEnterEvent(router, NavigationTrigger.UI_NAVIGATE,
+                new Location("view"), target, targetUi, List.of());
+    }
+
+    /**
+     * Marks the event as rerouted the way Flow does once a listener called
+     * {@code rerouteTo}, without needing a live route registry.
+     */
+    private void rerouteAway(BeforeEnterEvent event) {
+        event.rerouteTo(Mockito.mock(NavigationHandler.class),
+                Mockito.mock(NavigationState.class));
+    }
+
+    private void forwardAway(BeforeEnterEvent event) {
+        event.forwardTo(Mockito.mock(NavigationHandler.class),
+                Mockito.mock(NavigationState.class));
+    }
+
+    private AfterNavigationEvent afterNavigation() {
+        return afterNavigationOn(ui);
+    }
+
+    private AfterNavigationEvent afterNavigationOn(UI targetUi) {
+        return new AfterNavigationEvent(new LocationChangeEvent(router,
+                targetUi, NavigationTrigger.UI_NAVIGATE, new Location("view"),
+                List.of()));
+    }
+
+    private double timerCount(String route, String outcome) {
+        Timer timer = registry.find(MeterNames.NAVIGATION)
+                .tags(MeterNames.TAG_ROUTE, route, MeterNames.TAG_OUTCOME,
+                        outcome)
+                .timer();
+        return timer == null ? 0 : timer.count();
+    }
+
+    private void requestEnd(NavigationMetricsBinder binder) {
+        binder.requestEnd(Mockito.mock(VaadinRequest.class),
+                Mockito.mock(VaadinResponse.class),
+                Mockito.mock(VaadinSession.class));
+    }
+
+    @Test
+    void completedNavigationRecordsSuccess() {
+        NavigationMetricsBinder binder = binder();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void rerouteRecordsSupersededNavigationAsRerouted() {
+        NavigationMetricsBinder binder = binder();
+
+        // rerouteTo re-runs the chain: beforeEnter fires twice and only the
+        // second navigation reaches afterNavigation.
+        BeforeEnterEvent first = beforeEnter(FirstView.class);
+        binder.beforeEnter(first);
+        rerouteAway(first);
+        binder.beforeEnter(beforeEnter(SecondView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_REROUTED));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void forwardRecordsSupersededNavigationAsForwarded() {
+        NavigationMetricsBinder binder = binder();
+
+        BeforeEnterEvent first = beforeEnter(FirstView.class);
+        binder.beforeEnter(first);
+        forwardAway(first);
+        binder.beforeEnter(beforeEnter(SecondView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_FORWARDED));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void externalForwardIsRecordedAsForwardedAtRequestEnd() {
+        NavigationMetricsBinder binder = binder();
+
+        // forwardToUrl redirects the browser instead of re-running the chain,
+        // so nothing supersedes this navigation within the request.
+        BeforeEnterEvent event = beforeEnter(FirstView.class);
+        binder.beforeEnter(event);
+        event.forwardToUrl("https://example.com/elsewhere");
+        requestEnd(binder);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_FORWARDED));
+    }
+
+    @Test
+    void rerouteToErrorIsRecordedAsError() {
+        NavigationMetricsBinder binder = binder();
+        // rerouteToError resolves the error view through the router, so this
+        // event needs a UI whose internals hand one back.
+        UI mockUi = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
+        Mockito.when(mockUi.getInternals().getRouter()).thenReturn(router);
+        Mockito.when(router.getErrorNavigationTarget(Mockito.any()))
+                .thenReturn(Optional.of(new ErrorTargetEntry(SecondView.class,
+                        NotFoundException.class)));
+        BeforeEnterEvent event = beforeEnter(FirstView.class, mockUi);
+
+        binder.beforeEnter(event);
+        event.rerouteToError(NotFoundException.class);
+        binder.beforeEnter(beforeEnter(SecondView.class, mockUi));
+
+        // The error view is a reroute target, but the navigation genuinely
+        // failed, so it must not be filed under the routing outcomes.
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_REROUTED));
+    }
+
+    @Test
+    void abandonedNavigationIsRecordedAsErrorAtRequestEnd() {
+        NavigationMetricsBinder binder = binder();
+
+        // No afterNavigation: the view blew up while being instantiated.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        requestEnd(binder);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void requestEndWithoutNavigationRecordsNothing() {
+        NavigationMetricsBinder binder = binder();
+
+        requestEnd(binder);
+
+        assertNull(registry.find(MeterNames.NAVIGATION).timer());
+    }
+
+    @Test
+    void completedNavigationIsNotRecordedTwiceAtRequestEnd() {
+        NavigationMetricsBinder binder = binder();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+        requestEnd(binder);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void rerouteStopsSupersededObservationAndClosesItsScope() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+        NavigationMetricsBinder binder = tracingBinder(obs);
+
+        BeforeEnterEvent first = beforeEnter(FirstView.class);
+        binder.beforeEnter(first);
+        rerouteAway(first);
+        binder.beforeEnter(beforeEnter(SecondView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(List.of(MeterNames.NAVIGATION, MeterNames.NAVIGATION),
+                recorder.names);
+        assertEquals(FIRST,
+                recorder.tags.get(0).get(ObservationNames.KEY_ROUTE));
+        assertEquals(ObservationNames.OUTCOME_REROUTED,
+                recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
+        assertEquals(SECOND,
+                recorder.tags.get(1).get(ObservationNames.KEY_ROUTE));
+        assertEquals(ObservationNames.OUTCOME_SUCCESS,
+                recorder.tags.get(1).get(ObservationNames.KEY_OUTCOME));
+        // Both scopes were closed, so nothing dangles on the request thread.
+        assertNull(obs.getCurrentObservation());
+    }
+
+    @Test
+    void abandonedObservationIsStoppedAndUnscopedAtRequestEnd() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+        NavigationMetricsBinder binder = tracingBinder(obs);
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        requestEnd(binder);
+
+        assertEquals(1, recorder.names.size());
+        assertEquals(ObservationNames.OUTCOME_ERROR,
+                recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
+        assertNull(obs.getCurrentObservation());
+    }
+
+    @Test
+    void requestStartDropsStaleMarkerFromPreviousRequest() {
+        NavigationMetricsBinder binder = binder();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        // A new request on the same (pooled) thread must not close out a
+        // navigation left behind by the previous one.
+        binder.requestStart(Mockito.mock(VaadinRequest.class),
+                Mockito.mock(VaadinResponse.class));
+        requestEnd(binder);
+
+        assertNull(registry.find(MeterNames.NAVIGATION).timer());
+    }
+
+    @Test
+    void reEntrantNavigationRecordsSupersededNavigationAsUnknown() {
+        NavigationMetricsBinder binder = binder();
+
+        // UI.navigate() from a view's beforeEnter or onAttach nests a second
+        // navigation inside the first, which sets no redirect flag: the first
+        // was superseded, not failed, so it must not be tagged as an error.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.beforeEnter(beforeEnter(SecondView.class));
+        binder.afterNavigation(afterNavigation());
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
+    }
+
+    @Test
+    void afterNavigationOnAnotherUiKeepsThisUisBackstop() {
+        NavigationMetricsBinder binder = binder();
+        UI other = new UI();
+
+        // One request touching two UIs: an afterNavigation for a UI with
+        // nothing pending must not drop the marker of the UI that does have a
+        // navigation open, or requestEnd can no longer close it out.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigationOn(other));
+        requestEnd(binder);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void requestEndClosesOutEveryUiItLeftOpen() {
+        NavigationMetricsBinder binder = binder();
+        UI other = new UI();
+
+        // Access tasks queued for several UIs of a session run on the request
+        // thread, so two UIs can have a navigation open at the same time. Both
+        // have to be closed out, not just the one marked last.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.beforeEnter(beforeEnter(SecondView.class, other));
+        requestEnd(binder);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void detachClosesOutANavigationLeftOpenOffRequest() {
+        NavigationMetricsBinder binder = binder();
+
+        // A navigation started from UI.access() never reaches requestEnd, so
+        // detach is what keeps the entry from outliving the UI. Nothing about
+        // a detached UI says the navigation failed, hence unknown.
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.uiDetached(ui);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void detachRecordsANavigationOnlyOnce() {
+        NavigationMetricsBinder binder = binder();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+        binder.uiDetached(ui);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+    }
+
+    @Test
+    void requestEndClosesNavigationScopeInsideTheEnclosingRequestScope() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler());
+        NavigationMetricsBinder binder = tracingBinder(obs);
+
+        // The request scope RequestMetricsBinder opens at requestStart. Vaadin
+        // reverses the interceptor list, so the navigation binder — registered
+        // last — is the one that runs first at requestEnd, while this scope is
+        // still open.
+        Observation request = Observation.start(ObservationNames.REQUEST, obs);
+        Observation.Scope requestScope = request.openScope();
+
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        requestEnd(binder);
+
+        // Closing the navigation scope has to restore the enclosing request
+        // observation. Were the two closed in the opposite order, the stopped
+        // request observation would be put back as current here and every
+        // later request on this pooled thread would be parented under it.
+        assertSame(request, obs.getCurrentObservation());
+
+        requestScope.close();
+        request.stop();
+        assertNull(obs.getCurrentObservation());
+    }
+
+    @Test
+    void aNavigationAbandonedOffRequestDoesNotPinItsUiToThatThread()
+            throws Exception {
+        NavigationMetricsBinder binder = binder();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        // The UI is reached through a holder so that the task handed to the
+        // executor captures no reference of its own.
+        UI[] offRequest = { new UI() };
+        try {
+            // A navigation started from UI.access() on a background thread
+            // marks that thread, and no requestEnd ever runs there to drain
+            // the marker.
+            executor.submit(() -> binder
+                    .beforeEnter(beforeEnter(FirstView.class, offRequest[0])))
+                    .get(10, TimeUnit.SECONDS);
+            // Detach runs on whichever thread drops the UI, so it closes the
+            // navigation out but cannot reach the executor thread's marker.
+            binder.uiDetached(offRequest[0]);
+
+            WeakReference<UI> ref = new WeakReference<>(offRequest[0]);
+            offRequest[0] = null;
+
+            assertTrue(collected(ref),
+                    "a marker left on a pooled thread must not keep the UI alive");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     // -----------------------------------------------------------------
-    // Direct Timer path
+    // Path selection and what each path publishes
     // -----------------------------------------------------------------
 
     /**
@@ -121,415 +481,105 @@ class NavigationMetricsBinderTest {
     @CsvSource({ "false, false", "false, true", "true, false" })
     void directTimerPathRecordsTimerAndSkipsObservation(boolean traces,
             boolean withObservationRegistry) {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RecordingHandler recorder = new RecordingHandler();
-        ObservationRegistry observationRegistry = null;
+        ObservationRegistry obs = null;
         if (withObservationRegistry) {
-            observationRegistry = ObservationRegistry.create();
-            observationRegistry.observationConfig()
-                    .observationHandler(recorder);
+            obs = ObservationRegistry.create();
+            obs.observationConfig().observationHandler(recorder);
         }
         NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(traces).build(), routes);
+                obs, ObservabilitySettings.builder().traces(traces).build(),
+                new RouteTagResolver(100));
 
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.afterNavigation(mockAfterNavigation());
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
 
-        Timer timer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, "HomeView")
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(timer,
-                "vaadin.navigation timer with route and outcome=success should exist");
-        assertEquals(1L, timer.count());
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
         assertTrue(recorder.names.isEmpty(),
-                "no observation should fire outside the observation path");
+                "no observation may be started outside the observation path");
     }
 
     @Test
-    void directPathWithNullRouteFallsBackToUnknown() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                null, ObservabilitySettings.builder().traces(false).build(),
-                routes);
+    void navigationsToDifferentRoutesAreRecordedSeparately() {
+        NavigationMetricsBinder binder = binder();
 
-        binder.beforeEnter(mockBeforeEnter(null));
-        binder.afterNavigation(mockAfterNavigation());
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
+        binder.beforeEnter(beforeEnter(SecondView.class));
+        binder.afterNavigation(afterNavigation());
 
-        Timer timer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN)
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(timer,
-                "null navigation target should produce ROUTE_UNKNOWN tag");
-        assertEquals(1L, timer.count());
-    }
-
-    /**
-     * Covers the defensive fallback in {@code afterNavigation}: the stored
-     * route attribute is read back as {@code Object} and only trusted when it
-     * is a {@code String}.
-     */
-    @Test
-    void directPathWithNonStringRouteAttributeFallsBackToUnknown() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                null, ObservabilitySettings.builder().traces(false).build(),
-                routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        ComponentUtil.setData(mockUi, ROUTE_KEY, Integer.valueOf(1));
-        binder.afterNavigation(mockAfterNavigation());
-
-        Timer timer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN)
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(timer,
-                "a non-String route attribute should fall back to unknown");
-        assertEquals(1L, timer.count());
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
     }
 
     @Test
-    void constructorWithNullObservationRegistryUsesDefaults() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.afterNavigation(mockAfterNavigation());
-
-        Timer timer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, "HomeView")
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(timer,
-                "two-arg constructor should fall back to direct Timer when no observation registry");
-        assertEquals(1L, timer.count());
-    }
-
-    @Test
-    void twoNavigationsRecordSeparately() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                null, ObservabilitySettings.builder().traces(false).build(),
-                routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.afterNavigation(mockAfterNavigation());
-        binder.beforeEnter(mockBeforeEnter(UsersView.class));
-        binder.afterNavigation(mockAfterNavigation());
-
-        Timer homeTimer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, "HomeView")
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(homeTimer);
-        assertEquals(1L, homeTimer.count());
-
-        Timer usersTimer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, "UsersView")
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(usersTimer);
-        assertEquals(1L, usersTimer.count());
-    }
-
-    @Test
-    void twoNavigationsOnSameRouteAccumulate() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                null, ObservabilitySettings.builder().traces(false).build(),
-                routes);
+    void navigationsToTheSameRouteAccumulate() {
+        NavigationMetricsBinder binder = binder();
 
         for (int i = 0; i < 3; i++) {
-            binder.beforeEnter(mockBeforeEnter(HomeView.class));
-            binder.afterNavigation(mockAfterNavigation());
+            binder.beforeEnter(beforeEnter(FirstView.class));
+            binder.afterNavigation(afterNavigation());
         }
 
-        Timer timer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, "HomeView")
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(timer);
-        assertEquals(3L, timer.count(),
-                "same route should accumulate across multiple navigations");
-    }
-
-    // -----------------------------------------------------------------
-    // Observation path
-    // -----------------------------------------------------------------
-
-    @Test
-    void observationPathEmitsTimerWithRouteAndOutcome() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        observationRegistry.observationConfig().observationHandler(
-                new DefaultMeterObservationHandler(registry));
-
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.afterNavigation(mockAfterNavigation());
-
-        Timer timer = registry.find(MeterNames.NAVIGATION)
-                .tag(MeterNames.TAG_ROUTE, "HomeView")
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        assertNotNull(timer,
-                "DefaultMeterObservationHandler should emit vaadin.navigation timer");
-        assertEquals(1L, timer.count());
+        assertEquals(3, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
     }
 
     @Test
-    void observationPathCarriesRouteTag() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
+    void observationPathNamesTheSpanAfterTheRoute() {
+        ObservationRegistry obs = ObservationRegistry.create();
         RecordingHandler recorder = new RecordingHandler();
-        observationRegistry.observationConfig()
-                .observationHandler(
-                        new DefaultMeterObservationHandler(registry))
-                .observationHandler(recorder);
+        obs.observationConfig().observationHandler(recorder);
+        NavigationMetricsBinder binder = tracingBinder(obs);
 
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        binder.afterNavigation(afterNavigation());
 
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertEquals("HomeView", recorder.tags.get(0).get(MeterNames.TAG_ROUTE),
-                "observation should carry the route as a low-cardinality tag");
-        assertEquals(ObservationNames.OUTCOME_SUCCESS,
-                recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME),
-                "observation should carry outcome=success");
+        // The meter name alone would leave every navigation span looking
+        // alike in a trace view.
+        assertEquals(ObservationNames.NAVIGATION + " " + FIRST,
+                recorder.contextualNames.get(0));
     }
 
     @Test
-    void observationPathSetsContextualNameWithRoute() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        observationRegistry.observationConfig()
-                .observationHandler(
-                        new DefaultMeterObservationHandler(registry))
-                .observationHandler(recorder);
+    void beforeEnterMarksTheRequestInteractionAsNavigation() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler());
+        NavigationMetricsBinder binder = tracingBinder(obs);
 
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertEquals("vaadin.navigation HomeView",
-                recorder.lastContext.getContextualName(),
-                "contextual name should include the route");
-    }
-
-    @Test
-    void observationPathClosesScopeAndStopsObservation() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        observationRegistry.observationConfig().observationHandler(
-                new DefaultMeterObservationHandler(registry));
-
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertNull(observationRegistry.getCurrentObservation(),
-                "scope must be closed: no observation may remain current");
-    }
-
-    @Test
-    void beforeEnterMarksRequestInteractionAsNavigation() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
+        binder.beforeEnter(beforeEnter(FirstView.class));
 
         assertEquals(ObservationNames.INTERACTION_NAVIGATION,
                 RequestInteraction.take(),
-                "beforeEnter should mark the request interaction as navigation");
+                "the enclosing request span has to learn that this UIDL "
+                        + "request was a navigation");
 
-        binder.afterNavigation(mockAfterNavigation());
-    }
-
-    // -----------------------------------------------------------------
-    // Per-UI state handling
-    // -----------------------------------------------------------------
-
-    @Test
-    void beforeEnterSetsCurrentRouteInTelemetryContext() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                null, ObservabilitySettings.builder().traces(false).build(),
-                routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-
-        assertEquals("HomeView", VaadinTelemetryContext.currentRoute(),
-                "VaadinTelemetryContext should reflect the navigated route");
-
-        binder.afterNavigation(mockAfterNavigation());
+        binder.afterNavigation(afterNavigation());
     }
 
     @Test
-    void uiAttributesClearedAfterNavigation() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
+    void beforeEnterPublishesTheRouteToTheTelemetryContext() {
+        NavigationMetricsBinder binder = binder();
+        UI.setCurrent(ui);
 
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
+        // Set before the view renders, so instrumentation outside the Flow
+        // runtime can attribute construction-time work to the target view.
+        binder.beforeEnter(beforeEnter(FirstView.class));
 
-        assertNotNull(ComponentUtil.getData(mockUi, OBSERVATION_KEY),
-                "beforeEnter should have stored the in-flight observation");
-        assertNotNull(ComponentUtil.getData(mockUi, OBSERVATION_SCOPE_KEY),
-                "beforeEnter should have stored the observation scope");
+        assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
 
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertNull(ComponentUtil.getData(mockUi, SAMPLE_KEY),
-                "sample attribute should be cleared");
-        assertNull(ComponentUtil.getData(mockUi, ROUTE_KEY),
-                "route attribute should be cleared");
-        assertNull(ComponentUtil.getData(mockUi, OBSERVATION_KEY),
-                "observation attribute should be cleared");
-        assertNull(ComponentUtil.getData(mockUi, OBSERVATION_SCOPE_KEY),
-                "observation scope attribute should be cleared");
-    }
-
-    @Test
-    void afterNavigationWithNullUiReturnsEarly() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                null, ObservabilitySettings.builder().traces(false).build(),
-                routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-
-        uiMockedStatic.when(UI::getCurrent).thenReturn(null);
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertNull(registry.find(MeterNames.NAVIGATION).timer(),
-                "no timer should be recorded when UI.getCurrent() is null");
+        binder.afterNavigation(afterNavigation());
     }
 
     /**
-     * Documents current behavior: on the observation path the same early return
-     * leaves the observation unstopped and its scope open on the request
-     * thread, not just an unrecorded Timer sample.
+     * Whether {@code ref} has been cleared, giving the collector a bounded
+     * number of chances to get to it.
      */
-    @Test
-    void afterNavigationWithNullUiLeavesObservationOpen() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        observationRegistry.observationConfig()
-                .observationHandler(
-                        new DefaultMeterObservationHandler(registry))
-                .observationHandler(recorder);
-
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-
-        uiMockedStatic.when(UI::getCurrent).thenReturn(null);
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertTrue(recorder.names.isEmpty(),
-                "the observation is never stopped when UI.getCurrent() is null");
-        assertNotNull(observationRegistry.getCurrentObservation(),
-                "the open scope leaks when afterNavigation returns early");
-    }
-
-    /**
-     * Documents current behavior for a rerouted navigation. Flow fires
-     * {@code beforeEnter} once per target but only one {@code afterNavigation}
-     * follows, and the binder keeps the in-flight observation in a single UI
-     * attribute, so the second {@code beforeEnter} overwrites the first. The
-     * first observation is never stopped and its scope is never closed.
-     */
-    @Test
-    void rerouteLeavesFirstObservationUnstopped() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        observationRegistry.observationConfig()
-                .observationHandler(
-                        new DefaultMeterObservationHandler(registry))
-                .observationHandler(recorder);
-
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build(), routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-        binder.beforeEnter(mockBeforeEnter(UsersView.class));
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertEquals(1, recorder.names.size(),
-                "two observations were started but only the second one stopped");
-        assertNotNull(observationRegistry.getCurrentObservation(),
-                "the first observation's scope leaks and stays current after "
-                        + "the navigation completed");
-    }
-
-    /**
-     * {@code beforeEnter} stores its state on {@code event.getUI()} while
-     * {@code afterNavigation} reads it back from {@code UI.getCurrent()}. When
-     * the two differ the timing state is not found and the navigation is
-     * silently not recorded.
-     */
-    @Test
-    void afterNavigationOnADifferentUiRecordsNothing() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                null, ObservabilitySettings.builder().traces(false).build(),
-                routes);
-
-        binder.beforeEnter(mockBeforeEnter(HomeView.class));
-
-        UI otherUi = mock(UI.class);
-        uiMockedStatic.when(UI::getCurrent).thenReturn(otherUi);
-        binder.afterNavigation(mockAfterNavigation());
-
-        assertNull(registry.find(MeterNames.NAVIGATION).timer(),
-                "timing state is keyed to the event UI, so a different "
-                        + "UI.getCurrent() drops the sample");
-        assertNotNull(ComponentUtil.getData(mockUi, SAMPLE_KEY),
-                "the sample is left behind on the originating UI");
-    }
-
-    /**
-     * Creates a mocked BeforeEnterEvent for the given navigation target.
-     */
-    private BeforeEnterEvent mockBeforeEnter(
-            Class<? extends Component> navigationTarget) {
-        BeforeEnterEvent event = mock(BeforeEnterEvent.class);
-        when(event.getUI()).thenReturn(mockUi);
-        doReturn(navigationTarget).when(event).getNavigationTarget();
-        return event;
-    }
-
-    /**
-     * Creates a mocked AfterNavigationEvent.
-     */
-    private AfterNavigationEvent mockAfterNavigation() {
-        return mock(AfterNavigationEvent.class);
+    private static boolean collected(WeakReference<?> ref)
+            throws InterruptedException {
+        for (int i = 0; i < 50 && ref.get() != null; i++) {
+            System.gc();
+            Thread.sleep(10);
+        }
+        return ref.get() == null;
     }
 }

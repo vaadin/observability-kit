@@ -34,7 +34,36 @@ class ObservabilitySettingsTest {
         assertTrue(settings.isInsights());
         assertEquals(200, settings.getRouteCardinalityLimit());
         assertEquals(100, settings.getClientRatePerSession());
+        assertEquals(10000, settings.getUiStateSampleInterval());
+        assertEquals(0, settings.getUiStateBytesPerNode());
         assertEquals(100, settings.getInsightsCapacity());
+    }
+
+    @Test
+    void defaults_uiStateIsOptIn() {
+        // Measuring per-UI state walks a component tree, so unlike the counting
+        // binders it is not on until asked for.
+        assertFalse(ObservabilitySettings.builder().build().isUiState());
+        assertTrue(ObservabilitySettings.builder().uiState(true).build()
+                .isUiState());
+    }
+
+    @Test
+    void uiStateSampleInterval_negative_throwsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> ObservabilitySettings
+                .builder().uiStateSampleInterval(-1));
+    }
+
+    @Test
+    void uiStateSampleInterval_zero_isAllowed() {
+        assertDoesNotThrow(
+                () -> ObservabilitySettings.builder().uiStateSampleInterval(0));
+    }
+
+    @Test
+    void uiStateBytesPerNode_negative_throwsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().uiStateBytesPerNode(-1));
     }
 
     @Test
