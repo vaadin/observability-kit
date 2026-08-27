@@ -21,6 +21,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -68,6 +69,18 @@ class RpcMetricsBinderTest {
         public boolean supportsContext(Observation.Context context) {
             return true;
         }
+    }
+
+    /**
+     * Micrometer keeps the current scope in a {@code static} thread-local, so
+     * it is shared by every registry on this thread. A scope a test leaves open
+     * on purpose would otherwise become the parent of the next test's
+     * observations.
+     */
+    @AfterEach
+    void clearCurrentScope() {
+        ObservationRegistry.create().setCurrentObservationScope(null);
+        RequestInteraction.clear();
     }
 
     @Test
@@ -194,6 +207,88 @@ class RpcMetricsBinderTest {
                 "observation context should carry the recorded error");
         Assertions.assertTrue(recorder.errored.get(),
                 "errored flag should be set by the recording handler");
+    }
+
+    @Test
+    void leakedScopeIsClosedSoNextInvocationIsNotParentedOnStaleObservation() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig().observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
+
+        Assertions.assertNull(observationRegistry.getCurrentObservation(),
+                "precondition: no observation is current on this thread");
+
+        // An invocation whose invocationEnded never ran (e.g. mid-request
+        // shutdown) leaves its scope open on this thread.
+        binder.invocationStarted(eventStarted);
+        Assertions.assertNotNull(observationRegistry.getCurrentObservation(),
+                "precondition: the first invocation opened a scope");
+
+        // The pooled thread now serves the next invocation.
+        binder.invocationStarted(eventStarted);
+        binder.invocationEnded(eventEnded);
+
+        Assertions.assertNotNull(recorder.lastContext);
+        Assertions.assertNull(recorder.lastContext.getParentObservation(),
+                "new RPC span must not be parented on the stale observation");
+        Assertions.assertNull(observationRegistry.getCurrentObservation(),
+                "no scope should remain current once the invocation ended");
+    }
+
+    @Test
+    void leakedScopeIsOnlyDroppedSoTheCurrentRequestScopeIsNotEvicted() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig().observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationEndedEvent eventEnded = ended("event");
+
+        // A previous request's span, and an invocation inside it whose
+        // invocationEnded never ran (e.g. mid-request shutdown).
+        Observation previousRequest = Observation.start("previous.request",
+                observationRegistry);
+        Observation.Scope previousRequestScope = previousRequest.openScope();
+        binder.invocationStarted(eventStarted);
+
+        // The pooled thread now serves a new request, whose
+        // RequestMetricsBinder
+        // has already made this request's scope the current one.
+        Observation currentRequest = Observation.start("current.request",
+                observationRegistry);
+        Observation.Scope currentRequestScope = currentRequest.openScope();
+
+        binder.invocationStarted(eventStarted);
+        binder.invocationEnded(eventEnded);
+
+        // Closing the leaked scope here would restore the previous request's
+        // scope and evict this request's, re-parenting the rest of the
+        // request onto a span that is already over.
+        Assertions.assertNotNull(recorder.lastContext);
+        Assertions.assertSame(currentRequest,
+                recorder.lastContext.getParentObservation(),
+                "the RPC span must be parented on the current request span");
+        Assertions.assertSame(currentRequestScope,
+                observationRegistry.getCurrentObservationScope(),
+                "the current request's scope must survive the cleanup");
+
+        currentRequestScope.close();
+        currentRequest.stop();
+        previousRequestScope.close();
+        previousRequest.stop();
     }
 
     @Test

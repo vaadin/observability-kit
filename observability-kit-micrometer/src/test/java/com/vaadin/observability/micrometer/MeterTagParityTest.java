@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -25,6 +26,10 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.Location;
+import com.vaadin.flow.router.LocationChangeEvent;
+import com.vaadin.flow.router.NavigationTrigger;
+import com.vaadin.flow.router.Router;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -215,7 +220,9 @@ class MeterTagParityTest {
         Mockito.doReturn(ParityView.class).when(enter).getNavigationTarget();
 
         binder.beforeEnter(enter);
-        binder.afterNavigation(Mockito.mock(AfterNavigationEvent.class));
+        binder.afterNavigation(new AfterNavigationEvent(new LocationChangeEvent(
+                Mockito.mock(Router.class), ui, NavigationTrigger.UI_NAVIGATE,
+                new Location("view"), List.of())));
 
         return tags(registry, MeterNames.NAVIGATION);
     }

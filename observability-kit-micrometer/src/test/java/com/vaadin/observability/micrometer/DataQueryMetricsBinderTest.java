@@ -181,6 +181,36 @@ class DataQueryMetricsBinderTest {
     }
 
     @Test
+    void aNoOpObservationLeavesNoScopeCurrent() {
+        // A registry with no handlers hands back an observation that is a
+        // no-op for recording but still opens a real scope, and that scope
+        // registers itself in the thread-local Micrometer shares across every
+        // registry. Not closing it would leave a dead observation current on
+        // this pooled thread, so everything started on it afterwards - the
+        // next query, the next request, an actuator scrape - would be parented
+        // onto the finished query.
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        DataQueryMetricsBinder binder = new DataQueryMetricsBinder(registry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        Assertions.assertNull(observationRegistry.getCurrentObservation(),
+                "precondition: no observation is current on this thread");
+
+        binder.countStarted(new DataCountStartedEvent(ui, component, false));
+        binder.countEnded(new DataCountEndedEvent(ui, component, false, 10));
+        binder.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        binder.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 0, 50, false, 50));
+
+        Assertions.assertNull(observationRegistry.getCurrentObservationScope(),
+                "no scope may stay current once the queries ended");
+        Assertions.assertNull(observationRegistry.getCurrentObservation(),
+                "no observation may stay current once the queries ended");
+    }
+
+    @Test
     void aFetchOnAnotherThreadIsStillMeasured() throws Exception {
         // A component using DataCommunicator#enablePushUpdates fetches on its
         // own executor, where none of the getCurrent() thread locals are set.
