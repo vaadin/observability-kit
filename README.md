@@ -227,7 +227,7 @@ ObservabilitySettings.builder()
 | `vaadin.ui.state.sample.age.max` | Gauge | Age in seconds of the stalest per-UI measurement in the aggregate (opt-in). |
 | `vaadin.session.state.nodes.max` | Gauge | State-tree nodes held by the largest single session (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.session.uis.max` | Gauge | Most UIs (browser tabs) held open by one session (opt-in, see `vaadin.observability.ui-state`). |
-| `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). |
+| `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). See [Navigation outcomes](#navigation-outcomes) for what a navigation that never completes is recorded as. |
 | `vaadin.request.duration` | Timer | Server-side request handling time. |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
 | `vaadin.errors` | Counter | Server-side errors (tagged by `exception`). |
@@ -240,6 +240,33 @@ ObservabilitySettings.builder()
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
 | `vaadin.db.query` | Timer | Duration of a JDBC query, tagged by `route`. Produced alongside the query span when database monitoring and tracing are both on. |
+
+### Navigation outcomes
+
+`vaadin.navigation` is timed from `beforeEnter` to `afterNavigation`, and every
+navigation that starts is recorded — including the ones that never complete,
+which would otherwise leave a span dangling. The `outcome` tag says how it
+ended:
+
+| `outcome` | Recorded for |
+| --- | --- |
+| `success` | The navigation reached `afterNavigation`. |
+| `rerouted` | A listener called `rerouteTo`, so this navigation was replaced by another. A routing decision (an access guard sending the user elsewhere), not a failure. |
+| `forwarded` | A listener called `forwardTo`, `forwardToUrl`, or handed off to a client-side route. |
+| `error` | The navigation failed: `rerouteToError`, or an exception while the view was being built. |
+| `unknown` | The navigation was neither completed nor redirected: a re-entrant `UI.navigate()` from a view's `beforeEnter` or `onAttach` superseded it, or its UI was detached while it was still open. |
+
+Two things to keep in mind when building an error rate on this timer, both of
+which follow from timing the router's own chain — an error view is a navigation
+in its own right, and it is one that succeeds:
+
+- an unknown URL never reaches a `beforeEnter` that could fail, so it is
+  recorded as the error view rendering successfully:
+  `route=RouteNotFoundError, outcome=success`. Alert on that route rather than
+  on `outcome`;
+- a view that throws while being built produces two samples — the failed
+  navigation to the view (`outcome=error`) and the navigation to the error view
+  that replaces it (`route=InternalServerError, outcome=success`).
 
 ## UI state size
 

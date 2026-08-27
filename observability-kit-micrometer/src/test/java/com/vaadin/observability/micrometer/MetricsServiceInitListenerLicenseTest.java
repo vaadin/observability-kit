@@ -84,7 +84,9 @@ class MetricsServiceInitListenerLicenseTest {
         // the dev-tools Copilot panel injector (the latter is skipped in
         // production - see productionMode_registersWithoutCheckingLicense).
         verify(service, times(2)).addUIInitListener(any(UIInitListener.class));
-        verify(event).addVaadinRequestInterceptor(
+        // Two request interceptors: request timing/errors, and the navigation
+        // binder closing out navigations that never complete.
+        verify(event, times(2)).addVaadinRequestInterceptor(
                 any(VaadinRequestInterceptor.class));
     }
 
