@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.lang.ref.Reference;
+
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -66,7 +68,12 @@ class SessionLockMetricsBinderTest {
         SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
                 registry);
 
-        CurrentInstance.set(VaadinRequest.class, mock(VaadinRequest.class));
+        // Hold a strong reference for the duration of the test:
+        // CurrentInstance stores values in WeakReferences, so an inline mock
+        // could be collected between set() and the binder's
+        // getCurrentRequest(), flipping the context tag to "access".
+        VaadinRequest request = mock(VaadinRequest.class);
+        CurrentInstance.set(VaadinRequest.class, request);
         try {
             binder.lockRequested(mock(SessionLockRequestedEvent.class));
             binder.lockAcquired(mock(SessionLockAcquiredEvent.class));
@@ -79,6 +86,10 @@ class SessionLockMetricsBinderTest {
                     .tag(MeterNames.TAG_CONTEXT, MeterNames.CONTEXT_REQUEST)
                     .timer().count());
         } finally {
+            // Keeps the mock strongly reachable through the assertions above;
+            // without this the JIT may let GC clear the weak reference after
+            // the last use of the local.
+            Reference.reachabilityFence(request);
             CurrentInstance.clearAll();
         }
     }
