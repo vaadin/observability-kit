@@ -10,7 +10,10 @@ package com.vaadin.observability.micrometer.client;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
+import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -190,6 +193,106 @@ class ClientMetricsBinderTest {
 
         assertEquals(2.0, registry.counter(MeterNames.CLIENT_DROPPED).count(),
                 1e-9);
+    }
+
+    // --- ingest: connection state ---
+
+    @Test
+    void connectionSampleCountsTheStateEntered() {
+        binder.ingest(List.of(sample(MeterNames.CLIENT_CONNECTION, 0.0, Map
+                .of(MeterNames.TAG_STATE, MeterNames.STATE_CONNECTION_LOST))));
+
+        assertEquals(1.0,
+                registry.counter(MeterNames.CLIENT_CONNECTION,
+                        MeterNames.TAG_STATE, MeterNames.STATE_CONNECTION_LOST)
+                        .count(),
+                1e-9);
+    }
+
+    @Test
+    void connectionSampleIgnoresEverySecondTagTheBrowserSends() {
+        // The state tag set is fixed. A browser that adds tags of its own must
+        // not be able to fan this counter out into extra series.
+        binder.ingest(List.of(sample(MeterNames.CLIENT_CONNECTION, 0.0,
+                Map.of(MeterNames.TAG_STATE, MeterNames.STATE_RECONNECTING,
+                        "session", "u-42", "attempt", "7"))));
+
+        assertEquals(List.of(MeterNames.TAG_STATE),
+                registry.find(MeterNames.CLIENT_CONNECTION).counter().getId()
+                        .getTags().stream().map(Tag::getKey).toList());
+    }
+
+    @Test
+    void craftedConnectionStateIsBucketed() {
+        binder.ingest(List.of(
+                sample(MeterNames.CLIENT_CONNECTION, 0.0,
+                        Map.of(MeterNames.TAG_STATE, "state-" + 1)),
+                sample(MeterNames.CLIENT_CONNECTION, 0.0,
+                        Map.of(MeterNames.TAG_STATE, "state-" + 2))));
+
+        assertEquals(2.0,
+                registry.counter(MeterNames.CLIENT_CONNECTION,
+                        MeterNames.TAG_STATE, MeterNames.STATE_UNKNOWN).count(),
+                1e-9);
+    }
+
+    @Test
+    void downtimeIsRecordedAgainstTheStateItWasSpentIn() {
+        binder.ingest(List.of(sample(MeterNames.CLIENT_CONNECTION_DOWNTIME,
+                4200.0, Map.of(MeterNames.TAG_STATE,
+                        MeterNames.STATE_CONNECTION_LOST))));
+
+        Timer timer = registry.find(MeterNames.CLIENT_CONNECTION_DOWNTIME)
+                .tag(MeterNames.TAG_STATE, MeterNames.STATE_CONNECTION_LOST)
+                .timer();
+        assertEquals(1L, timer.count());
+        assertEquals(4200.0, timer.totalTime(TimeUnit.MILLISECONDS), 1.0);
+    }
+
+    @Test
+    void anOutageThatNeverGaveUpRetryingIsStillTimed() {
+        // Flow only reaches connection-lost once it has exhausted its retries,
+        // so a short outage lives entirely in reconnecting. Timing that state
+        // is what keeps a brief disconnection measurable at all.
+        binder.ingest(List.of(sample(MeterNames.CLIENT_CONNECTION_DOWNTIME,
+                800.0,
+                Map.of(MeterNames.TAG_STATE, MeterNames.STATE_RECONNECTING))));
+
+        assertEquals(800.0, registry.find(MeterNames.CLIENT_CONNECTION_DOWNTIME)
+                .tag(MeterNames.TAG_STATE, MeterNames.STATE_RECONNECTING)
+                .timer().totalTime(TimeUnit.MILLISECONDS), 1.0);
+    }
+
+    @Test
+    void downtimeCarriesTheStateTagAndNothingElse() {
+        binder.ingest(
+                List.of(sample(MeterNames.CLIENT_CONNECTION_DOWNTIME, 4200.0,
+                        Map.of(MeterNames.TAG_STATE,
+                                MeterNames.STATE_CONNECTION_LOST, "route",
+                                "/uc5", "session", "u-42"))));
+
+        // Downtime is an aggregate over browsers; the route a tab happened to
+        // be on when it lost the server does not narrow it.
+        assertEquals(List.of(MeterNames.TAG_STATE),
+                registry.find(MeterNames.CLIENT_CONNECTION_DOWNTIME).timer()
+                        .getId().getTags().stream().map(Tag::getKey).toList());
+    }
+
+    @Test
+    void downtimeInAStateTheBrowserCannotBeUnreachableInIsBucketed() {
+        // "connected" on a downtime sample is a contradiction, and the value
+        // comes from the browser.
+        binder.ingest(List.of(
+                sample(MeterNames.CLIENT_CONNECTION_DOWNTIME, 10.0,
+                        Map.of(MeterNames.TAG_STATE,
+                                MeterNames.STATE_CONNECTED)),
+                sample(MeterNames.CLIENT_CONNECTION_DOWNTIME, 10.0,
+                        Map.of(MeterNames.TAG_STATE, "made-up"))));
+
+        assertEquals(2L,
+                registry.find(MeterNames.CLIENT_CONNECTION_DOWNTIME)
+                        .tag(MeterNames.TAG_STATE, MeterNames.STATE_UNKNOWN)
+                        .timer().count());
     }
 
     // --- helper ---

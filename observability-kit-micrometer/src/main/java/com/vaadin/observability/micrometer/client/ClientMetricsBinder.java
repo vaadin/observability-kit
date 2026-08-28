@@ -53,15 +53,26 @@ public final class ClientMetricsBinder {
             if (!ClientMetricNames.isAllowed(name)) {
                 continue;
             }
+            // The connection meters do not go through the generic tag path:
+            // their tag set is fixed, and the whole point of the meter is to
+            // survive a payload written by a browser that has just proven it
+            // can be out of contact with the server.
+            if (MeterNames.CLIENT_CONNECTION.equals(name)) {
+                recordConnection(sample);
+                continue;
+            }
+            if (MeterNames.CLIENT_CONNECTION_DOWNTIME.equals(name)) {
+                recordDuration(name, new String[] { MeterNames.TAG_STATE,
+                        ClientMetricNames.downtimeState(
+                                sample.getTags().get(MeterNames.TAG_STATE)) },
+                        sample);
+                continue;
+            }
             String[] tags = buildTags(sample);
             if (ClientMetricNames.isCounter(name)) {
                 registry.counter(name, tags).increment();
             } else {
-                long nanos = (long) (sample.getValueMs() * 1_000_000.0);
-                if (nanos < 0) {
-                    continue;
-                }
-                registry.timer(name, tags).record(Duration.ofNanos(nanos));
+                recordDuration(name, tags, sample);
             }
         }
     }
@@ -76,6 +87,27 @@ public final class ClientMetricsBinder {
         if (count > 0) {
             registry.counter(MeterNames.CLIENT_THROTTLED).increment(count);
         }
+    }
+
+    /**
+     * Counts one connection-state transition. Only the state entered is tagged,
+     * and only from the bounded set: the browser has no say in how many series
+     * this meter can grow to.
+     */
+    private void recordConnection(ClientSample sample) {
+        String state = ClientMetricNames
+                .connectionState(sample.getTags().get(MeterNames.TAG_STATE));
+        registry.counter(MeterNames.CLIENT_CONNECTION, MeterNames.TAG_STATE,
+                state).increment();
+    }
+
+    private void recordDuration(String name, String[] tags,
+            ClientSample sample) {
+        long nanos = (long) (sample.getValueMs() * 1_000_000.0);
+        if (nanos < 0) {
+            return;
+        }
+        registry.timer(name, tags).record(Duration.ofNanos(nanos));
     }
 
     private String[] buildTags(ClientSample sample) {

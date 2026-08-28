@@ -184,7 +184,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.requests` | `true` | Server-side request and RPC timing. |
 | `vaadin.observability.data` | `true` | Data provider count/fetch query timing and page sizes for lazy-loading components. |
 | `vaadin.observability.errors` | `true` | Error counters. |
-| `vaadin.observability.client` | `true` | Browser-side timing collected from the client. |
+| `vaadin.observability.client` | `true` | Browser-side timing, connection state and errors collected from the client (see [Connection and client-side problems](#connection-and-client-side-problems)). |
 | `vaadin.observability.resync` | `true` | Observe UIDL message resends and client-requested resynchronizations. |
 | `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route and (when tracing is on) emit a span per query (Spring Boot starter only). |
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
@@ -243,6 +243,8 @@ ObservabilitySettings.builder()
 | `vaadin.client.web_vitals.lcp` | Timer | Largest Contentful Paint. |
 | `vaadin.client.web_vitals.fcp` | Timer | First Contentful Paint. |
 | `vaadin.client.errors` | Counter | Errors reported by the browser. |
+| `vaadin.client.connection` | Counter | Browser connection-state transitions, tagged by the `state` entered: `connected`, `connection-lost`, `reconnecting`. See [Connection and client-side problems](#connection-and-client-side-problems). |
+| `vaadin.client.connection.downtime` | Timer | How long a browser stayed unable to reach the server, measured on the browser's clock and tagged by the `state` it was spent in (`connection-lost`, `reconnecting`). |
 | `vaadin.client.dropped` | Counter | Client samples dropped before recording. |
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
@@ -372,6 +374,82 @@ the kit's wrapper rather than the instance you set. Delegating to it works as
 expected (the failure is still counted exactly once); an `instanceof` check or a
 cast to your own type does not. Set `vaadin.observability.errors=false` to opt
 out entirely.
+
+## Connection and client-side problems
+
+A class of failure never reaches a server log: a user's browser loses the
+server and gets it back, or a script fails in a tab nobody is watching. The
+server sees a session that goes quiet and then talks again, and — for the
+failed script — nothing at all.
+
+The in-browser collector covers both, with no configuration beyond
+`vaadin.observability.client` (on by default).
+
+**Connection state.** Flow's client keeps the connection in
+`window.Vaadin.connectionState`. The collector subscribes to it and records
+`vaadin.client.connection` for every transition, tagged with the state entered,
+plus `vaadin.client.connection.downtime` for how long the browser was gone.
+Five things about those numbers are worth knowing:
+
+- **Downtime is per state, not per outage.** Flow enters `RECONNECTING` on the
+  first failed request and only reaches `CONNECTION_LOST` once it has exhausted
+  its retries, so the two states answer different questions: time under
+  `reconnecting` is a network that hiccuped, time under `connection-lost` a
+  server the browser has given up on. `vaadin.client.connection.downtime` is
+  tagged accordingly, and a short outage that recovers while Flow is still
+  retrying never enters `connection-lost` at all — it is measured under
+  `reconnecting` instead of being missed. Sum the two tags for the length of a
+  whole outage:
+
+  ```promql
+  sum(rate(vaadin_client_connection_downtime_seconds_sum[5m]))
+  ```
+
+- **`loading` is not a connection state.** Flow drives the store through
+  `LOADING` around *every* UIDL request to run the loading indicator. The
+  collector ignores it in both directions and reports each transition against
+  the last state that was not `LOADING`, so the counter counts real connection
+  events rather than one per click — and a retry that fails mid-outage reads as
+  an attempt rather than a recovery followed by a second loss. A payload that
+  reports `loading` anyway is bucketed as `_unknown`; the `state` tag can never
+  hold more than four values.
+- **The clock is the browser's.** A transition into `connection-lost` cannot be
+  sent while the browser is in it, so samples are buffered — in
+  `sessionStorage`, so a reload does not lose them — and flushed on recovery,
+  and the downtime is measured entirely on the clock that timestamped it.
+  Subtracting an arrival time on the server would report clock skew plus
+  buffering delay rather than the outage.
+- **The downtime timer under-reports by construction.** Three ways, all of them
+  the same shape — a segment is only measured when the browser leaves the state,
+  and only reportable once it can reach the server again, so an outage nobody
+  comes back from is never recorded. A tab closed mid-outage
+  takes its `sessionStorage` with it, and only the browser's own "reopen closed
+  tab" or session restore brings the buffer back; a fresh tab gets an empty
+  one. An outage that spans a reload leaves its `connection-lost` count in the
+  restored buffer but no downtime at all, because the page that would have seen
+  the recovery is gone and the clock it kept was in memory — and in the rarer
+  case where the reloaded page comes up already offline, its clock starts at
+  the reload rather than at the start of the outage. And a tab left
+  offline forever contributes nothing. Read the timer as evidence that outages
+  happen and roughly how long the observed ones lasted, never as a total; the
+  `connection-lost` count is the more honest measure of how often.
+- **A long outage can outrun the rate limit.** The reports of one outage all
+  arrive in the flush that follows it, and `client-rate-per-session` caps how
+  many samples a session may contribute per 10 s window. The server keeps the
+  head of an oversized batch and counts the rest as `vaadin.client.throttled`,
+  so the loss is not spread evenly — the collector orders each batch so that
+  the connection samples go first and browser errors next, since each of those
+  is a finding rather than a point in a distribution. What gets dropped is
+  bootstrap timing, navigation timing and web vitals. Raise the limit if your
+  browsers routinely produce more.
+
+Beware what a UI poll does to these numbers. A poll is a UIDL request, so a
+polling view probes the connection on every tick. The loading round trip
+itself is ignored, so no transition is manufactured — but a poll that gets
+through ends the outage as far as the browser is concerned, so a polling tab
+reports shorter downtime than a passive one sitting on the same network. If a
+view exists to show these meters, refresh it from the report rather than from a
+schedule: the browser flushes on recovery, and that flush is itself an RPC.
 
 ## Database fetch size
 
