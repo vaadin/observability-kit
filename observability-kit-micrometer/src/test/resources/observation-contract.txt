@@ -1,0 +1,49 @@
+# The public span surface of Observability Kit: every Observation the kit can
+# emit, the full set of span names it produces, and its low- and
+# high-cardinality attribute keys. Span names and attributes are consumed by
+# dashboards and trace queries outside this repository, so treat any change to
+# this file as a breaking change and call it out in the release notes.
+#
+# The Timer published on the Observation path additionally carries an "error"
+# tag that DefaultMeterObservationHandler derives from the Observation's error;
+# it is meter-side, not an attribute key, and is pinned by MeterTagParityTest.
+#
+# vaadin.rpc.<type> passes Flow's RPC invocation type through verbatim; the
+# type set is owned by Flow's handlers, so only the pattern is pinned here,
+# through one representative. The vaadin.navigation span name embeds the route
+# ("ContractView" is this test's fixture view). The "none" interaction value
+# never becomes a request span name: non-UIDL requests keep their type-based
+# name, and a UIDL request defaults to rpc.
+#
+# To update: run ObservationContractTest and copy the actual inventory it
+# prints.
+
+vaadin.data.count.duration
+  span-names: vaadin.data.count
+  low:  filtered, outcome
+  high: vaadin.data.component
+
+vaadin.data.fetch.duration
+  span-names: vaadin.data.fetch
+  low:  filtered, outcome
+  high: vaadin.data.component, vaadin.data.limit, vaadin.data.offset, vaadin.data.rows
+
+vaadin.navigation
+  span-names: vaadin.navigation ContractView
+  low:  outcome, route
+  high: (none)
+
+vaadin.request.duration
+  span-names: vaadin.request.heartbeat, vaadin.request.navigation, vaadin.request.other, vaadin.request.poll, vaadin.request.push, vaadin.request.rpc, vaadin.request.static
+  low:  http.method, outcome, vaadin.interaction, vaadin.request.type
+  high: ui.id, vaadin.client.location
+
+vaadin.rpc.duration
+  span-names: vaadin.rpc.event
+  low:  outcome, type
+  high: vaadin.rpc.component, vaadin.rpc.event
+
+vaadin.ui.access
+  span-names: vaadin.ui.access
+  low:  (none)
+  high: (none)
