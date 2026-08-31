@@ -37,6 +37,10 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
  * <p>
+ * Both modes are gated on the {@code requests} setting: with it off the binder
+ * times nothing and emits no request observation, and only its error handling
+ * and the framework HTTP-observation callbacks stay active.
+ * <p>
  * Both paths publish {@link MeterNames#REQUEST_DURATION} with the same tag
  * keys, all bounded: {@code vaadin.request.type}, {@code vaadin.interaction},
  * {@code http.method}, {@code outcome} and {@code error}. Keeping the two in
@@ -62,7 +66,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private static final BiConsumer<VaadinRequest, String> NO_ENRICH = (r,
             t) -> {
     };
-    private static final BiConsumer<VaadinRequest, Exception> NO_MARK = (r,
+    private static final BiConsumer<VaadinRequest, Throwable> NO_MARK = (r,
             t) -> {
     };
 
@@ -71,7 +75,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private final ObservabilitySettings settings;
     private final ErrorCounter errors;
     private final BiConsumer<VaadinRequest, String> httpObservationEnricher;
-    private final BiConsumer<VaadinRequest, Exception> httpObservationErrorMarker;
+    private final BiConsumer<VaadinRequest, Throwable> httpObservationErrorMarker;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
@@ -118,7 +122,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             ObservabilitySettings settings,
             BiConsumer<VaadinRequest, String> httpObservationEnricher,
             ErrorCounter errors,
-            BiConsumer<VaadinRequest, Exception> httpObservationErrorMarker) {
+            BiConsumer<VaadinRequest, Throwable> httpObservationErrorMarker) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
@@ -312,6 +316,16 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             // Parity with the Observation path, where the obs.error() below
             // makes DefaultMeterObservationHandler add the error tag for us.
             error = handledError.getClass().getSimpleName();
+        }
+        if (handledError != null && !interceptorError) {
+            // A user-triggered failure Flow routed to the session error
+            // handler never escapes request handling, so handleException has
+            // not marked the framework HTTP observation for it. Relay it here
+            // — also when request timing is off and no vaadin.request span
+            // exists to carry it — so root-span error monitoring still sees
+            // the failure. Cannot double-mark: handleException sets
+            // interceptorError.
+            httpObservationErrorMarker.accept(request, handledError);
         }
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;

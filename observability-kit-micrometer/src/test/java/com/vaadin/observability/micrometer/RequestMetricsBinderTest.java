@@ -12,9 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import io.micrometer.core.instrument.Timer;
-import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -111,7 +109,7 @@ class RequestMetricsBinderTest {
     @Test
     void exceptionInvokesHttpObservationErrorMarker() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        List<Exception> marked = new ArrayList<>();
+        List<Throwable> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build(), null,
                 new ErrorCounter(registry,
@@ -134,7 +132,7 @@ class RequestMetricsBinderTest {
     @Test
     void successfulRequestDoesNotInvokeHttpObservationErrorMarker() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        List<Exception> marked = new ArrayList<>();
+        List<Throwable> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build(), null,
                 new ErrorCounter(registry,
@@ -159,7 +157,7 @@ class RequestMetricsBinderTest {
         // only registered under isRequests() || isErrors(), so with both off
         // the marker never runs.
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        List<Exception> marked = new ArrayList<>();
+        List<Throwable> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).errors(false)
                         .build(),
@@ -178,61 +176,4 @@ class RequestMetricsBinderTest {
                 "vaadin.errors stays gated on the errors setting");
     }
 
-    @Test
-    void requestsDisabledRecordsNoTimingEvenWithTracesOn() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observations = ObservationRegistry.create();
-        observations.observationConfig().observationHandler(
-                new DefaultMeterObservationHandler(registry));
-        RequestMetricsBinder binder = new RequestMetricsBinder(registry,
-                observations, ObservabilitySettings.builder().requests(false)
-                        .traces(true).build());
-        VaadinRequest req = Mockito.mock(VaadinRequest.class);
-        VaadinResponse res = Mockito.mock(VaadinResponse.class);
-        VaadinSession session = Mockito.mock(VaadinSession.class);
-
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, session);
-
-        Assertions.assertNull(
-                registry.find(MeterNames.REQUEST_DURATION).timer(),
-                "requests=false must stop request timing on the "
-                        + "Observation path too, not only the direct path");
-    }
-
-    @Test
-    void requestsDisabledStillEnrichesHttpObservationAndMarksErrors() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        ObservationRegistry observations = ObservationRegistry.create();
-        observations.observationConfig().observationHandler(
-                new DefaultMeterObservationHandler(registry));
-        List<String> enriched = new ArrayList<>();
-        List<Exception> marked = new ArrayList<>();
-        RequestMetricsBinder binder = new RequestMetricsBinder(registry,
-                observations,
-                ObservabilitySettings
-                        .builder().requests(false).traces(true).build(),
-                (request, type) -> enriched.add(type),
-                new ErrorCounter(registry,
-                        ObservabilitySettings.builder().build()),
-                (request, failure) -> marked.add(failure));
-        VaadinRequest req = Mockito.mock(VaadinRequest.class);
-        VaadinResponse res = Mockito.mock(VaadinResponse.class);
-        VaadinSession session = Mockito.mock(VaadinSession.class);
-
-        binder.requestStart(req, res);
-        binder.handleException(req, res, session,
-                new IllegalStateException("boom"));
-        binder.requestEnd(req, res, session);
-
-        Assertions.assertEquals(List.of("other"), enriched,
-                "the framework HTTP observation is Spring's own; enriching "
-                        + "it follows traces, not requests");
-        Assertions.assertEquals(1, marked.size(),
-                "error marking corrects framework telemetry and is not "
-                        + "gated on requests");
-        Assertions.assertNull(
-                registry.find(MeterNames.REQUEST_DURATION).timer(),
-                "no request timer with requests=false");
-    }
 }

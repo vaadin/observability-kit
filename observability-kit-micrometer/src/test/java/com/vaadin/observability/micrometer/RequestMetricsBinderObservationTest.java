@@ -422,4 +422,141 @@ class RequestMetricsBinderObservationTest {
         Assertions.assertTrue(recorder.names.isEmpty(),
                 "no observation should fire when traces are disabled");
     }
+
+    @Test
+    void requestsDisabledEmitsNoObservationAndNoTimer() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+        obs.observationConfig().observationHandler(
+                new DefaultMeterObservationHandler(new SimpleMeterRegistry()));
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, obs,
+                ObservabilitySettings.builder().requests(false).traces(true)
+                        .build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getParameter("v-r")).thenReturn("uidl");
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        binder.requestStart(req, resp);
+        binder.requestEnd(req, resp, session);
+
+        Assertions.assertTrue(recorder.names.isEmpty(),
+                "requests=false must stop the request observation (the span), "
+                        + "not only the Timer");
+        Assertions.assertNull(
+                registry.find(MeterNames.REQUEST_DURATION).timer(),
+                "requests=false must stop request timing on the Observation "
+                        + "path too, not only the direct path");
+    }
+
+    @Test
+    void requestsDisabledStillEnrichesHttpObservationAndMarksErrors() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        List<String> enriched = new ArrayList<>();
+        List<Throwable> marked = new ArrayList<>();
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, obs,
+                ObservabilitySettings
+                        .builder().requests(false).traces(true).build(),
+                (request, type) -> enriched.add(type),
+                new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()),
+                (request, failure) -> marked.add(failure));
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        binder.requestStart(req, resp);
+        binder.handleException(req, resp, session,
+                new IllegalStateException("boom"));
+        binder.requestEnd(req, resp, session);
+
+        Assertions.assertEquals(List.of("other"), enriched,
+                "the framework HTTP observation is Spring's own; enriching it "
+                        + "follows traces, not requests");
+        Assertions.assertEquals(1, marked.size(),
+                "error marking corrects framework telemetry and is not gated "
+                        + "on requests");
+        Assertions.assertTrue(recorder.names.isEmpty(),
+                "no request observation with requests=false");
+    }
+
+    @Test
+    void handledErrorIsRelayedToHttpObservationMarker() {
+        // A user-triggered failure Flow routes to the session error handler
+        // never escapes request handling, so handleException never runs for
+        // it; the relay in requestEnd is its only path to root-span error
+        // monitoring. Exercised with requests=false, where it is also the
+        // failure's only trace-side signal of any kind.
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler());
+        List<Throwable> marked = new ArrayList<>();
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().requests(false).traces(true)
+                        .build(),
+                null, null, (request, failure) -> marked.add(failure));
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        IllegalStateException failure = new IllegalStateException("boom");
+        binder.requestStart(req, resp);
+        // markHandled only records while a request is current; req stays
+        // strongly referenced by this frame, so the CurrentInstance weak
+        // reference cannot be collected mid-test.
+        CurrentInstance.set(VaadinRequest.class, req);
+        try {
+            RequestError.markHandled(failure);
+        } finally {
+            CurrentInstance.clearAll();
+        }
+        binder.requestEnd(req, resp, session);
+
+        Assertions.assertEquals(List.of(failure), marked,
+                "a handled failure must reach the framework HTTP observation");
+    }
+
+    @Test
+    void escapedExceptionIsMarkedOnceNotTwice() {
+        // handleException marks the framework observation and sets the
+        // interceptor-error flag; the relay in requestEnd must not mark the
+        // same request again for a handled error arriving on top of it.
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler());
+        List<Throwable> marked = new ArrayList<>();
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build(), null, null,
+                (request, failure) -> marked.add(failure));
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        IllegalStateException escaped = new IllegalStateException("boom");
+        binder.requestStart(req, resp);
+        binder.handleException(req, resp, session, escaped);
+        CurrentInstance.set(VaadinRequest.class, req);
+        try {
+            RequestError.markHandled(new IllegalStateException("handled"));
+        } finally {
+            CurrentInstance.clearAll();
+        }
+        binder.requestEnd(req, resp, session);
+
+        Assertions.assertEquals(List.of(escaped), marked,
+                "one failed request marks the framework observation once");
+    }
 }
