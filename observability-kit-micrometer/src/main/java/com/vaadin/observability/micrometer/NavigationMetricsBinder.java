@@ -160,12 +160,13 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // even
         // construction-time queries on this request thread to the target view.
         VaadinTelemetryContext.setCurrentRoute(ui, route);
+        // Relay the UI for route resolution at request end. Unconditional:
+        // the HTTP route enrichment works without tracing.
+        RequestUi.mark(ui);
         Pending pending;
         if (useObservation()) {
-            // Tell the enclosing request span this UIDL request navigated,
-            // and relay the UI so the route resolves at request end.
+            // Tell the enclosing request span this UIDL request navigated.
             RequestInteraction.mark(ObservationNames.INTERACTION_NAVIGATION);
-            RequestUi.mark(ui);
             Observation obs = Observation
                     .createNotStarted(MeterNames.NAVIGATION,
                             observationRegistry)
@@ -198,6 +199,12 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // skipped (e.g. mid-request server shutdown), so this request never
         // unwinds a navigation belonging to another one.
         pendingUis.remove();
+        // Also drain the UI relay: this interceptor is registered whenever
+        // navigation is on, so stale entries are cleared on request threads
+        // even when RequestMetricsBinder is not registered. Cleared only at
+        // request start — requestEnd here runs before RequestMetricsBinder's,
+        // which still needs the value for route resolution.
+        RequestUi.clear();
     }
 
     @Override

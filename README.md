@@ -425,7 +425,10 @@ pattern. The `uri` tag on `http.server.requests` and the HTTP span name then
 read `/orders/:id` instead of bucketing all UI traffic into a single
 `/vaadin/uidl` entry, so per-view HTTP latency stays answerable directly from
 the standard Spring metrics. The templates pass the same
-`route-cardinality-limit` cap as the kit's own `route` tags.
+`route-cardinality-limit` cap as the kit's own `route` tags. The enrichment is
+independent of the `traces` setting: it also applies when only metrics are
+collected.
+
 To export the spans, add a Micrometer tracing bridge (for example OpenTelemetry or
 Zipkin) as you would for any Micrometer-instrumented application. Set
 `vaadin.observability.traces=false` to disable span emission.

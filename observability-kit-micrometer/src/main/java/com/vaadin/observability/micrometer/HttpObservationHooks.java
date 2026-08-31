@@ -18,8 +18,10 @@ import com.vaadin.flow.server.VaadinRequest;
  * <p>
  * These hooks correct or enrich an observation the framework emits anyway —
  * they never emit telemetry of their own, which is why the callers in
- * {@link RequestMetricsBinder} do not gate them on the {@code requests} or
- * {@code errors} settings.
+ * {@link RequestMetricsBinder} gate them on no kit setting at all: they run
+ * with {@code requests}, {@code errors} or {@code traces} off, since the
+ * {@code uri} tag they feed on {@code http.server.requests} is a metric, not a
+ * span.
  */
 interface HttpObservationHooks {
 

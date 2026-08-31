@@ -142,12 +142,14 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         RequestError.clear();
         // And for the UI reference the binders mark during handling.
         RequestUi.clear();
+        // Let DI integrations (Spring/Boot) lift the Vaadin type into the
+        // framework HTTP observation. Not gated on any kit setting: the hook
+        // enriches an observation the framework emits anyway (its uri tag on
+        // http.server.requests is a metric, not a span), and it defaults to a
+        // no-op for standalone deployments.
+        hooks.requestType(request, requestType(request));
         if (useObservation()) {
             String type = requestType(request);
-            // Let DI integrations (Spring/Boot) lift Vaadin type into the
-            // parent HTTP span so the trace UI shows the request type
-            // without drilling down. Defaults to no-op for standalone.
-            hooks.requestType(request, type);
             Observation obs = Observation
                     .createNotStarted(MeterNames.REQUEST_DURATION,
                             observationRegistry)
@@ -311,15 +313,15 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // The UI the handlers marked while processing this request. Consumed
         // unconditionally so a pooled thread never carries it over.
         UI ui = RequestUi.take();
-        if (useObservation() && ObservationNames.REQUEST_TYPE_UIDL.equals(type)
-                && ui != null) {
+        if (ObservationNames.REQUEST_TYPE_UIDL.equals(type) && ui != null) {
             // Lift the active view's route template into the framework HTTP
             // observation, so its uri tag and span name read /orders/:id
             // instead of the protocol-level /vaadin/uidl. Resolved here, at
             // request end, after any navigation during handling has settled.
             // UI.getCurrent() is no longer bound here (the UIDL handler
             // clears it with the session lock), so the UI comes from the
-            // RequestUi relay the binders fill during handling.
+            // RequestUi relay the binders fill during handling. Not gated
+            // on traces: the uri tag this feeds is a metric.
             String route = routes.tagForActiveRoute(ui);
             if (!MeterNames.ROUTE_UNKNOWN.equals(route)) {
                 // A blank template is the root route: for a UIDL request a

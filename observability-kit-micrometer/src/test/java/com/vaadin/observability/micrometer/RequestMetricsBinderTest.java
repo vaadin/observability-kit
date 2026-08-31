@@ -298,4 +298,47 @@ class RequestMetricsBinderTest {
                     path + " should classify as a static resource");
         }
     }
+
+    @Test
+    void routeHookRunsWithoutTracing() {
+        // The uri tag the route feeds on http.server.requests is a metric,
+        // so the enrichment must not depend on the traces setting or an
+        // ObservationRegistry.
+        RouteRecordingHooks hooks = new RouteRecordingHooks();
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), null,
+                ObservabilitySettings.builder().traces(false).build(), hooks);
+        VaadinRequest req = uidlRequest();
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+        binder.requestStart(req, res);
+        RequestUi.mark(new UI());
+        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+
+        Assertions.assertEquals(List.of(""), hooks.routes,
+                "route enrichment must run with traces off");
+    }
+
+    @Test
+    void requestTypeHookRunsWithoutTracing() {
+        List<String> types = new ArrayList<>();
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), null,
+                ObservabilitySettings.builder().traces(false).build(),
+                new HttpObservationHooks() {
+                    @Override
+                    public void requestType(VaadinRequest request,
+                            String type) {
+                        types.add(type);
+                    }
+                });
+        VaadinRequest req = uidlRequest();
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+        binder.requestStart(req, res);
+        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+
+        Assertions.assertEquals(List.of("uidl"), types,
+                "request type enrichment must run with traces off");
+    }
 }
