@@ -62,6 +62,20 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings settings;
     private final ErrorCounter errors;
+    /**
+     * How many distinct route templates may reach the framework's {@code uri}
+     * tag before the rest collapse into {@code _other}. Deliberately well under
+     * Spring Boot's {@code management.metrics.web.server.max-uri-tags} default
+     * of 100: Boot's {@code MaximumAllowableTagsMeterFilter} DENIES a meter
+     * outright once the distinct {@code uri} count crosses its cap — the series
+     * is never created, not bucketed — and admission is first-come-first-served
+     * across every endpoint of the application, so blowing the budget would
+     * silently delete arbitrary {@code http.server.requests} series, Vaadin or
+     * not. Half of Boot's default leaves the other half for actuator endpoints
+     * and REST controllers.
+     */
+    static final int HTTP_URI_ROUTE_LIMIT = 50;
+
     private final HttpObservationHooks hooks;
     private final RouteTagResolver routes;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
@@ -113,7 +127,8 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         this.settings = settings;
         this.errors = errors;
         this.hooks = hooks != null ? hooks : HttpObservationHooks.NONE;
-        this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
+        this.routes = new RouteTagResolver(Math.min(HTTP_URI_ROUTE_LIMIT,
+                settings.getRouteCardinalityLimit()));
     }
 
     private boolean useObservation() {
@@ -321,8 +336,10 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             // UI.getCurrent() is no longer bound here (the UIDL handler
             // clears it with the session lock), so the UI comes from the
             // RequestUi relay the binders fill during handling. Not gated
-            // on traces: the uri tag this feeds is a metric.
-            String route = routes.tagForActiveRoute(ui);
+            // on traces: the uri tag this feeds is a metric. Template-only
+            // resolution: the concrete-location fallback would feed literal
+            // paths (orders/17, orders/18, ...) into a bounded budget.
+            String route = routes.templateForActiveRoute(ui);
             if (!MeterNames.ROUTE_UNKNOWN.equals(route)) {
                 // A blank template is the root route: for a UIDL request a
                 // view is always active, so blank cannot mean "no view".

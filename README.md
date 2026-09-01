@@ -425,9 +425,16 @@ pattern. The `uri` tag on `http.server.requests` and the HTTP span name then
 read `/orders/:id` instead of bucketing all UI traffic into a single
 `/vaadin/uidl` entry, so per-view HTTP latency stays answerable directly from
 the standard Spring metrics. The templates pass the same
-`route-cardinality-limit` cap as the kit's own `route` tags. The enrichment is
-independent of the `traces` setting: it also applies when only metrics are
-collected.
+`route-cardinality-limit` cap as the kit's own `route` tags, and additionally
+at most 50 distinct templates reach the `uri` tag before the rest collapse into
+`/_other`. That budget is deliberately half of Spring Boot's
+`management.metrics.web.server.max-uri-tags` default (100): once *that* cap is
+crossed, Boot denies new `http.server.requests` series outright instead of
+bucketing them, first-come-first-served across every endpoint of the
+application — so the kit stays well clear of it and leaves room for actuator
+endpoints and REST controllers. Raise `max-uri-tags` if your application
+legitimately needs more distinct `uri` values. The enrichment is independent of
+the `traces` setting: it also applies when only metrics are collected.
 
 To export the spans, add a Micrometer tracing bridge (for example OpenTelemetry or
 Zipkin) as you would for any Micrometer-instrumented application. Set

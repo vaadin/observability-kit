@@ -91,6 +91,22 @@ public class RouteTagResolverTest {
     }
 
     @Test
+    public void templateOnlyResolutionSkipsTheLocationFallback() {
+        // The uri tag on http.server.requests must never receive literal
+        // paths: without a navigation target the template-only variant
+        // reports unknown instead of falling back to the concrete location.
+        RouteTagResolver resolver = new RouteTagResolver(10);
+        UI ui = Mockito.mock(UI.class, RETURNS_DEEP_STUBS);
+        Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.<HasElement> of());
+        Mockito.when(ui.getInternals().getActiveViewLocation())
+                .thenReturn(new Location("orders/17"));
+
+        assertEquals(MeterNames.ROUTE_UNKNOWN,
+                resolver.templateForActiveRoute(ui));
+    }
+
+    @Test
     public void activeRouteIsUnknownWithoutAUiOrWhenItCannotBeRead() {
         RouteTagResolver resolver = new RouteTagResolver(10);
         UI broken = Mockito.mock(UI.class);

@@ -53,9 +53,10 @@ interface HttpObservationHooks {
      * @param request
      *            the current Vaadin request
      * @param routeTemplate
-     *            the resolved route template (e.g. {@code orders/:id}), already
-     *            run through the route cardinality cap; blank means the root
-     *            route
+     *            the resolved route template (e.g. {@code orders/:id}),
+     *            template-only (never a literal path) and bounded by the
+     *            {@code uri} budget, so excess templates arrive as
+     *            {@code _other}; blank means the root route
      */
     default void route(VaadinRequest request, String routeTemplate) {
     }

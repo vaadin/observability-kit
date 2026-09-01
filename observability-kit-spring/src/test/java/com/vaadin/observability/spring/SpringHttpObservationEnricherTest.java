@@ -158,4 +158,20 @@ class SpringHttpObservationEnricherTest {
 
         assertThat(context.getPathPattern()).isEqualTo("/db");
     }
+
+    @Test
+    void routeMapsBlankTemplateToRoot(@Mock VaadinRequest request,
+            @Mock HttpServletRequest httpRequest,
+            @Mock HttpServletResponse httpResponse) {
+        ServerRequestObservationContext context = new ServerRequestObservationContext(
+                httpRequest, httpResponse);
+        when(request.getMethod()).thenReturn("GET");
+        when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(context);
+
+        SpringHttpObservationEnricher.route(request, "");
+
+        assertThat(context.getPathPattern()).isEqualTo("/");
+    }
 }

@@ -238,13 +238,12 @@ class RequestMetricsBinderTest {
     }
 
     @Test
-    void routeHookReportsRootForUiAtRootLocation() {
-        // A UI whose active view location is empty resolves to a blank
-        // template, which is the root route: for a UIDL request a view is
-        // always active, so blank cannot mean "no view". The UI arrives
-        // through the RequestUi relay, marked by an RPC, navigation or poll
-        // handler during request handling — UI.getCurrent() is already
-        // cleared when requestEnd runs.
+    void routeHookNotCalledWhenNoTemplateResolves() {
+        // The hook path resolves templates only: a UI with no active
+        // navigation target must not fall back to its concrete view location,
+        // which would feed literal paths (orders/17, orders/18, ...) into the
+        // bounded uri budget. A fresh UI has no target chain, so nothing is
+        // reported.
         RouteRecordingHooks hooks = new RouteRecordingHooks();
         RequestMetricsBinder binder = observedBinder(new SimpleMeterRegistry(),
                 hooks);
@@ -255,8 +254,8 @@ class RequestMetricsBinderTest {
         RequestUi.mark(new UI());
         binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
 
-        Assertions.assertEquals(List.of(""), hooks.routes,
-                "the root route reports a blank template");
+        Assertions.assertTrue(hooks.routes.isEmpty(),
+                "no resolvable template, so no uri to report");
     }
 
     @Test
@@ -299,6 +298,11 @@ class RequestMetricsBinderTest {
         }
     }
 
+    @com.vaadin.flow.component.Tag("routed-view")
+    private static final class RoutedView
+            extends com.vaadin.flow.component.Component {
+    }
+
     @Test
     void routeHookRunsWithoutTracing() {
         // The uri tag the route feeds on http.server.requests is a metric,
@@ -311,11 +315,15 @@ class RequestMetricsBinderTest {
         VaadinRequest req = uidlRequest();
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
 
+        UI ui = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
+        Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.of(new RoutedView()));
+
         binder.requestStart(req, res);
-        RequestUi.mark(new UI());
+        RequestUi.mark(ui);
         binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
 
-        Assertions.assertEquals(List.of(""), hooks.routes,
+        Assertions.assertEquals(List.of("RoutedView"), hooks.routes,
                 "route enrichment must run with traces off");
     }
 

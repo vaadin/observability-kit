@@ -143,6 +143,32 @@ public final class RouteTagResolver {
         }
     }
 
+    /**
+     * Like {@link #tagForActiveRoute(UI)} but without the concrete-location
+     * fallback: the result is always a route template (or the class-simple-name
+     * stand-in), never a literal path with its parameter values. For a consumer
+     * whose tag values must stay bounded — such as the {@code uri} tag on
+     * {@code http.server.requests} — the location fallback would be the one
+     * genuinely unbounded source ({@code orders/17}, {@code orders/18}, …).
+     *
+     * @param ui
+     *            the UI to resolve the active route of, may be {@code null}
+     * @return the route template tag value, or {@link MeterNames#ROUTE_UNKNOWN}
+     *         when no navigation target can be resolved
+     */
+    public String templateForActiveRoute(UI ui) {
+        if (ui == null) {
+            return MeterNames.ROUTE_UNKNOWN;
+        }
+        try {
+            return tagForUi(ui, MeterNames.ROUTE_UNKNOWN);
+        } catch (RuntimeException e) {
+            // Resolution is best-effort enrichment of a measurement; never let
+            // it break the caller.
+            return MeterNames.ROUTE_UNKNOWN;
+        }
+    }
+
     private Optional<String> resolveTemplate(
             Class<? extends Component> navigationTarget) {
         try {
