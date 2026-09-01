@@ -109,7 +109,7 @@ class RequestMetricsBinderTest {
     @Test
     void exceptionInvokesHttpObservationErrorMarker() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        List<Exception> marked = new ArrayList<>();
+        List<Throwable> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build(), null,
                 new ErrorCounter(registry,
@@ -132,7 +132,7 @@ class RequestMetricsBinderTest {
     @Test
     void successfulRequestDoesNotInvokeHttpObservationErrorMarker() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        List<Exception> marked = new ArrayList<>();
+        List<Throwable> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build(), null,
                 new ErrorCounter(registry,
@@ -157,7 +157,7 @@ class RequestMetricsBinderTest {
         // only registered under isRequests() || isErrors(), so with both off
         // the marker never runs.
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        List<Exception> marked = new ArrayList<>();
+        List<Throwable> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).errors(false)
                         .build(),
@@ -175,4 +175,5 @@ class RequestMetricsBinderTest {
         Assertions.assertNull(registry.find(MeterNames.ERRORS).counter(),
                 "vaadin.errors stays gated on the errors setting");
     }
+
 }

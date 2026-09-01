@@ -181,7 +181,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.uis` | `true` | UI count metrics. |
 | `vaadin.observability.ui-state` | `false` | Per-UI state size: how much component-tree state the server holds for live users (see [UI state size](#ui-state-size)). |
 | `vaadin.observability.navigation` | `true` | Navigation timing. |
-| `vaadin.observability.requests` | `true` | Server-side request and RPC timing. |
+| `vaadin.observability.requests` | `true` | Server-side request and RPC timing: the `vaadin.request.duration` and `vaadin.rpc.duration` meters and, when tracing is on, their spans. Error counting, error marking on the framework's own HTTP observation, and its enrichment are all unaffected. |
 | `vaadin.observability.data` | `true` | Data provider count/fetch query timing and page sizes for lazy-loading components. |
 | `vaadin.observability.errors` | `true` | Error counters. |
 | `vaadin.observability.client` | `true` | Browser-side timing, connection state and errors collected from the client (see [Connection and client-side problems](#connection-and-client-side-problems)). |
@@ -357,12 +357,25 @@ application classes and multiply with each other.
 > tag itself are unchanged, so anything already aggregating over labels keeps
 > working.
 
+> **Behavior change for Spring deployments.** Failures handled by the session
+> error handler — a throwing click listener, a `UI.access` body, a `beforeEnter`
+> callback — are now also relayed to Spring's own HTTP observation. Every such
+> failure sets the `exception` tag on `http.server.requests` and marks the HTTP
+> server span errored, even though the response status stays 200; previously
+> only the far rarer exceptions that escaped request handling did. Error-rate
+> panels and alerts built on `http.server.requests` will see the volume
+> increase.
+
 Only exceptions that *escape* request handling surface to a request
 interceptor. Everything a user can trigger — a click listener that throws, a
 `UI.access` body, a detach listener, a `beforeEnter` callback — is caught by
 Flow and routed to `VaadinSession.getErrorHandler()` instead. The kit therefore
 decorates that handler, which is also what lets it attribute a failure to a
-component and mark the enclosing `vaadin.request` span as `outcome=error`.
+component and mark the enclosing `vaadin.request` span as `outcome=error`. In
+Spring deployments the failure is also relayed to the framework's own HTTP
+observation, so root-span error monitoring sees it too — including when
+`vaadin.observability.requests` is off and no `vaadin.request` span exists to
+carry it.
 
 The decoration always delegates, so an application's own error handler keeps
 receiving every error it received before. It is re-applied at UI init and at
