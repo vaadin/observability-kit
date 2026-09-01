@@ -180,6 +180,37 @@ public final class MeterNames {
     public static final String TAG_KIND = "kind";
 
     /**
+     * {@link #TAG_TRIGGER} value on {@link #CLIENT_NAVIGATION_DURATION}: the
+     * user went back or forward in browser history.
+     */
+    public static final String TRIGGER_BACK = "back";
+
+    /**
+     * {@link #TAG_TRIGGER} value on {@link #CLIENT_NAVIGATION_DURATION}: the
+     * application navigated itself, through {@code pushState} or
+     * {@code replaceState}.
+     */
+    public static final String TRIGGER_PROGRAMMATIC = "programmatic";
+
+    /** {@link #TAG_TRIGGER} value for a trigger that is none of the above. */
+    public static final String TRIGGER_UNKNOWN = "_unknown";
+
+    /**
+     * {@link #TAG_KIND} value on {@link #CLIENT_ERRORS}: an uncaught error
+     * reached the browser's {@code error} event.
+     */
+    public static final String KIND_UNCAUGHT = "uncaught";
+
+    /**
+     * {@link #TAG_KIND} value on {@link #CLIENT_ERRORS}: a promise was rejected
+     * with nobody handling it.
+     */
+    public static final String KIND_PROMISE = "promise";
+
+    /** {@link #TAG_KIND} value for a kind that is none of the above. */
+    public static final String KIND_UNKNOWN = "_unknown";
+
+    /**
      * Tag key: the browser connection state entered, on
      * {@link #CLIENT_CONNECTION}. Bounded to the values below, since the value
      * originates in the browser and a crafted payload must not be able to grow

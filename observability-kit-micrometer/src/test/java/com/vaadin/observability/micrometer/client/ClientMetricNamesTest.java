@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer.client;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 import com.vaadin.observability.micrometer.MeterNames;
@@ -150,5 +152,63 @@ class ClientMetricNamesTest {
                 ClientMetricNames.downtimeState("connected"));
         assertEquals(MeterNames.STATE_UNKNOWN,
                 ClientMetricNames.downtimeState(null));
+    }
+
+    @Test
+    void navigationTriggersTheCollectorReportsAreAdmitted() {
+        assertEquals(MeterNames.TRIGGER_BACK,
+                ClientMetricNames.navigationTrigger("back"));
+        assertEquals(MeterNames.TRIGGER_PROGRAMMATIC,
+                ClientMetricNames.navigationTrigger("PROGRAMMATIC"));
+    }
+
+    @Test
+    void craftedNavigationTriggerIsBucketed() {
+        assertEquals(MeterNames.TRIGGER_UNKNOWN,
+                ClientMetricNames.navigationTrigger("swipe-from-the-left"));
+        assertEquals(MeterNames.TRIGGER_UNKNOWN,
+                ClientMetricNames.navigationTrigger(null));
+    }
+
+    @Test
+    void errorKindsTheCollectorReportsAreAdmitted() {
+        assertEquals(MeterNames.KIND_UNCAUGHT,
+                ClientMetricNames.errorKind("uncaught"));
+        assertEquals(MeterNames.KIND_PROMISE,
+                ClientMetricNames.errorKind("Promise"));
+    }
+
+    @Test
+    void craftedErrorKindIsBucketed() {
+        assertEquals(MeterNames.KIND_UNKNOWN,
+                ClientMetricNames.errorKind("kind-the-browser-made-up"));
+        assertEquals(MeterNames.KIND_UNKNOWN,
+                ClientMetricNames.errorKind(null));
+    }
+
+    @Test
+    void everyAllowedMeterDeclaresTheTagKeysItCarries() {
+        // A meter missing from the key map is recorded with no tags at all,
+        // whatever the browser sent for it. That is safe but silent, so a new
+        // client meter has to be declared here rather than discovered later on
+        // a dashboard that cannot break its numbers down.
+        for (String name : ClientMetricNames.ALLOWED) {
+            assertFalse(ClientMetricNames.tagKeys(name).isEmpty(),
+                    name + " should declare its tag keys");
+        }
+    }
+
+    @Test
+    void aMeterNobodyDeclaredCarriesNoTagKeys() {
+        assertTrue(ClientMetricNames.tagKeys("vaadin.client.unknown.metric")
+                .isEmpty());
+    }
+
+    @Test
+    void connectionMetersCarryOnlyTheStateTag() {
+        assertEquals(List.of(MeterNames.TAG_STATE),
+                ClientMetricNames.tagKeys(MeterNames.CLIENT_CONNECTION));
+        assertEquals(List.of(MeterNames.TAG_STATE), ClientMetricNames
+                .tagKeys(MeterNames.CLIENT_CONNECTION_DOWNTIME));
     }
 }

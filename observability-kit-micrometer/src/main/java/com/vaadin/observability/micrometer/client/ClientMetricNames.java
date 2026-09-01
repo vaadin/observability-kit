@@ -8,15 +8,18 @@
  */
 package com.vaadin.observability.micrometer.client;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import com.vaadin.observability.micrometer.MeterNames;
 
 /**
- * Allowlist of client-emitted meter names. Samples whose names are not in this
- * set are dropped at ingest time, capping cardinality from malicious or buggy
- * clients.
+ * Allowlist of client-emitted meter names, of the tag keys each of them
+ * carries, and of the values those keys may hold. Samples whose names are not
+ * in this set are dropped at ingest time, capping cardinality from malicious or
+ * buggy clients.
  *
  * <p>
  * Note: {@link MeterNames#CLIENT_RPC_DURATION} is intentionally excluded from
@@ -33,6 +36,29 @@ final class ClientMetricNames {
 
     static final Set<String> COUNTER_NAMES = Set.of(MeterNames.CLIENT_ERRORS,
             MeterNames.CLIENT_CONNECTION);
+
+    /**
+     * The tag keys each client meter carries — all of them, always, whatever
+     * the payload contained.
+     * <p>
+     * A meter's tag key set is fixed at the first registration, and Micrometer
+     * rejects a later meter of the same name whose keys differ. Since the
+     * payload comes from a browser, both halves of that have to be taken away
+     * from it: a key it invented is dropped rather than registered, and a key
+     * it left out is filled in from the bounded values below. One crafted
+     * sample would otherwise poison the meter for every legitimate sample after
+     * it.
+     */
+    private static final Map<String, List<String>> TAG_KEYS = Map.of(
+            MeterNames.CLIENT_BOOTSTRAP_DURATION, List.of(MeterNames.TAG_ROUTE),
+            MeterNames.CLIENT_NAVIGATION_DURATION,
+            List.of(MeterNames.TAG_ROUTE, MeterNames.TAG_TRIGGER),
+            MeterNames.CLIENT_WEB_VITALS_LCP, List.of(MeterNames.TAG_ROUTE),
+            MeterNames.CLIENT_WEB_VITALS_FCP, List.of(MeterNames.TAG_ROUTE),
+            MeterNames.CLIENT_ERRORS, List.of(MeterNames.TAG_KIND),
+            MeterNames.CLIENT_CONNECTION, List.of(MeterNames.TAG_STATE),
+            MeterNames.CLIENT_CONNECTION_DOWNTIME,
+            List.of(MeterNames.TAG_STATE));
 
     /**
      * The states Flow's client connection store can hold, minus {@code loading}
@@ -54,12 +80,28 @@ final class ClientMetricNames {
     static final Set<String> OFFLINE_STATES = Set.of(
             MeterNames.STATE_CONNECTION_LOST, MeterNames.STATE_RECONNECTING);
 
+    /** The ways the collector can start a client-side navigation. */
+    static final Set<String> NAVIGATION_TRIGGERS = Set
+            .of(MeterNames.TRIGGER_BACK, MeterNames.TRIGGER_PROGRAMMATIC);
+
+    /** The browser events the collector reports an error for. */
+    static final Set<String> ERROR_KINDS = Set.of(MeterNames.KIND_UNCAUGHT,
+            MeterNames.KIND_PROMISE);
+
     static boolean isAllowed(String name) {
         return name != null && ALLOWED.contains(name);
     }
 
     static boolean isCounter(String name) {
         return COUNTER_NAMES.contains(name);
+    }
+
+    /**
+     * Returns the tag keys the named meter carries, or an empty list for a
+     * meter that carries none.
+     */
+    static List<String> tagKeys(String name) {
+        return TAG_KEYS.getOrDefault(name, List.of());
     }
 
     /**
@@ -72,12 +114,7 @@ final class ClientMetricNames {
      *         {@link MeterNames#STATE_UNKNOWN}
      */
     static String connectionState(String reported) {
-        if (reported == null) {
-            return MeterNames.STATE_UNKNOWN;
-        }
-        String value = reported.toLowerCase(Locale.ROOT);
-        return CONNECTION_STATES.contains(value) ? value
-                : MeterNames.STATE_UNKNOWN;
+        return admit(reported, CONNECTION_STATES, MeterNames.STATE_UNKNOWN);
     }
 
     /**
@@ -94,12 +131,48 @@ final class ClientMetricNames {
      *         in, otherwise {@link MeterNames#STATE_UNKNOWN}
      */
     static String downtimeState(String reported) {
+        return admit(reported, OFFLINE_STATES, MeterNames.STATE_UNKNOWN);
+    }
+
+    /**
+     * Maps a browser-reported navigation trigger onto the bounded set of
+     * {@link MeterNames#TAG_TRIGGER} values.
+     *
+     * @param reported
+     *            the trigger as the browser named it, may be {@code null}
+     * @return the trigger itself when it is one the collector can report,
+     *         otherwise {@link MeterNames#TRIGGER_UNKNOWN}
+     */
+    static String navigationTrigger(String reported) {
+        return admit(reported, NAVIGATION_TRIGGERS, MeterNames.TRIGGER_UNKNOWN);
+    }
+
+    /**
+     * Maps a browser-reported error kind onto the bounded set of
+     * {@link MeterNames#TAG_KIND} values.
+     *
+     * @param reported
+     *            the kind as the browser named it, may be {@code null}
+     * @return the kind itself when it is one the collector can report,
+     *         otherwise {@link MeterNames#KIND_UNKNOWN}
+     */
+    static String errorKind(String reported) {
+        return admit(reported, ERROR_KINDS, MeterNames.KIND_UNKNOWN);
+    }
+
+    /**
+     * Returns {@code reported}, lowercased, when {@code allowed} holds it, and
+     * {@code fallback} otherwise. Admission rather than capping: every value
+     * here originates in the browser, so the series count has to follow from
+     * this file rather than from what a payload happens to contain.
+     */
+    private static String admit(String reported, Set<String> allowed,
+            String fallback) {
         if (reported == null) {
-            return MeterNames.STATE_UNKNOWN;
+            return fallback;
         }
         String value = reported.toLowerCase(Locale.ROOT);
-        return OFFLINE_STATES.contains(value) ? value
-                : MeterNames.STATE_UNKNOWN;
+        return allowed.contains(value) ? value : fallback;
     }
 
     private ClientMetricNames() {

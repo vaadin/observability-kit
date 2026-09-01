@@ -32,6 +32,13 @@
 
   var buffer = [];
 
+  // The batch handed to the server and not yet answered for, if any. It stays
+  // in the persisted copy until the answer arrives, since the send is
+  // asynchronous and a tab that closes while it is in flight takes the request
+  // with it. Only ever one batch: a server that stops answering then costs one
+  // batch of memory rather than another one every flush interval.
+  var inFlight = null;
+
   // The last connection state that was not LOADING, maintained by the
   // connection listener below and read by the flush guard. Undefined until the
   // store is found, which reads as online -- the behaviour when a page has no
@@ -96,15 +103,16 @@
     return window.location.pathname || '/';
   }
 
-  // The buffer, held where a reload can find it again. Best-effort: storage is
-  // unavailable in some privacy modes and full in others, and neither is worth
-  // failing a measurement over.
+  // The buffer and everything still in flight, held where a reload can find it
+  // again. Best-effort: storage is unavailable in some privacy modes and full
+  // in others, and neither is worth failing a measurement over.
   function persist() {
     try {
-      if (buffer.length === 0) {
+      var pending = inFlight === null ? buffer : inFlight.concat(buffer);
+      if (pending.length === 0) {
         window.sessionStorage.removeItem(STORAGE_KEY);
       } else {
-        window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(buffer));
+        window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(pending));
       }
     } catch (e) {
       /* storage unavailable or full, keep the in-memory buffer */
@@ -143,21 +151,27 @@
   // 0 -- the connection samples. A post-outage flush is the largest batch the
   //      collector ever sends and the one carrying the recovery transition and
   //      the downtime; losing those loses the outage itself.
-  // 1 -- everything else. A lost bootstrap, navigation or vitals sample is a
+  // 1 -- the browser errors. Each one is a failure that happened to somebody
+  //      rather than a point in a distribution, and an outage is exactly when
+  //      they pile up behind the samples explaining it. Ranking them with the
+  //      vitals would have a full buffer drop the one error behind a user's
+  //      report while younger vitals survive.
+  // 2 -- everything else. A lost bootstrap, navigation or vitals sample is a
   //      gap in a distribution that the next page load refills.
   function priority(sample) {
-    return sample.name === CONNECTION || sample.name === CONNECTION_DOWNTIME
-      ? 0
-      : 1;
+    if (sample.name === CONNECTION || sample.name === CONNECTION_DOWNTIME) {
+      return 0;
+    }
+    return sample.name === CLIENT_ERRORS ? 1 : 2;
   }
 
   /** Stable ordering by priority, so the head of a batch is what must survive. */
   function priorityFirst(batch) {
-    var buckets = [[], []];
+    var buckets = [[], [], []];
     batch.forEach(function (sample) {
       buckets[priority(sample)].push(sample);
     });
-    return buckets[0].concat(buckets[1]);
+    return buckets[0].concat(buckets[1], buckets[2]);
   }
 
   // The buffer is full. Drop the oldest of the least valuable class rather than
@@ -174,6 +188,15 @@
     buffer.splice(worst, 1);
   }
 
+  // Hands the buffer to the server, and keeps a copy in storage until the
+  // server says it arrived. The send is asynchronous however it ends -- Flow
+  // queues the message and the promise it returns settles on the server's
+  // answer -- and a tab that closes in that window takes the request with it,
+  // because the browser cancels an in-flight send during unload. Clearing
+  // storage at send time would therefore lose exactly the last batch, the one
+  // carrying the error a user is about to report. The price is a duplicate
+  // when the send arrived and the answer did not, which is the cheaper of the
+  // two failures.
   function flush() {
     if (buffer.length === 0) {
       return;
@@ -184,8 +207,20 @@
       persist();
       return;
     }
+    if (inFlight !== null) {
+      // One batch out at a time. Until the server has answered for the last
+      // one, the persisted copy is all that is left of it, and a second send
+      // would take that copy over. What is waiting keeps its place in the
+      // buffer, which has a cap of its own and sheds the least valuable
+      // sample first.
+      persist();
+      return;
+    }
     var el = document.querySelector(COLLECTOR_TAG);
     if (!el || !el.$server || typeof el.$server.recordSamples !== 'function') {
+      // Nothing to send through yet, and this may be the last code to run in
+      // this tab: leave the buffer where the next load can find it.
+      persist();
       return;
     }
     var now = Date.now();
@@ -196,18 +231,47 @@
       // subtraction on the server would report skew rather than delay.
       sample.ageMs = Math.max(0, now - sample.ts);
     });
+    inFlight = batch;
+    // Written before the send, and cleared only by settle(): between these two
+    // lines the persisted copy is the only record that the batch existed.
+    persist();
     try {
-      el.$server.recordSamples(batch);
-      persist();
+      var sent = el.$server.recordSamples(batch);
+      var answered = function () {
+        // The server either recorded the batch or answered that it could not.
+        // Both mean it saw the batch, so resending would double-count what it
+        // did record. A message Flow never delivered does not answer here at
+        // all: Flow re-sends those itself, and the persisted copy covers the
+        // tab that does not live to see it.
+        settle(batch, false);
+      };
+      if (sent && typeof sent.then === 'function') {
+        sent.then(answered, answered);
+      } else {
+        // No promise to wait on; treat the queued call as delivered.
+        answered();
+      }
     } catch (e) {
       // The call never entered Flow's message queue, so nothing was sent and
-      // requeueing cannot double-count. A rejection *after* it was queued is
-      // left alone: Flow re-sends pending messages itself.
+      // requeueing cannot double-count.
+      settle(batch, true);
+    }
+  }
+
+  // Releases the in-flight slot, because the server answered for the batch or
+  // because it never left, and brings storage back in line with what is
+  // still pending.
+  function settle(batch, requeue) {
+    if (inFlight !== batch) {
+      return;
+    }
+    inFlight = null;
+    if (requeue) {
       // From the tail again: batch is priority-ordered, so its head is what
       // the next flush must still be carrying.
       buffer = batch.concat(buffer).slice(0, BUFFER_MAX);
-      persist();
     }
+    persist();
   }
 
   restore();
@@ -354,17 +418,16 @@
   // Periodic flush.
   setInterval(flush, FLUSH_INTERVAL_MS);
 
-  // Leaving the page: flush if we can, and hand the buffer to storage if we
-  // cannot, so a tab closed mid-outage still reports on its next load.
+  // Leaving the page: flush what we can. flush() hands the batch to storage
+  // before it sends and clears it only once the server has answered, so a tab
+  // closed mid-outage -- or mid-send -- still reports on its next load.
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') {
       flush();
-      persist();
     }
   });
   window.addEventListener('pagehide', function () {
     flush();
-    persist();
   });
 
   // Expose for tests / dashboards (debug only).

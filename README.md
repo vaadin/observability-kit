@@ -239,10 +239,10 @@ ObservabilitySettings.builder()
 | `vaadin.errors` | Counter | Server-side errors (tagged by `exception`, `route`, `component`). See [Error metrics](#error-metrics). |
 | `vaadin.resync` | Counter | UIDL message recovery events observed on incoming requests, tagged by `type`: `resend` for a duplicate message the client re-sent because it never got the previous response, `resync` for a full client-requested UI-state rebuild. Both mean the client lost a server message. Disable with `vaadin.observability.resync=false`. |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
-| `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time. |
+| `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time, tagged by `route` and by the `trigger` that started it (`back` or `programmatic`). |
 | `vaadin.client.web_vitals.lcp` | Timer | Largest Contentful Paint. |
 | `vaadin.client.web_vitals.fcp` | Timer | First Contentful Paint. |
-| `vaadin.client.errors` | Counter | Errors reported by the browser. |
+| `vaadin.client.errors` | Counter | Errors reported by the browser, tagged by `kind`: `uncaught` or `promise`. |
 | `vaadin.client.connection` | Counter | Browser connection-state transitions, tagged by the `state` entered: `connected`, `connection-lost`, `reconnecting`. See [Connection and client-side problems](#connection-and-client-side-problems). |
 | `vaadin.client.connection.downtime` | Timer | How long a browser stayed unable to reach the server, measured on the browser's clock and tagged by the `state` it was spent in (`connection-lost`, `reconnecting`). |
 | `vaadin.client.dropped` | Counter | Client samples dropped before recording. |
@@ -418,7 +418,11 @@ Five things about those numbers are worth knowing:
   `sessionStorage`, so a reload does not lose them — and flushed on recovery,
   and the downtime is measured entirely on the clock that timestamped it.
   Subtracting an arrival time on the server would report clock skew plus
-  buffering delay rather than the outage.
+  buffering delay rather than the outage. A batch stays in `sessionStorage`
+  until the server has answered for it, so a tab closed while a send is still
+  in flight re-reports it on its next load rather than losing it — at the
+  price of counting a batch twice when it did arrive and only the answer was
+  lost.
 - **The downtime timer under-reports by construction.** Three ways, all of them
   the same shape — a segment is only measured when the browser leaves the state,
   and only reportable once it can reach the server again, so an outage nobody
