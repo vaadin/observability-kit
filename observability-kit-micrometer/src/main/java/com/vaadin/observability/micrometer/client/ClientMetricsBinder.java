@@ -9,7 +9,6 @@
 package com.vaadin.observability.micrometer.client;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,14 +24,14 @@ import com.vaadin.observability.micrometer.RouteTagResolver;
 /**
  * Validates and records samples emitted by the in-browser collector.
  * <p>
- * Applies the metric-name allowlist, route-template resolution against the
- * current session's {@link RouteConfiguration}, cardinality capping via
- * {@link RouteTagResolver}, and bounded-length tag validation.
+ * Applies the metric-name allowlist, the per-meter tag-key set with its bounded
+ * values, route-template resolution against the current session's
+ * {@link RouteConfiguration}, and cardinality capping via
+ * {@link RouteTagResolver}.
  */
 public final class ClientMetricsBinder {
 
-    private static final int MAX_TAG_KEY_LEN = 64;
-    private static final int MAX_TAG_VALUE_LEN = 200;
+    private static final int MAX_ROUTE_LEN = 200;
     private static final String[] EMPTY = new String[0];
 
     private final MeterRegistry registry;
@@ -49,19 +48,22 @@ public final class ClientMetricsBinder {
             return;
         }
         for (ClientSample sample : samples) {
-            String name = sample.getName();
-            if (!ClientMetricNames.isAllowed(name)) {
+            if (sample == null
+                    || !ClientMetricNames.isAllowed(sample.getName())) {
                 continue;
             }
-            String[] tags = buildTags(sample);
-            if (ClientMetricNames.isCounter(name)) {
-                registry.counter(name, tags).increment();
-            } else {
-                long nanos = (long) (sample.getValueMs() * 1_000_000.0);
-                if (nanos < 0) {
-                    continue;
-                }
-                registry.timer(name, tags).record(Duration.ofNanos(nanos));
+            try {
+                record(sample.getName(), sample);
+            } catch (RuntimeException e) {
+                // The registry refused the sample, and it must not take the
+                // request that carried it down with it: this runs inside a
+                // @ClientCallable on the user's own request, so an exception
+                // escaping here would be counted into vaadin.errors and flip
+                // that request to outcome=error -- a browser able to inflate
+                // the server's error rate by sending a payload the registry
+                // dislikes. Count it where samples that never made it into a
+                // meter are counted instead.
+                recordDropped(1);
             }
         }
     }
@@ -78,35 +80,64 @@ public final class ClientMetricsBinder {
         }
     }
 
-    private String[] buildTags(ClientSample sample) {
-        Map<String, String> raw = sample.getTags();
-        if (raw == null || raw.isEmpty()) {
+    private void record(String name, ClientSample sample) {
+        String[] tags = buildTags(name, sample);
+        if (ClientMetricNames.isCounter(name)) {
+            registry.counter(name, tags).increment();
+        } else {
+            recordDuration(name, tags, sample);
+        }
+    }
+
+    private void recordDuration(String name, String[] tags,
+            ClientSample sample) {
+        long nanos = (long) (sample.getValueMs() * 1_000_000.0);
+        if (nanos < 0) {
+            return;
+        }
+        registry.timer(name, tags).record(Duration.ofNanos(nanos));
+    }
+
+    /**
+     * Builds the meter's tag set: the keys it declares, all of them and in
+     * order, each with the value the payload reported for it as far as the
+     * bounded set for that key admits. The browser chooses which of the
+     * declared values a sample lands on, and nothing beyond that -- neither the
+     * keys the meter carries nor how many series they can grow to.
+     */
+    private String[] buildTags(String name, ClientSample sample) {
+        List<String> keys = ClientMetricNames.tagKeys(name);
+        if (keys.isEmpty()) {
             return EMPTY;
         }
-        List<String> out = new ArrayList<>(raw.size() * 2);
-        for (Map.Entry<String, String> entry : raw.entrySet()) {
-            String key = entry.getKey();
-            String value = entry.getValue();
-            if (key == null || value == null || key.isEmpty()) {
-                continue;
-            }
-            if (key.length() > MAX_TAG_KEY_LEN) {
-                continue;
-            }
-            if (MeterNames.TAG_ROUTE.equals(key)) {
-                value = templateRoute(value);
-            }
-            if (value.length() > MAX_TAG_VALUE_LEN) {
-                value = MeterNames.ROUTE_OTHER;
-            }
-            out.add(key);
-            out.add(value);
+        Map<String, String> raw = sample.getTags();
+        String[] tags = new String[keys.size() * 2];
+        int at = 0;
+        for (String key : keys) {
+            tags[at++] = key;
+            tags[at++] = tagValue(name, key, raw == null ? null : raw.get(key));
         }
-        return out.toArray(new String[0]);
+        return tags;
+    }
+
+    private String tagValue(String name, String key, String reported) {
+        return switch (key) {
+        case MeterNames.TAG_ROUTE -> templateRoute(reported);
+        case MeterNames.TAG_TRIGGER ->
+            ClientMetricNames.navigationTrigger(reported);
+        case MeterNames.TAG_KIND -> ClientMetricNames.errorKind(reported);
+        case MeterNames.TAG_STATE ->
+            MeterNames.CLIENT_CONNECTION_DOWNTIME.equals(name)
+                    ? ClientMetricNames.downtimeState(reported)
+                    : ClientMetricNames.connectionState(reported);
+        // Every key a meter declares has a rule above; a key added there
+        // without one is bucketed rather than let through to the registry.
+        default -> MeterNames.ROUTE_UNKNOWN;
+        };
     }
 
     private String templateRoute(String rawPath) {
-        if (rawPath == null) {
+        if (rawPath == null || rawPath.length() > MAX_ROUTE_LEN) {
             return MeterNames.ROUTE_UNKNOWN;
         }
         String path = rawPath;
