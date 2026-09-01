@@ -428,9 +428,11 @@ class RequestMetricsBinderObservationTest {
         ObservationRegistry obs = ObservationRegistry.create();
         RecordingHandler recorder = new RecordingHandler();
         obs.observationConfig().observationHandler(recorder);
-        obs.observationConfig().observationHandler(
-                new DefaultMeterObservationHandler(new SimpleMeterRegistry()));
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        // The handler must write into the same registry the assertion below
+        // reads, or the no-timer check would pass vacuously.
+        obs.observationConfig().observationHandler(
+                new DefaultMeterObservationHandler(registry));
 
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, obs,
                 ObservabilitySettings.builder().requests(false).traces(true)

@@ -355,6 +355,15 @@ application classes and multiply with each other.
 > tag itself are unchanged, so anything already aggregating over labels keeps
 > working.
 
+> **Behavior change for Spring deployments.** Failures handled by the session
+> error handler — a throwing click listener, a `UI.access` body, a `beforeEnter`
+> callback — are now also relayed to Spring's own HTTP observation. Every such
+> failure sets the `exception` tag on `http.server.requests` and marks the HTTP
+> server span errored, even though the response status stays 200; previously
+> only the far rarer exceptions that escaped request handling did. Error-rate
+> panels and alerts built on `http.server.requests` will see the volume
+> increase.
+
 Only exceptions that *escape* request handling surface to a request
 interceptor. Everything a user can trigger — a click listener that throws, a
 `UI.access` body, a detach listener, a `beforeEnter` callback — is caught by
