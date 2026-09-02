@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.vaadin.flow.internal.UsageStatistics;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
@@ -22,6 +23,7 @@ import com.vaadin.pro.licensechecker.LicenseException;
 
 import static com.vaadin.observability.micrometer.ObservabilityLicense.loadAllProperties;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
@@ -49,6 +51,7 @@ class MetricsServiceInitListenerLicenseTest {
     @AfterEach
     void tearDown() {
         ObservabilityKit.reset();
+        UsageStatistics.removeEntry(ObservabilityLicense.PRODUCT_NAME);
     }
 
     @Test
@@ -107,6 +110,29 @@ class MetricsServiceInitListenerLicenseTest {
         // The UiMetricsBinder and the ErrorMetricsBinder; no dev-tools
         // injector in production mode.
         verify(service, times(2)).addUIInitListener(any(UIInitListener.class));
+    }
+
+    @Test
+    void developmentMode_withValidLicense_reportsUsageStatistics() {
+        when(service.getDeploymentConfiguration().isProductionMode())
+                .thenReturn(false);
+
+        // An unstubbed static checkLicense is a no-op, i.e. a valid license
+        try (var licenseChecker = mockStatic(LicenseChecker.class)) {
+            new MetricsServiceInitListener().serviceInit(event);
+        }
+
+        // Flow exports its usage statistics entries through
+        // vaadin-usage-statistics in development mode, which is how Vaadin
+        // learns which products applications actually use. The kit reported
+        // itself this way up to 3.x; the registration was dropped in 4.0.
+        assertTrue(
+                UsageStatistics.getEntries()
+                        .anyMatch(entry -> ObservabilityLicense.PRODUCT_NAME
+                                .equals(entry.getName())
+                                && ObservabilityLicense.PRODUCT_VERSION
+                                        .equals(entry.getVersion())),
+                "an initialized kit should report itself to Flow usage statistics");
     }
 
     @Test
