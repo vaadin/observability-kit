@@ -117,16 +117,14 @@ class MetricsServiceInitListenerUsageTest {
     // UsageStatistics always holds a default "java" entry, so counting only
     // the kit's entries keeps these assertions honest.
     private static long kitEntryCount() {
-        return UsageStatistics.getEntries()
-                .filter(entry -> entry.getName()
-                        .startsWith("vaadin-observability-kit"))
+        return UsageStatistics.getEntries().filter(
+                entry -> entry.getName().startsWith("vaadin-observability-kit"))
                 .count();
     }
 
     private static Map<String, String> entries() {
         return UsageStatistics.getEntries()
-                .collect(Collectors.toMap(
-                        UsageStatistics.UsageEntry::getName,
+                .collect(Collectors.toMap(UsageStatistics.UsageEntry::getName,
                         UsageStatistics.UsageEntry::getVersion));
     }
 }

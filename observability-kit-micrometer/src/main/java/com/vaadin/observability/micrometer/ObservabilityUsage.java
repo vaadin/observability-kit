@@ -15,8 +15,8 @@ import com.vaadin.flow.internal.UsageStatistics;
  * features.
  * <p>
  * Entries are exported to the page and reported by Vaadin dev tools in
- * development mode only; in production mode Flow never exports them, so
- * marking is unconditional here and costs a map insertion.
+ * development mode only; in production mode Flow never exports them, so marking
+ * is unconditional here and costs a map insertion.
  */
 final class ObservabilityUsage {
 
