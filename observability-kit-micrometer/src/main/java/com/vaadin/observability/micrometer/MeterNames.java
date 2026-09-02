@@ -94,6 +94,48 @@ public final class MeterNames {
     public static final String CLIENT_WEB_VITALS_LCP = "vaadin.client.web_vitals.lcp";
     public static final String CLIENT_WEB_VITALS_FCP = "vaadin.client.web_vitals.fcp";
     public static final String CLIENT_ERRORS = "vaadin.client.errors";
+
+    /**
+     * Counter: transitions of the browser's connection state, tagged
+     * {@link #TAG_STATE} with the state entered.
+     * <p>
+     * Flow's client keeps the connection state in
+     * {@code window.Vaadin.connectionState}; the in-browser collector
+     * subscribes to it, so a user who loses the server and comes back leaves a
+     * trace the server side cannot produce on its own — it only sees a session
+     * that goes quiet and then talks again.
+     * <p>
+     * The state Flow sets around every UIDL request to drive the loading
+     * indicator ({@code loading}) is not reported at all, and every transition
+     * is measured against the last state that was not it. So this counts real
+     * connection events rather than one per interaction, and a retry that fails
+     * mid-outage reads as an attempt rather than a recovery followed by a
+     * second loss.
+     */
+    public static final String CLIENT_CONNECTION = "vaadin.client.connection";
+
+    /**
+     * Timer: how long a browser stayed unable to reach the server, recorded
+     * once per unreachable state it passed through and tagged
+     * {@link #TAG_STATE} with that state.
+     * <p>
+     * Per state rather than per outage, because Flow's two unreachable states
+     * mean different things: it enters {@link #STATE_RECONNECTING} on the first
+     * failed request and only reaches {@link #STATE_CONNECTION_LOST} once it
+     * has exhausted its retries. Time under {@code reconnecting} is therefore a
+     * network that hiccuped, time under {@code connection-lost} a server the
+     * browser has given up on — and a short outage that recovers while still
+     * retrying never enters {@code connection-lost} at all. Summing the two
+     * gives the length of the whole outage back.
+     * <p>
+     * Measured on the browser's clock, because the report can only be sent once
+     * the connection it describes is back: subtracting a server arrival time
+     * would report clock skew plus buffering delay rather than the outage. A
+     * browser that never reconnects contributes nothing, so this timer
+     * under-reports total downtime by construction.
+     */
+    public static final String CLIENT_CONNECTION_DOWNTIME = "vaadin.client.connection.downtime";
+
     public static final String CLIENT_DROPPED = "vaadin.client.dropped";
     public static final String CLIENT_THROTTLED = "vaadin.client.throttled";
 
@@ -136,6 +178,60 @@ public final class MeterNames {
 
     public static final String TAG_TRIGGER = "trigger";
     public static final String TAG_KIND = "kind";
+
+    /**
+     * {@link #TAG_TRIGGER} value on {@link #CLIENT_NAVIGATION_DURATION}: the
+     * user went back or forward in browser history.
+     */
+    public static final String TRIGGER_BACK = "back";
+
+    /**
+     * {@link #TAG_TRIGGER} value on {@link #CLIENT_NAVIGATION_DURATION}: the
+     * application navigated itself, through {@code pushState} or
+     * {@code replaceState}.
+     */
+    public static final String TRIGGER_PROGRAMMATIC = "programmatic";
+
+    /** {@link #TAG_TRIGGER} value for a trigger that is none of the above. */
+    public static final String TRIGGER_UNKNOWN = "_unknown";
+
+    /**
+     * {@link #TAG_KIND} value on {@link #CLIENT_ERRORS}: an uncaught error
+     * reached the browser's {@code error} event.
+     */
+    public static final String KIND_UNCAUGHT = "uncaught";
+
+    /**
+     * {@link #TAG_KIND} value on {@link #CLIENT_ERRORS}: a promise was rejected
+     * with nobody handling it.
+     */
+    public static final String KIND_PROMISE = "promise";
+
+    /** {@link #TAG_KIND} value for a kind that is none of the above. */
+    public static final String KIND_UNKNOWN = "_unknown";
+
+    /**
+     * Tag key: the browser connection state entered, on
+     * {@link #CLIENT_CONNECTION}. Bounded to the values below, since the value
+     * originates in the browser and a crafted payload must not be able to grow
+     * the meter's cardinality.
+     */
+    public static final String TAG_STATE = "state";
+
+    /** {@link #TAG_STATE} value: the browser can reach the server. */
+    public static final String STATE_CONNECTED = "connected";
+
+    /** {@link #TAG_STATE} value: the browser has lost the server. */
+    public static final String STATE_CONNECTION_LOST = "connection-lost";
+
+    /**
+     * {@link #TAG_STATE} value: the browser is trying to get the server back.
+     */
+    public static final String STATE_RECONNECTING = "reconnecting";
+
+    /** {@link #TAG_STATE} value for a state that is none of the above. */
+    public static final String STATE_UNKNOWN = "_unknown";
+
     public static final String TAG_CONTEXT = "context";
     /**
      * Tag key: the Vaadin {@code Component} a measurement is attributed to, by

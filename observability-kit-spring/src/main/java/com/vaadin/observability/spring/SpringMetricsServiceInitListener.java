@@ -76,7 +76,7 @@ public final class SpringMetricsServiceInitListener
 
     @Override
     protected void markHttpObservationError(VaadinRequest request,
-            Exception failure) {
+            Throwable failure) {
         SpringHttpObservationEnricher.error(request, failure);
     }
 }

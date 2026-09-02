@@ -62,18 +62,20 @@ interface HttpObservationHooks {
     }
 
     /**
-     * Called when Vaadin request handling raises an exception. For a UIDL
-     * request Vaadin swallows the exception and responds 200, so the framework
-     * would otherwise report the request as successful; for other request types
-     * Vaadin rethrows and the framework records the failure itself, and this
-     * call merely front-runs it with the root cause.
+     * Called when Vaadin request handling raises an exception, and for a
+     * failure Flow routed to the session error handler (which never escapes
+     * request handling at all). For a UIDL request Vaadin swallows the
+     * exception and responds 200, so the framework would otherwise report the
+     * request as successful; for other request types Vaadin rethrows and the
+     * framework records the failure itself, and this call merely front-runs it
+     * with the root cause.
      *
      * @param request
      *            the current Vaadin request
      * @param failure
-     *            the exception Vaadin request handling raised, never
-     *            {@code null}
+     *            the failure Vaadin request handling raised or the session
+     *            error handler received, never {@code null}
      */
-    default void error(VaadinRequest request, Exception failure) {
+    default void error(VaadinRequest request, Throwable failure) {
     }
 }

@@ -36,6 +36,10 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * unavailable), the binder falls back to recording the Timer directly.</li>
  * </ul>
  * <p>
+ * Both modes are gated on the {@code requests} setting: with it off the binder
+ * times nothing and emits no request observation, and only its error handling
+ * and the framework HTTP-observation callbacks stay active.
+ * <p>
  * Both paths publish {@link MeterNames#REQUEST_DURATION} with the same tag
  * keys, all bounded: {@code vaadin.request.type}, {@code vaadin.interaction},
  * {@code http.method}, {@code outcome} and {@code error}. Keeping the two in
@@ -165,6 +169,13 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         hooks.requestType(request, requestType(request));
         if (useObservation()) {
             String type = requestType(request);
+            if (!settings.isRequests()) {
+                // The requests setting turns off the kit's own request
+                // timing, which on this path means the whole request
+                // observation: the Timer is produced from it by the meter
+                // observation handler, so span and Timer cannot be split.
+                return;
+            }
             Observation obs = Observation
                     .createNotStarted(MeterNames.REQUEST_DURATION,
                             observationRegistry)
@@ -307,6 +318,16 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             // Parity with the Observation path, where the obs.error() below
             // makes DefaultMeterObservationHandler add the error tag for us.
             error = handledError.getClass().getSimpleName();
+        }
+        if (handledError != null && !interceptorError) {
+            // A user-triggered failure Flow routed to the session error
+            // handler never escapes request handling, so handleException has
+            // not marked the framework HTTP observation for it. Relay it here
+            // — also when request timing is off and no vaadin.request span
+            // exists to carry it — so root-span error monitoring still sees
+            // the failure. Cannot double-mark: handleException sets
+            // interceptorError.
+            hooks.error(request, handledError);
         }
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
