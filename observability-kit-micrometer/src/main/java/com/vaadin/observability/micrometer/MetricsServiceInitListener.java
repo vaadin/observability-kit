@@ -208,6 +208,7 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         // Record the bound registry so the dev-mode Copilot metrics panel can
         // read the live meters regardless of deployment type.
         ObservabilityKit.setActiveMeterRegistry(r);
+        ObservabilityUsage.markAsUsed(s);
         bind(event, r, or, s);
         if (!productionMode) {
             event.getSource()
