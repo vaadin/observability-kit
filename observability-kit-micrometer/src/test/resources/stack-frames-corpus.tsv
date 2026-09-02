@@ -1,0 +1,224 @@
+# The corpus the stack-frame filter is defined by. One shared file, read by
+# both enforcement points' tests:
+#
+#   StackFramesTest                 (server, the check that counts)
+#   src/test/js/VaadinMetricsClient.test.js  (browser)
+#
+# Two hand-maintained copies of a security-relevant rule need one source of
+# truth for what they must agree on, or "the two are checked against the same
+# corpus" is a claim rather than a fact.
+#
+# These define the *stack-line* rule -- StackFrames.parse, and the parseFrame
+# that mirrors it in the browser. That is the rule applied to each line of an
+# error's stack, and it is the only place a frame can be told apart from the
+# continuation line of a multi-line message, because only the browser ever
+# sees the stack. A `drop` here therefore means "this is not a stack line",
+# not "this string can never be published": several of the drops are shaped
+# like locations, and a payload that sends one directly as a bare `frame` or
+# `source` is trusted no more and no less than any other location.
+#
+# Format: <verdict> TAB <text> TAB <expected location, for keep and loc>
+#   keep  a stack line naming a location; the third column is the location the
+#         filter must return, without the function name that preceded it.
+#         StackFrames.parse and the browser's parseFrame must both give it,
+#         and so must StackFrames.frame.
+#   loc   not a stack line, but a valid location on its own -- which is what
+#         the collector actually sends in `frame`. parse must refuse it (it is
+#         not a frame) and frame must return it unchanged. These rows are what
+#         exercise frame's location-first branch; without them the frame loop
+#         merely repeats the parse loop, which is how a scoped path came to be
+#         mangled and a whole stack line came to be published raw, both with a
+#         green suite.
+#   drop  neither. Nothing may come out of it through any entry point.
+#
+# Lines starting with # are comments; blank lines are ignored. No line may
+# contain a tab of its own.
+
+# --- V8 -----------------------------------------------------------------
+keep	at renderChart (chart.js:44:13)	chart.js:44:13
+keep	at renderChart (chart.js:44)	chart.js:44
+keep	at chart.js:44:13	chart.js:44:13
+keep	at http://host/app.js:3:7	http://host/app.js:3:7
+keep	at Object.<anonymous> (/app/x.js:1:2)	/app/x.js:1:2
+keep	at new Foo (/app/x.js:1:2)	/app/x.js:1:2
+keep	at async Foo.bar (/app/x.js:1:2)	/app/x.js:1:2
+keep	at get prop (/app/x.js:1:2)	/app/x.js:1:2
+keep	at set prop (/app/x.js:1:2)	/app/x.js:1:2
+keep	at Array.map [as forEach] (/app/x.js:1:2)	/app/x.js:1:2
+keep	at Function.Module._load (node:internal/modules/cjs/loader:1094:12)	node:internal/modules/cjs/loader:1094:12
+keep	at MyClass.#priv (x.js:1:1)	x.js:1:1
+keep	at foo (webpack://app/./src/x.js:12:3)	webpack://app/./src/x.js:12:3
+# Paths with an @ in them. The rule is that an @ after a slash is part of the
+# path and never a name separator, so these have to survive whole: a scoped
+# npm package -- most of the component library lives under one -- and the
+# virtual paths a dev server serves. Getting this wrong mangles a large share
+# of real insights rather than a crafted case.
+keep	at router (/node_modules/@vaadin/router/router.js:12:3)	/node_modules/@vaadin/router/router.js:12:3
+keep	at update (/node_modules/@vaadin/grid/src/vaadin-grid.js:441:9)	/node_modules/@vaadin/grid/src/vaadin-grid.js:441:9
+keep	router@/node_modules/@vaadin/router/router.js:12:3	/node_modules/@vaadin/router/router.js:12:3
+keep	@/node_modules/@vaadin/router/router.js:12:3	/node_modules/@vaadin/router/router.js:12:3
+# Version-pinned CDN and import-map URLs. The @ before the version follows a
+# letter, not a slash, so a rule keyed on the previous character rejected all
+# of these -- and an app served from jsDelivr, unpkg or esm.sh lost `frame` and
+# `source` for every browser error. What marks a path is that its prefix is
+# rooted or schemed, which these are and a function name is not.
+keep	at f (https://cdn.jsdelivr.net/npm/@vaadin/router@1.7.5/dist/router.js:12:3)	https://cdn.jsdelivr.net/npm/@vaadin/router@1.7.5/dist/router.js:12:3
+keep	at go (https://cdn.jsdelivr.net/npm/@vaadin/grid@24.4.0/x.js:44:9)	https://cdn.jsdelivr.net/npm/@vaadin/grid@24.4.0/x.js:44:9
+keep	at f (https://unpkg.com/lit@3.1.0/index.js:1:2)	https://unpkg.com/lit@3.1.0/index.js:1:2
+keep	f@https://esm.sh/lit@3.1.0/index.js:1:2	https://esm.sh/lit@3.1.0/index.js:1:2
+# Firefox names a nested function outer/inner and an anonymous one outer/<, so
+# a name may contain a slash. "The prefix contains a slash" would read these as
+# paths and publish the name glued to the location; "rooted or schemed" does
+# not.
+keep	outer/inner@http://host/app.js:1:1	http://host/app.js:1:1
+keep	at f (/@fs/home/u/app/x.js:1:2)	/@fs/home/u/app/x.js:1:2
+keep	at f (/@id/virtual:my-mod.js:1:2)	/@id/virtual:my-mod.js:1:2
+keep	at f (/@vite/client:1:1)	/@vite/client:1:1
+keep	at f (webpack://@scope/pkg/./src/x.js:12:3)	webpack://@scope/pkg/./src/x.js:12:3
+keep	f@/@fs/home/u/app/x.js:1:2	/@fs/home/u/app/x.js:1:2
+keep	@/@vite/client:1:1	/@vite/client:1:1
+# Shapes the previous, name-validating rule dropped. They cost nothing now:
+# the name is not examined at all.
+keep	at bound foo (/a.js:1:1)	/a.js:1:1
+keep	at Object.[Symbol.iterator] (/a.js:1:1)	/a.js:1:1
+# A path segment or host need not be ASCII, and a Windows path and a bundler's
+# virtual path carry characters a URL does not.
+keep	at f (http://host/app/übersicht.js:1:2)	http://host/app/übersicht.js:1:2
+keep	at Object.<anonymous> (C:\app\x.js:1:2)	C:\app\x.js:1:2
+keep	at f (http://host/app/{slug}/page.js:1:2)	http://host/app/{slug}/page.js:1:2
+
+# --- SpiderMonkey and JSC -----------------------------------------------
+keep	renderChart@chart.js:44:13	chart.js:44:13
+# Firefox names no function for a top-level frame, so the @ has nothing in
+# front of it.
+keep	@http://host/app.js:3:7	http://host/app.js:3:7
+keep	name/<@http://host/app.js:1:1	http://host/app.js:1:1
+keep	async*loadData@http://host/app.js:12:3	http://host/app.js:12:3
+keep	async*promise@http://host/app.js:12:3	http://host/app.js:12:3
+# A script URL carrying credentials. Refused by a rule of its own -- an @
+# inside the authority, with something in front of it -- rather than by the
+# path rule, since a version pin and a password share nothing but the
+# character. No loss worth keeping: browsers do not load subresources from
+# userinfo URLs, and a location with a password in it is the last thing that
+# should travel in a forwarded payload.
+drop	loadData@http://user@host/app.js:1:2
+drop	http://user@host/app.js:1:2
+drop	http://user:pw@host/app.js:1:2
+
+# --- the price of having no rule about names ----------------------------
+# The @ form has no delimiter, so the line as a whole has to look like a frame
+# line before its @ counts as a separator: no whitespace anywhere, and both a
+# line and a column. That is what keeps a sentence containing an @ from being
+# split into a "name" and something that passes for a location -- and since
+# the first line that parses wins and a message precedes the stack, such a
+# line would displace the real frame, not just add a host.
+#
+# It costs these, which are real: Safari's pseudo-names and Firefox's
+# space-containing async markers. firstFrame moves to the next line, and where
+# one of these is the only line in the stack the insight falls back to
+# `source`, which the browser supplies for a top-level script error. The
+# alternative was an allowlist of engine-generated names, and four rounds of
+# rules about what may stand in front of the @ was enough.
+drop	global code@http://host/app.js:1:1
+drop	module code@http://host/app.js:1:1
+drop	eval code@http://host/app.js:1:1
+drop	promise callback*loadData@http://host/app.js:12:3
+drop	setTimeout handler*tick@http://host/app.js:12:3
+drop	MutationObserver callback*onMutate@http://host/app.js:1:1
+drop	promise callback*@http://host/app.js:1:1
+# One number is a URL that ends in a digit, not a frame: every engine that
+# writes this form writes file:line:column.
+drop	renderChart@chart.js:44
+
+# --- bare locations: what the collector actually puts in `frame` --------
+# Not stack lines, so parse refuses them; frame has to hand them back whole.
+loc	chart.js:44:13	chart.js:44:13
+loc	/VAADIN/build/chart.js:44	/VAADIN/build/chart.js:44
+loc	http://host/app.js:3:7	http://host/app.js:3:7
+loc	node:internal/modules/cjs/loader:1094:12	node:internal/modules/cjs/loader:1094:12
+loc	C:\app\x.js:1:2	C:\app\x.js:1:2
+loc	blob:https://host/9f2c-3a:0	blob:https://host/9f2c-3a:0
+# A hashed bundle name: digits in the file are not evidence of anything, so
+# only the numeric slots are capped.
+loc	chunk-1234567890123.js:1:2	chunk-1234567890123.js:1:2
+# A port is not a line number.
+loc	http://host:8080/app.js:1:2	http://host:8080/app.js:1:2
+# Every @ follows a slash, so none of these is a name glued to a path.
+loc	/node_modules/@vaadin/router/router.js:12:3	/node_modules/@vaadin/router/router.js:12:3
+# The same CDN and import-map shapes as the collector actually sends them: a
+# bare location, already extracted from the stack in the browser.
+loc	https://cdn.jsdelivr.net/npm/@vaadin/router@1.7.5/dist/router.js:12:3	https://cdn.jsdelivr.net/npm/@vaadin/router@1.7.5/dist/router.js:12:3
+loc	https://unpkg.com/lit@3.1.0/index.js:1:2	https://unpkg.com/lit@3.1.0/index.js:1:2
+loc	https://esm.sh/lit@3.1.0/index.js:1:2	https://esm.sh/lit@3.1.0/index.js:1:2
+# A bare specifier resolved through an import map. The leading @ opens the
+# scope; eating it names a package that does not exist.
+loc	@vaadin/grid/x.js:1:2	@vaadin/grid/x.js:1:2
+loc	/@fs/home/u/app/x.js:1:2	/@fs/home/u/app/x.js:1:2
+loc	/@id/virtual:my-mod.js:1:2	/@id/virtual:my-mod.js:1:2
+loc	/@vite/client:1:1	/@vite/client:1:1
+loc	webpack://@scope/pkg/./src/x.js:12:3	webpack://@scope/pkg/./src/x.js:12:3
+
+# --- not a location at all ----------------------------------------------
+drop	TypeError: card number 4111 is bad
+drop	at startup
+drop	Error: Upload failed for:
+# A message is free text and routinely holds a colon and a number.
+drop	Error: failed to fetch https://user@api.example.com:8443
+drop	Error: SMTP to alice@corp.com failed on attempt:3
+drop	at card 4111 declined:1
+drop	Error: token abc@d.com expired at 12:30
+# The continuation line of a multi-line message: a bare URL, one line above
+# the frame that actually threw. `new Error('Upload failed for:\n' + url)`.
+drop	https://alice@files.example.com/private/q3-report.pdf:1
+# A location with no file to open.
+drop	at <anonymous>:1:5
+# Arabic-Indic digits: digits to Java's Character.isDigit and not to the
+# browser's character-code scan, so a line numbered with them would be a
+# location on one side and not the other.
+drop	at f (app.js:١٢)
+drop	f@app.js:١٢
+# A number that wanted to be published, in the slots narrow enough to say so.
+# A line number is a position in a file. Both forms matter: appending a column
+# was all it took to slide the over-long run back into the "file", which FILE
+# accepts because a path really can contain digits and colons.
+drop	at f (/a.js:4111111111111111)
+drop	f@/a.js:4111111111111111
+drop	at f (/a.js:4111111111111111:1)
+drop	f@/a.js:4111111111111111:1
+drop	at f (/a.js:1:4111111111111111)
+# And a third number, which slid the over-long run one slot further back into
+# the "file" -- the cap has to bound the slots, not the last two of however
+# many there are. A location has a line, at most a column, and nothing after.
+drop	at f (/a.js:4111111111111111:1:2)
+drop	f@/a.js:4111111111111111:1:2
+drop	at f (/a.js:4111111111111111:1:2:3)
+drop	at f (/a.js:1:2:3)
+
+# Colon-free message lines. Nothing about these is contrived: an error whose
+# text quotes a host, a path or an address splits at the @ exactly like a
+# Firefox frame does, and the guard that catches a URL scheme's colon does not
+# see them.
+drop	refused by redis@cache.internal.example:6379
+drop	see bob@files.example.com/private/q3-report.pdf:1
+drop	token abc 4111@evil.example.com/x.js:1:2
+drop	contact admin@example.com for app.js:1:2
+
+# --- text in the name slot is no longer a leak, because the name is not -----
+# --- part of the location. In V8's form, where the location is delimited by
+# --- the engine, these keep and publish only the location; the name goes to
+# --- the gated `function` field. Every one of them defeated some earlier rule
+# --- about what a name may look like, which is why there is no such rule now.
+keep	at ssn 123-45-6789 for user bob (/a.js:1:1)	/a.js:1:1
+keep	at 4111111111111111 (/app/card.js:1:1)	/app/card.js:1:1
+keep	at your session token is deadbeef*f (/a.js:1:1)	/a.js:1:1
+keep	at card number*four one*one one*f (/a.js:1:1)	/a.js:1:1
+keep	at Jane [as x]Doe (/a.js:1:1)	/a.js:1:1
+keep	at $4111111111111111 (/a.js:1:1)	/a.js:1:1
+# In the @ form the same text is refused outright, because there the line has
+# to look like a frame line before the @ counts as a separator.
+drop	your session*token is*deadbeef cafe*f@/a.js:1:1
+drop	_123 _45*f@/a.js:1:1
+# Space-free, though, and the @ form has nothing left to object to: the name
+# is unexamined by design, and the location is the only thing published
+# ungated. This is the boundary, stated rather than papered over.
+keep	$4111111111111111*f@/a.js:1:1	/a.js:1:1

@@ -30,12 +30,43 @@ public final class MetricsCollectorElement extends Component {
     private static final String CLIENT_INIT_KEY = "vaadinMetricsClientInitialized";
     private static final String CLIENT_RESOURCE = "META-INF/frontend/VaadinMetricsClient.js";
 
+    /**
+     * Tells the in-browser collector whether to gather the message of an error
+     * it reports. Decided on the server rather than left to its retention rule:
+     * a message nothing would keep should not be buffered in the tab and posted
+     * either, since the browser holds its buffer in {@code sessionStorage}
+     * across a reload and an outage.
+     */
+    private static final String DETAILS_PRELUDE = "window.__vaadinMicrometerDetails=%s;";
+
     private final transient ClientMetricsBinder binder;
     private final transient ClientRateLimiter limiter;
+    private final boolean collectErrorMessages;
 
+    /**
+     * @deprecated use
+     *             {@link #MetricsCollectorElement(ClientMetricsBinder, ObservabilitySettings, boolean)},
+     *             which says whether the browser should gather an error's
+     *             message and function name. This overload never gathers
+     *             either, so an application wiring the element up by hand
+     *             silently loses the detail {@code insights-details} asks for.
+     */
+    @Deprecated
     public MetricsCollectorElement(ClientMetricsBinder binder,
             ObservabilitySettings settings) {
+        this(binder, settings, false);
+    }
+
+    /**
+     * @param collectErrorMessages
+     *            whether the in-browser collector should gather the message of
+     *            an error it reports — the {@code insights-details} setting
+     *            <em>and</em> something on the server willing to retain one
+     */
+    public MetricsCollectorElement(ClientMetricsBinder binder,
+            ObservabilitySettings settings, boolean collectErrorMessages) {
         this.binder = binder;
+        this.collectErrorMessages = collectErrorMessages;
         this.limiter = new ClientRateLimiter(
                 settings.getClientRatePerSession());
         getElement().getStyle().set("display", "none");
@@ -50,7 +81,8 @@ public final class MetricsCollectorElement extends Component {
     @Override
     protected void onAttach(AttachEvent event) {
         ClientResourceLoader.loadOnce(event.getUI(), CLIENT_INIT_KEY,
-                CLIENT_RESOURCE, MetricsCollectorElement.class);
+                CLIENT_RESOURCE, MetricsCollectorElement.class,
+                DETAILS_PRELUDE.formatted(collectErrorMessages));
     }
 
     @ClientCallable
