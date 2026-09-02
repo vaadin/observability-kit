@@ -69,6 +69,12 @@ public final class SpringMetricsServiceInitListener
     }
 
     @Override
+    protected void enrichHttpObservationRoute(VaadinRequest request,
+            String routeTemplate) {
+        SpringHttpObservationEnricher.route(request, routeTemplate);
+    }
+
+    @Override
     protected void markHttpObservationError(VaadinRequest request,
             Throwable failure) {
         SpringHttpObservationEnricher.error(request, failure);

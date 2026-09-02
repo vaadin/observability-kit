@@ -8,13 +8,12 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.util.function.BiConsumer;
-
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinResponse;
@@ -63,19 +62,26 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  */
 final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
-    private static final BiConsumer<VaadinRequest, String> NO_ENRICH = (r,
-            t) -> {
-    };
-    private static final BiConsumer<VaadinRequest, Throwable> NO_MARK = (r,
-            t) -> {
-    };
-
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings settings;
     private final ErrorCounter errors;
-    private final BiConsumer<VaadinRequest, String> httpObservationEnricher;
-    private final BiConsumer<VaadinRequest, Throwable> httpObservationErrorMarker;
+    /**
+     * How many distinct route templates may reach the framework's {@code uri}
+     * tag before the rest collapse into {@code _other}. Deliberately well under
+     * Spring Boot's {@code management.metrics.web.server.max-uri-tags} default
+     * of 100: Boot's {@code MaximumAllowableTagsMeterFilter} DENIES a meter
+     * outright once the distinct {@code uri} count crosses its cap — the series
+     * is never created, not bucketed — and admission is first-come-first-served
+     * across every endpoint of the application, so blowing the budget would
+     * silently delete arbitrary {@code http.server.requests} series, Vaadin or
+     * not. Half of Boot's default leaves the other half for actuator endpoints
+     * and REST controllers.
+     */
+    static final int HTTP_URI_ROUTE_LIMIT = 50;
+
+    private final HttpObservationHooks hooks;
+    private final RouteTagResolver routes;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
@@ -88,51 +94,45 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     RequestMetricsBinder(MeterRegistry registry,
             ObservabilitySettings settings) {
-        this(registry, null, settings, NO_ENRICH);
+        this(registry, null, settings, HttpObservationHooks.NONE);
     }
 
     RequestMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings) {
-        this(registry, observationRegistry, settings, NO_ENRICH);
+        this(registry, observationRegistry, settings,
+                HttpObservationHooks.NONE);
     }
 
     RequestMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
-            ObservabilitySettings settings,
-            BiConsumer<VaadinRequest, String> httpObservationEnricher) {
-        this(registry, observationRegistry, settings, httpObservationEnricher,
+            ObservabilitySettings settings, HttpObservationHooks hooks) {
+        this(registry, observationRegistry, settings, hooks,
                 settings.isErrors() ? new ErrorCounter(registry, settings)
-                        : null,
-                NO_MARK);
+                        : null);
     }
 
     /**
+     * @param hooks
+     *            callbacks into the framework-level HTTP observation, or
+     *            {@code null} for none (standalone deployments)
      * @param errors
      *            the counter shared with {@link ErrorMetricsBinder}, or
      *            {@code null} when error metrics are off — this interceptor is
      *            also installed for request metrics alone, and then there is
      *            nothing to count
-     * @param httpObservationErrorMarker
-     *            marks the framework-level HTTP observation errored, or
-     *            {@code null} for none (standalone deployments)
      */
     RequestMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
-            ObservabilitySettings settings,
-            BiConsumer<VaadinRequest, String> httpObservationEnricher,
-            ErrorCounter errors,
-            BiConsumer<VaadinRequest, Throwable> httpObservationErrorMarker) {
+            ObservabilitySettings settings, HttpObservationHooks hooks,
+            ErrorCounter errors) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
         this.errors = errors;
-        this.httpObservationEnricher = httpObservationEnricher != null
-                ? httpObservationEnricher
-                : NO_ENRICH;
-        this.httpObservationErrorMarker = httpObservationErrorMarker != null
-                ? httpObservationErrorMarker
-                : NO_MARK;
+        this.hooks = hooks != null ? hooks : HttpObservationHooks.NONE;
+        this.routes = new RouteTagResolver(Math.min(HTTP_URI_ROUTE_LIMIT,
+                settings.getRouteCardinalityLimit()));
     }
 
     private boolean useObservation() {
@@ -159,14 +159,16 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         RequestInteraction.clear();
         // Same for a failure relayed by the session error handler.
         RequestError.clear();
+        // And for the UI reference the binders mark during handling.
+        RequestUi.clear();
+        // Let DI integrations (Spring/Boot) lift the Vaadin type into the
+        // framework HTTP observation. Not gated on any kit setting: the hook
+        // enriches an observation the framework emits anyway (its uri tag on
+        // http.server.requests is a metric, not a span), and it defaults to a
+        // no-op for standalone deployments.
+        hooks.requestType(request, requestType(request));
         if (useObservation()) {
             String type = requestType(request);
-            // Let DI integrations (Spring/Boot) lift Vaadin type into the
-            // parent HTTP span so the trace UI shows the request type
-            // without drilling down. Defaults to no-op for standalone. Not
-            // gated on the requests setting: it enriches an observation the
-            // framework emits anyway, rather than timing anything itself.
-            httpObservationEnricher.accept(request, type);
             if (!settings.isRequests()) {
                 // The requests setting turns off the kit's own request
                 // timing, which on this path means the whole request
@@ -296,7 +298,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // deployments, and deliberately not gated on the traces or errors
         // settings: this corrects the status of an observation the framework
         // emits anyway, rather than emitting new telemetry.
-        httpObservationErrorMarker.accept(request, exception);
+        hooks.error(request, exception);
     }
 
     @Override
@@ -325,7 +327,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             // exists to carry it — so root-span error monitoring still sees
             // the failure. Cannot double-mark: handleException sets
             // interceptorError.
-            httpObservationErrorMarker.accept(request, handledError);
+            hooks.error(request, handledError);
         }
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
@@ -344,6 +346,27 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // of the opaque protocol-level "uidl".
         String interaction = RequestInteraction.take();
         String type = requestType(request);
+        // The UI the handlers marked while processing this request. Consumed
+        // unconditionally so a pooled thread never carries it over.
+        UI ui = RequestUi.take();
+        if (ObservationNames.REQUEST_TYPE_UIDL.equals(type) && ui != null) {
+            // Lift the active view's route template into the framework HTTP
+            // observation, so its uri tag and span name read /orders/:id
+            // instead of the protocol-level /vaadin/uidl. Resolved here, at
+            // request end, after any navigation during handling has settled.
+            // UI.getCurrent() is no longer bound here (the UIDL handler
+            // clears it with the session lock), so the UI comes from the
+            // RequestUi relay the binders fill during handling. Not gated
+            // on traces: the uri tag this feeds is a metric. Template-only
+            // resolution: the concrete-location fallback would feed literal
+            // paths (orders/17, orders/18, ...) into a bounded budget.
+            String route = routes.templateForActiveRoute(ui);
+            if (!MeterNames.ROUTE_UNKNOWN.equals(route)) {
+                // A blank template is the root route: for a UIDL request a
+                // view is always active, so blank cannot mean "no view".
+                hooks.route(request, route);
+            }
+        }
         // Resolve the interaction once, for whichever path records: a UIDL
         // request takes the listener's marker (defaulting to the generic
         // "rpc"), anything else has no interaction to report.
@@ -402,8 +425,12 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         if ("heartbeat".equals(vr)) {
             return ObservationNames.REQUEST_TYPE_HEARTBEAT;
         }
+        // /themes/ and /sw.js are what 4.1's agent treated as static assets
+        // besides the Vaadin resource folder; without them theme resources and
+        // the service worker land in the "other" bucket next to page loads.
         if (path != null && (path.startsWith("/VAADIN/")
-                || path.startsWith("/static/"))) {
+                || path.startsWith("/static/") || path.startsWith("/themes/")
+                || path.startsWith("/sw.js"))) {
             return ObservationNames.REQUEST_TYPE_STATIC;
         }
         return ObservationNames.REQUEST_TYPE_OTHER;

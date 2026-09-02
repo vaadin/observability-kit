@@ -183,6 +183,30 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         // no-op by default
     }
 
+    /**
+     * Hook for DI integrations to set the resolved Vaadin route template on the
+     * framework-level HTTP observation (e.g. Spring's
+     * {@code ServerHttpObservationFilter} span), so the {@code uri} tag on
+     * {@code http.server.requests} and the HTTP span name carry the view (e.g.
+     * {@code /orders/:id}) instead of the protocol-level {@code /vaadin/uidl}.
+     * Called from {@link RequestMetricsBinder} at the end of a UIDL request,
+     * once the route the request actually landed on is known. The template has
+     * already passed the route cardinality cap.
+     * <p>
+     * Default implementation no-ops, keeping the framework-agnostic core free
+     * of Spring imports. The Spring/Boot integration modules override this to
+     * call into their respective HTTP-observation APIs.
+     *
+     * @param request
+     *            the current Vaadin request
+     * @param routeTemplate
+     *            the resolved route template; blank means the root route
+     */
+    protected void enrichHttpObservationRoute(VaadinRequest request,
+            String routeTemplate) {
+        // no-op by default
+    }
+
     @Override
     public void serviceInit(ServiceInitEvent event) {
         MeterRegistry r = meterRegistry != null ? meterRegistry
@@ -249,9 +273,24 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                 : null;
 
         if (settings.isRequests() || settings.isErrors()) {
+            HttpObservationHooks hooks = new HttpObservationHooks() {
+                @Override
+                public void requestType(VaadinRequest request, String type) {
+                    enrichHttpObservation(request, type);
+                }
+
+                @Override
+                public void route(VaadinRequest request, String template) {
+                    enrichHttpObservationRoute(request, template);
+                }
+
+                @Override
+                public void error(VaadinRequest request, Throwable failure) {
+                    markHttpObservationError(request, failure);
+                }
+            };
             event.addVaadinRequestInterceptor(new RequestMetricsBinder(registry,
-                    observationRegistry, settings, this::enrichHttpObservation,
-                    errors, this::markHttpObservationError));
+                    observationRegistry, settings, hooks, errors));
         }
 
         if (navigationBinder != null) {

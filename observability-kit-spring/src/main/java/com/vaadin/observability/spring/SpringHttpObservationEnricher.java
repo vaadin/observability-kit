@@ -62,6 +62,46 @@ final class SpringHttpObservationEnricher {
     }
 
     /**
+     * Sets the resolved Vaadin route template as the path pattern of the Spring
+     * HTTP observation attached to {@code request}, if any. The path pattern
+     * becomes the {@code uri} tag on {@code http.server.requests} and part of
+     * the span's contextual name, so per-view HTTP latency stays answerable:
+     * without this every UIDL request buckets into one
+     * {@code uri="/vaadin/uidl"} series. The template is already bounded by the
+     * route cardinality cap.
+     * <p>
+     * Best-effort: silently no-ops if Spring's filter didn't run or the request
+     * isn't a servlet request.
+     *
+     * @param request
+     *            the current Vaadin request, may be {@code null}
+     * @param routeTemplate
+     *            the resolved route template (e.g. {@code orders/:id}), may be
+     *            {@code null}
+     */
+    static void route(VaadinRequest request, String routeTemplate) {
+        if (request == null || routeTemplate == null) {
+            return;
+        }
+        Object ctx = request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE);
+        if (!(ctx instanceof ServerRequestObservationContext src)) {
+            return;
+        }
+        try {
+            String pattern = routeTemplate.startsWith("/") ? routeTemplate
+                    : "/" + routeTemplate;
+            src.setPathPattern(pattern);
+            String method = request.getMethod();
+            src.setContextualName(
+                    "http " + (method == null ? "?" : method.toLowerCase())
+                            + " " + pattern);
+        } catch (RuntimeException ignored) {
+            // best-effort
+        }
+    }
+
+    /**
      * Marks the Spring HTTP observation attached to {@code request} as errored,
      * if any. For a UIDL request Vaadin swallows the exception and responds
      * 200, so {@link ServerHttpObservationFilter} would otherwise report the

@@ -512,6 +512,27 @@ When tracing is enabled (the default) and an `ObservationRegistry` is available,
 the kit emits spans through the Micrometer Observation API for the Vaadin request
 lifecycle, navigation and RPC. Spring Boot Actuator supplies an
 `ObservationRegistry` automatically; the standalone bootstrap creates one for you.
+
+In Spring deployments the kit also enriches Spring's own HTTP server
+observation: each Vaadin request gets its type lifted into the HTTP span, and a
+UIDL request additionally gets the active view's route template set as the path
+pattern. The `uri` tag on `http.server.requests` and the HTTP span name then
+read `/orders/:id` instead of bucketing all UI traffic into a single
+`/vaadin/uidl` entry, so per-view HTTP latency stays answerable directly from
+the standard Spring metrics. The templates pass the same
+`route-cardinality-limit` cap as the kit's own `route` tags. At most 50
+distinct view templates ever reach the `uri` tag, regardless of configuration —
+`route-cardinality-limit` can lower that budget but never raise it — and the
+rest collapse into `/_other`. The fixed budget is deliberately half of Spring
+Boot's `management.metrics.web.server.max-uri-tags` default (100): once *that*
+cap is crossed, Boot denies new `http.server.requests` series outright instead
+of bucketing them, first-come-first-served across every endpoint of the
+application, so the kit stays well clear of it. `max-uri-tags` therefore
+governs only the non-Vaadin remainder — raise it when actuator endpoints and
+REST controllers need more room, not to get more view templates through. The
+enrichment is independent of the `traces` setting: it also applies when only
+metrics are collected.
+
 To export the spans, add a Micrometer tracing bridge (for example OpenTelemetry or
 Zipkin) as you would for any Micrometer-instrumented application. Set
 `vaadin.observability.traces=false` to disable span emission.

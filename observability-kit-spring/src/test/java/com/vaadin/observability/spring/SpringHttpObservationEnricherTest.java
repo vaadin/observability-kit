@@ -106,4 +106,72 @@ class SpringHttpObservationEnricherTest {
 
         assertThat(context.getError()).isSameAs(failure);
     }
+
+    @Test
+    void routeWithNullArgumentsDoesNotThrow(@Mock VaadinRequest request) {
+        assertThatCode(() -> SpringHttpObservationEnricher.route(null, "db"))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> SpringHttpObservationEnricher.route(request, null))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void routeWithMissingObservationContextDoesNotThrow(
+            @Mock VaadinRequest request) {
+        when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(null);
+        assertThatCode(() -> SpringHttpObservationEnricher.route(request, "db"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void routeSetsPathPatternAndContextualName(@Mock VaadinRequest request,
+            @Mock HttpServletRequest httpRequest,
+            @Mock HttpServletResponse httpResponse) {
+        ServerRequestObservationContext context = new ServerRequestObservationContext(
+                httpRequest, httpResponse);
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(context);
+
+        SpringHttpObservationEnricher.route(request, "orders/:id");
+
+        assertThat(context.getPathPattern()).isEqualTo("/orders/:id");
+        assertThat(context.getContextualName())
+                .isEqualTo("http post /orders/:id");
+    }
+
+    @Test
+    void routeKeepsLeadingSlash(@Mock VaadinRequest request,
+            @Mock HttpServletRequest httpRequest,
+            @Mock HttpServletResponse httpResponse) {
+        ServerRequestObservationContext context = new ServerRequestObservationContext(
+                httpRequest, httpResponse);
+        when(request.getMethod()).thenReturn("POST");
+        when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(context);
+
+        SpringHttpObservationEnricher.route(request, "/db");
+
+        assertThat(context.getPathPattern()).isEqualTo("/db");
+    }
+
+    @Test
+    void routeMapsBlankTemplateToRoot(@Mock VaadinRequest request,
+            @Mock HttpServletRequest httpRequest,
+            @Mock HttpServletResponse httpResponse) {
+        ServerRequestObservationContext context = new ServerRequestObservationContext(
+                httpRequest, httpResponse);
+        when(request.getMethod()).thenReturn("GET");
+        when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(context);
+
+        SpringHttpObservationEnricher.route(request, "");
+
+        assertThat(context.getPathPattern()).isEqualTo("/");
+    }
 }

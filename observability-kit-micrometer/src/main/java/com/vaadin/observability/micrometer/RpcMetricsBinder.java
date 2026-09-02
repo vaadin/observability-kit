@@ -112,8 +112,10 @@ final class RpcMetricsBinder {
         ObservationScopes.closeStale(observationRegistry, observationScope);
 
         // Mark the enclosing UIDL request span as an RPC interaction so the
-        // RequestMetricsBinder labels the parent span appropriately.
+        // RequestMetricsBinder labels the parent span appropriately, and
+        // relay the UI so it can resolve the active route at request end.
         RequestInteraction.mark(ObservationNames.INTERACTION_RPC);
+        RequestUi.mark(event.getUI());
 
         String type = event.getType();
         if (useObservation) {

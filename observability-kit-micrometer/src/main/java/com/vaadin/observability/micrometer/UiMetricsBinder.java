@@ -89,8 +89,10 @@ final class UiMetricsBinder implements UIInitListener {
             // Polls are the high-frequency UIDL noise; labelling them lets the
             // request span read "vaadin.request.poll" instead of an opaque
             // "vaadin.request.uidl".
-            ui.addPollListener(e -> RequestInteraction
-                    .mark(ObservationNames.INTERACTION_POLL));
+            ui.addPollListener(e -> {
+                RequestInteraction.mark(ObservationNames.INTERACTION_POLL);
+                RequestUi.mark(e.getSource());
+            });
         }
         if (clientBinder != null) {
             ui.add(new MetricsCollectorElement(clientBinder, settings));

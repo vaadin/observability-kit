@@ -68,6 +68,16 @@ public class DatabaseFetchMetricsIT extends AbstractIT {
         assertThat(labeledValue(body, "vaadin_db_query_seconds_count", "db"))
                 .as("vaadin_db_query_seconds_count{route=\"db\"}")
                 .isGreaterThanOrEqualTo(2.0);
+        // The button clicks were UIDL requests sent from the db view, so the
+        // Spring HTTP observation must carry the route template as its uri
+        // tag instead of bucketing everything into uri="/vaadin/uidl". This
+        // is what keeps per-view HTTP latency answerable.
+        assertThat(body).withFailMessage(
+                "expected http_server_requests_seconds to be tagged with "
+                        + "uri=\"/db\" for the UIDL requests sent from the db "
+                        + "view")
+                .containsPattern(
+                        "http_server_requests_seconds_count\\{[^}]*uri=\"/db\"");
     }
 
     private void waitUntilResult(String expected) {

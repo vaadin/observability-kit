@@ -465,12 +465,22 @@ class RequestMetricsBinderObservationTest {
         List<Throwable> marked = new ArrayList<>();
 
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, obs,
-                ObservabilitySettings
-                        .builder().requests(false).traces(true).build(),
-                (request, type) -> enriched.add(type),
-                new ErrorCounter(registry,
-                        ObservabilitySettings.builder().build()),
-                (request, failure) -> marked.add(failure));
+                ObservabilitySettings.builder().requests(false).traces(true)
+                        .build(),
+                new HttpObservationHooks() {
+                    @Override
+                    public void requestType(VaadinRequest request,
+                            String type) {
+                        enriched.add(type);
+                    }
+
+                    @Override
+                    public void error(VaadinRequest request,
+                            Throwable failure) {
+                        marked.add(failure);
+                    }
+                }, new ErrorCounter(registry,
+                        ObservabilitySettings.builder().build()));
 
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
@@ -503,10 +513,15 @@ class RequestMetricsBinderObservationTest {
         List<Throwable> marked = new ArrayList<>();
 
         RequestMetricsBinder binder = new RequestMetricsBinder(
-                new SimpleMeterRegistry(), obs,
-                ObservabilitySettings.builder().requests(false).traces(true)
-                        .build(),
-                null, null, (request, failure) -> marked.add(failure));
+                new SimpleMeterRegistry(), obs, ObservabilitySettings.builder()
+                        .requests(false).traces(true).build(),
+                new HttpObservationHooks() {
+                    @Override
+                    public void error(VaadinRequest request,
+                            Throwable failure) {
+                        marked.add(failure);
+                    }
+                }, null);
 
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
@@ -540,8 +555,14 @@ class RequestMetricsBinderObservationTest {
 
         RequestMetricsBinder binder = new RequestMetricsBinder(
                 new SimpleMeterRegistry(), obs,
-                ObservabilitySettings.builder().build(), null, null,
-                (request, failure) -> marked.add(failure));
+                ObservabilitySettings.builder().build(),
+                new HttpObservationHooks() {
+                    @Override
+                    public void error(VaadinRequest request,
+                            Throwable failure) {
+                        marked.add(failure);
+                    }
+                }, null);
 
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
