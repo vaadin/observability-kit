@@ -20,6 +20,66 @@ code, no annotations, no configuration required.
 - Spring Boot 4 (only for the `observability-kit-starter`; plain-Spring and
   standalone setups are also supported)
 
+## How it works
+
+The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request interceptor, the RPC and data-query events on `VaadinServiceEventBus`, navigation listeners, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows work across `UI.access(...)` thread hops.
+
+The kit also enriches telemetry the framework emits anyway: through its HTTP observation hooks, the Spring HTTP observation gets the Vaadin request type, the active view's route template as its `uri` tag (template-only, and budgeted to stay under Boot's `max-uri-tags` cap), and error status for failures Vaadin handles internally on a 200 response.
+
+On the browser side, an injected collector gathers bootstrap timing, Web Vitals, client errors, connection state and navigation timing into a priority-ordered buffer, persisted to `sessionStorage` across outages and page closes, and ships batches to the server over a rate-limited `@ClientCallable`. Every sample is validated against a per-meter tag-key allowlist and bounded tag values before recording. Failed and slow interactions are additionally retained by the insights collectors and exposed at `/actuator/vaadin`, so a user report can be backtracked to the exact interaction.
+
+```mermaid
+flowchart LR
+    subgraph Browser
+        collector["VaadinMetricsClient.js<br/>bootstrap, web vitals, errors,<br/>connection state, navigation"]
+    end
+
+    subgraph Server["Vaadin application"]
+        httpobs["Spring HTTP observation<br/>http.server.requests"]
+        resync["Resync detection filter<br/>vaadin.resync"]
+        flow["VaadinService + Flow SPIs<br/>requests, RPC, navigation,<br/>data queries, sessions, UIs, errors"]
+
+        subgraph Kit["Observability Kit binders"]
+            reqb["RequestMetricsBinder<br/>vaadin.request.duration"]
+            rpcb["RpcMetricsBinder<br/>vaadin.rpc.duration"]
+            navb["NavigationMetricsBinder<br/>vaadin.navigation"]
+            datab["DataQueryMetricsBinder<br/>vaadin.data.fetch / count"]
+            errb["ErrorMetricsBinder<br/>vaadin.errors"]
+            lifeb["Session / UI / Lock / State binders<br/>vaadin.sessions.*, vaadin.ui.*"]
+            clientb["ClientMetricsBinder<br/>vaadin.client.*"]
+            dbproxy["DataSource proxy, Boot opt-in<br/>vaadin.db.query / fetch.rows"]
+        end
+
+        hooks["HTTP observation hooks<br/>request type, route template, error"]
+        insights["Insights collectors<br/>/actuator/vaadin"]
+        texec["TracingExecutor<br/>context across UI.access"]
+    end
+
+    subgraph Micrometer
+        meters["MeterRegistry"]
+        obsreg["ObservationRegistry"]
+        handler["Meter observation handler<br/>observations become Timers"]
+    end
+
+    subgraph Backends
+        prom["/actuator/prometheus<br/>Prometheus, Grafana, Datadog, ..."]
+        bridge["Tracing bridge<br/>OpenTelemetry, Zipkin, Jaeger"]
+    end
+
+    collector -- "rate-limited batches<br/>over a ClientCallable" --> clientb
+    flow -- "listener and event-bus callbacks" --> Kit
+    resync --> meters
+    reqb -- "enrich and mark" --> hooks --> httpobs
+    reqb & rpcb & navb & datab --> obsreg
+    errb & lifeb & clientb & dbproxy --> meters
+    errb & reqb -- "failed / slow interactions" --> insights
+    texec --> obsreg
+    obsreg --> handler --> meters
+    obsreg -- "spans" --> bridge
+    httpobs --> obsreg
+    meters -- "scrape" --> prom
+```
+
 ## Getting started (Spring Boot)
 
 Add the starter:
