@@ -8,7 +8,6 @@
  */
 package com.vaadin.observability.micrometer.insights;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.jspecify.annotations.Nullable;
@@ -122,11 +121,34 @@ final class StackFrames {
             .compile("[\\p{L}\\p{N}._~:/?#!$&'*+,;=%@\\[\\]{}|\\\\-]+");
 
     /**
-     * A URL scheme and its {@code ://}, matched at the start of the text. What
-     * tells a path prefix from a function name, together with a leading slash.
+     * Whether the text opens with a URL scheme and its slashes —
+     * {@code https:}, {@code webpack:}. What tells a path prefix from a
+     * function name, together with a leading slash.
+     * <p>
+     * A character scan rather than a pattern, to stay line-for-line comparable
+     * with the browser's copy, which cannot use one: the loader strips comments
+     * from that file before injecting it, and its parser reads the double slash
+     * inside a regex literal as the start of a line comment — which truncated
+     * the file at that line and took the whole collector with it.
      */
-    private static final Pattern SCHEME = Pattern
-            .compile("[A-Za-z][A-Za-z0-9+.\\-]*://");
+    private static boolean hasScheme(String text) {
+        int colon = text.indexOf(':');
+        if (colon < 1 || colon + 2 >= text.length()
+                || text.charAt(colon + 1) != '/'
+                || text.charAt(colon + 2) != '/') {
+            return false;
+        }
+        for (int at = 0; at < colon; at++) {
+            char c = text.charAt(at);
+            boolean alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+            boolean extra = at > 0 && ((c >= '0' && c <= '9') || c == '+'
+                    || c == '.' || c == '-');
+            if (!alpha && !extra) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     /**
      * What a whole {@code name@location} line may be made of: the {@link #FILE}
@@ -422,11 +444,11 @@ final class StackFrames {
     private static boolean partOfPath(String text, int at) {
         if (at == 0) {
             String rest = text.substring(1);
-            return !(rest.startsWith("/") || SCHEME.matcher(rest).lookingAt());
+            return !(rest.startsWith("/") || hasScheme(rest));
         }
         String prefix = text.substring(0, at);
-        return prefix.indexOf('/') >= 0 && (prefix.charAt(0) == '/'
-                || SCHEME.matcher(prefix).lookingAt());
+        return prefix.indexOf('/') >= 0
+                && (prefix.charAt(0) == '/' || hasScheme(prefix));
     }
 
     /**
@@ -443,13 +465,14 @@ final class StackFrames {
      * a scoped package where an authority would go, and has to survive.
      */
     private static boolean hasUserInfo(String file) {
-        Matcher scheme = SCHEME.matcher(file);
-        if (!scheme.lookingAt()) {
+        if (!hasScheme(file)) {
             return false;
         }
-        int slash = file.indexOf('/', scheme.end());
-        String authority = slash < 0 ? file.substring(scheme.end())
-                : file.substring(scheme.end(), slash);
+        // Past the colon and its two slashes, up to the next one.
+        int start = file.indexOf(':') + 3;
+        int slash = file.indexOf('/', start);
+        String authority = slash < 0 ? file.substring(start)
+                : file.substring(start, slash);
         return authority.indexOf('@') > 0;
     }
 

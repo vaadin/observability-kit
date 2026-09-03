@@ -538,9 +538,32 @@
     );
   }
 
-  // A URL scheme and its `://`, matched at the start of the text. What tells a
-  // path prefix from a function name, together with a leading slash.
-  var SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+  // Whether the text opens with a URL scheme and its slashes -- "https:",
+  // "webpack:". What tells a path prefix from a function name, together with a
+  // leading slash.
+  //
+  // A character scan rather than a regex, and the reason is not style. The
+  // loader strips comments from this file before injecting it, and its parser
+  // reads a double slash inside a regex literal as the start of a line
+  // comment: an anchored pattern for this ends in an escaped slash followed by
+  // the closing delimiter, so it truncated the file at that line and took the
+  // whole collector with it. Nothing here may contain two adjacent slashes
+  // outside a comment.
+  function hasScheme(text) {
+    var colon = text.indexOf(':');
+    if (colon < 1 || text.charAt(colon + 1) !== '/' || text.charAt(colon + 2) !== '/') {
+      return false;
+    }
+    for (var i = 0; i < colon; i++) {
+      var c = text.charAt(i);
+      var alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+      var extra = i > 0 && ((c >= '0' && c <= '9') || c === '+' || c === '.' || c === '-');
+      if (!alpha && !extra) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   // Whether the @ at `at` belongs to the path rather than separating a name
   // from one. The question is asked of the text *before* the @, not of the
@@ -563,10 +586,10 @@
   function partOfPath(text, at) {
     if (at === 0) {
       var rest = text.slice(1);
-      return !(rest.charAt(0) === '/' || SCHEME.test(rest));
+      return !(rest.charAt(0) === '/' || hasScheme(rest));
     }
     var prefix = text.slice(0, at);
-    return prefix.indexOf('/') >= 0 && (prefix.charAt(0) === '/' || SCHEME.test(prefix));
+    return prefix.indexOf('/') >= 0 && (prefix.charAt(0) === '/' || hasScheme(prefix));
   }
 
   // The index of the first @ that is not part of a path, or -1 when every @ in
@@ -591,12 +614,13 @@
   // userinfo URLs, so nothing real is lost. The empty-userinfo form is not
   // that: webpack://@scope/pkg/… has to survive.
   function hasUserInfo(file) {
-    var scheme = SCHEME.exec(file);
-    if (scheme === null) {
+    if (!hasScheme(file)) {
       return false;
     }
-    var slash = file.indexOf('/', scheme[0].length);
-    var authority = slash < 0 ? file.slice(scheme[0].length) : file.slice(scheme[0].length, slash);
+    // Past the colon and its two slashes, up to the next one.
+    var start = file.indexOf(':') + 3;
+    var slash = file.indexOf('/', start);
+    var authority = slash < 0 ? file.slice(start) : file.slice(start, slash);
     return authority.indexOf('@') > 0;
   }
 
