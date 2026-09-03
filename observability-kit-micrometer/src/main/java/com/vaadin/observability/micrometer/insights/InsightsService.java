@@ -33,9 +33,11 @@ import org.jspecify.annotations.Nullable;
  * {@link InteractionCollector#UX_BUDGET_MS UX budget}, grouped by (route,
  * component, event);</li>
  * <li>{@code client-error}: errors raised in a browser, grouped by (route,
- * kind, source, frame). These come from the in-browser collector rather than
- * the interaction buffer, and are the one insight kind that can describe a
- * failure the server never saw.</li>
+ * kind, source, frame), most occurrences first and capped at
+ * {@link #MAX_CLIENT_ERROR_INSIGHTS} groups. These come from the in-browser
+ * collector rather than the interaction buffer, and are the one insight kind
+ * that can describe a failure the server never saw — and the one whose grouping
+ * key is partly the browser's to choose, hence the cap.</li>
  * </ul>
  * The output is a stable, AI-agent-readable contract: an agent with access to
  * the application codebase can open {@code evidence.applicationFrame} (or the
@@ -47,6 +49,33 @@ public class InsightsService {
     private final RecentQueries queries;
 
     private static final int EXAMPLES_PER_INSIGHT = 3;
+
+    /**
+     * Most {@code client-error} insights one payload carries.
+     * <p>
+     * This is the one insight kind whose grouping key the <em>browser</em>
+     * chooses: {@code source} and {@code frame} are page-determined text, where
+     * every other insight groups on server-derived values that are
+     * cardinality-capped besides. Any script on the page can call the
+     * collector's {@code @ClientCallable} directly with a distinct frame per
+     * report — {@code /a.js:1:1}, {@code /a.js:1:2}, … — so an uncapped payload
+     * would carry one group per report and bury the real findings under
+     * synthetic ones.
+     * <p>
+     * Ranked by occurrences before it is cut, which is what makes the cap worth
+     * having rather than arbitrary: a flood of crafted reports is one
+     * occurrence per group, while an error real users keep hitting is many, so
+     * what survives the cut is what is worth reading. Ties go to the most
+     * recent.
+     * <p>
+     * Capped here rather than by admitting locations through a bounded set, the
+     * way route tags are: admission there is first-come-first-served and never
+     * expires, so a long-running application would publish the overflow
+     * sentinel for every error site discovered after the limit — while this cap
+     * is recomputed from the buffer on every request, and so describes whatever
+     * the buffer holds now.
+     */
+    private static final int MAX_CLIENT_ERROR_INSIGHTS = 20;
 
     /**
      * Every string in the payload is built through here rather than through
@@ -169,6 +198,11 @@ public class InsightsService {
      * These are the only insights that can describe a failure the server never
      * handled — including ones that happened while the browser could not reach
      * it at all, which {@code bufferedMs} makes visible.
+     * <p>
+     * The most-reported groups first, and at most
+     * {@link #MAX_CLIENT_ERROR_INSIGHTS} of them: two of the four key parts are
+     * browser-chosen, so this is the one insight kind a page can multiply at
+     * will.
      */
     private List<Map<String, Object>> clientErrorInsights() {
         // Every reported error is an insight: unlike an interaction, a
@@ -176,7 +210,17 @@ public class InsightsService {
         return groups(clientErrors.snapshot(), error -> true,
                 e -> String.join("|", nullSafe(e.route()), e.kind(),
                         nullSafe(e.source()), nullSafe(e.frame())))
-                .stream().map(InsightsService::clientErrorInsight).toList();
+                .stream()
+                .sorted(Comparator
+                        .comparingInt((List<CapturedClientError> group) -> group
+                                .size())
+                        .reversed()
+                        // The head of a group is its latest occurrence, the
+                        // snapshot being newest-first.
+                        .thenComparing(group -> group.get(0).timestamp(),
+                                Comparator.reverseOrder()))
+                .limit(MAX_CLIENT_ERROR_INSIGHTS)
+                .map(InsightsService::clientErrorInsight).toList();
     }
 
     private static Map<String, Object> clientErrorInsight(

@@ -160,6 +160,43 @@ class ClientMetricsBinderTest {
                         .count());
     }
 
+    @Test
+    void ingestSampleWithAnImpossibleValueIsSkippedAndCounted() {
+        // The browser clamps this, and the browser is not the enforcement
+        // point: any script on the page can call the @ClientCallable itself,
+        // and the rate limiter bounds how many samples arrive, not what is in
+        // them. A cast is no filter either -- NaN becomes 0 and 1e300
+        // saturates to Long.MAX_VALUE, some 292 years, which a timer's sum
+        // carries for the life of the process because it only ever grows.
+        for (double impossible : new double[] { Double.NaN,
+                Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, 1e300,
+                3_600_001.0 }) {
+            binder.ingest(List.of(sample(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                    impossible, Map.of())));
+        }
+
+        Timer timer = registry.timer(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN);
+        assertEquals(0L, timer.count(), "no sample should have been recorded");
+        assertEquals(0.0, timer.totalTime(TimeUnit.NANOSECONDS),
+                "and the sum has to be untouched, since nothing lowers it");
+        assertEquals(5.0, registry.counter(MeterNames.CLIENT_DROPPED).count(),
+                "a sample that never reached a meter is counted as dropped");
+    }
+
+    @Test
+    void ingestSampleAtTheLimitIsStillRecorded() {
+        // The cap is on values a browser timing cannot mean, so an hour
+        // exactly is still a measurement.
+        binder.ingest(List.of(sample(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                3_600_000.0, Map.of())));
+
+        assertEquals(1L,
+                registry.timer(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                        MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN)
+                        .count());
+    }
+
     // --- tag keys are the meter's, not the browser's ---
 
     @Test

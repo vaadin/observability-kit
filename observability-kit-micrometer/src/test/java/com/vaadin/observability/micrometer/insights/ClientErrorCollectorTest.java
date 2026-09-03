@@ -60,6 +60,14 @@ class ClientErrorCollectorTest {
     }
 
     @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> clientErrorInsights() {
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, null, buffer).payload().get("insights");
+        return insights.stream()
+                .filter(i -> "client-error".equals(i.get("type"))).toList();
+    }
+
+    @SuppressWarnings("unchecked")
     private static Map<String, Object> evidence(Map<String, Object> insight) {
         return (Map<String, Object>) insight.get("evidence");
     }
@@ -184,6 +192,80 @@ class ClientErrorCollectorTest {
                 "free text is not a source, and source is not gated");
         Assertions.assertNull(crafted.frame(),
                 "free text is not a frame, and frame is not gated");
+    }
+
+    @Test
+    void aFloodOfCraftedLocationsCannotBuryTheRealFinding() {
+        // source and frame are the only parts of the grouping key the browser
+        // chooses, and any script on the page can post them through the
+        // @ClientCallable: one report per location fills the payload with one
+        // group per report. Capped and ranked instead, so what a reader sees
+        // is what most browsers actually hit.
+        ClientErrorCollector collector = new ClientErrorCollector(buffer,
+                settings(false));
+        for (int i = 0; i < 5; i++) {
+            collector.capture(
+                    "uncaught", "orders", detail("boom",
+                            "/VAADIN/build/chart.js:44", "chart.js:44:13"),
+                    0, null);
+        }
+        for (int i = 0; i < 60; i++) {
+            collector.capture("uncaught", "orders",
+                    detail("boom", "/a.js:1:" + i, "/a.js:1:" + i), 0, null);
+        }
+
+        List<Map<String, Object>> insights = clientErrorInsights();
+        Assertions.assertEquals(20, insights.size(),
+                () -> "65 reports should not be 61 insights: " + insights.size()
+                        + " groups in the payload");
+        Map<String, Object> first = evidence(insights.get(0));
+        Assertions.assertEquals(5, first.get("occurrences"),
+                "the most-reported group comes first");
+        Assertions.assertEquals("chart.js:44:13", first.get("frame"),
+                "and it is the one real browsers hit");
+    }
+
+    @Test
+    void aLocationThatNamesThePageItselfIsNotKept() {
+        // For an error from an inline script, an inline handler or executeJs
+        // code, a browser reports the document URL as the filename and writes
+        // it into the frame. That is the page's own path with its query
+        // string -- not a script location, and published above the detail
+        // gate, so the token in it would be too.
+        Map<String, String> detail = detail("boom",
+                "https://app.example.com/orders/17?token=abc123:0",
+                "https://app.example.com/orders/17?token=abc123:1:5");
+        detail.put(ClientErrorCollector.DETAIL_ROUTE, "/orders/17");
+        RecentClientErrors errors = new RecentClientErrors(1);
+        new ClientErrorCollector(errors, settings(false)).capture("uncaught",
+                "orders/:id", detail, 0, null);
+
+        CapturedClientError kept = errors.snapshot().get(0);
+        Assertions.assertNull(kept.source(),
+                "the document URL is not a script location");
+        Assertions.assertNull(kept.frame(),
+                "and neither is it when it arrives as a frame");
+    }
+
+    @Test
+    void aScriptServedFromThePageIsStillKept() {
+        // The rule is about the page itself, not about the origin it came
+        // from: a real script on the same host has to survive it.
+        Map<String, String> detail = detail("boom",
+                "https://app.example.com/VAADIN/build/chart.js:44",
+                "https://app.example.com/VAADIN/build/chart.js:44:13");
+        detail.put(ClientErrorCollector.DETAIL_ROUTE, "/orders/17");
+        RecentClientErrors errors = new RecentClientErrors(1);
+        new ClientErrorCollector(errors, settings(false)).capture("uncaught",
+                "orders/:id", detail, 0, null);
+
+        CapturedClientError kept = errors.snapshot().get(0);
+        Assertions.assertEquals(
+                "https://app.example.com/VAADIN/build/chart.js:44",
+                kept.source());
+        Assertions.assertEquals(
+                "https://app.example.com/VAADIN/build/chart.js:44:13",
+                kept.frame());
     }
 
     @Test

@@ -104,6 +104,26 @@ keep	async*promise@http://host/app.js:12:3	http://host/app.js:12:3
 drop	loadData@http://user@host/app.js:1:2
 drop	http://user@host/app.js:1:2
 drop	http://user:pw@host/app.js:1:2
+# A protocol-relative URL is the same shape with the scheme left out, and it
+# used to walk straight past the rule: the check began at a scheme, this has
+# none, and the path rule then accepted the @ because the prefix starts with a
+# slash -- so the password travelled in `frame` or `source`, both of which are
+# published with insights-details off.
+drop	//user@host/app.js:1:2
+drop	//user:pw@host/app.js:1:2
+drop	loadData@//user:pw@host/app.js:1:2
+# Without credentials it is an ordinary location, and stays one.
+loc	//cdn.example.com/app.js:1:2	//cdn.example.com/app.js:1:2
+# Schemes whose "path" is a payload rather than a place. A data: URL's body is
+# a few hundred bytes the page chose and it passes every other rule -- the
+# slash and the character set are all FILE asks for -- and a blob: URL names an
+# object that died with the page that minted it, so it locates nothing anybody
+# can open. Both are published whatever the message policy says, so neither may
+# be a location.
+drop	data:text/javascript;base64,YWxlcnQoMSk=:1:2
+drop	at f (data:text/javascript;base64,YWxlcnQoMSk=:1:2)
+drop	blob:https://host/9f2c-3a:0
+drop	at f (blob:https://host/9f2c-3a:1:2)
 
 # --- the price of having no rule about names ----------------------------
 # The @ form has no delimiter, so the line as a whole has to look like a frame
@@ -137,7 +157,6 @@ loc	/VAADIN/build/chart.js:44	/VAADIN/build/chart.js:44
 loc	http://host/app.js:3:7	http://host/app.js:3:7
 loc	node:internal/modules/cjs/loader:1094:12	node:internal/modules/cjs/loader:1094:12
 loc	C:\app\x.js:1:2	C:\app\x.js:1:2
-loc	blob:https://host/9f2c-3a:0	blob:https://host/9f2c-3a:0
 # A hashed bundle name: digits in the file are not evidence of anything, so
 # only the numeric slots are capped.
 loc	chunk-1234567890123.js:1:2	chunk-1234567890123.js:1:2

@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer.insights;
 
+import java.util.List;
 import java.util.regex.Pattern;
 
 import org.jspecify.annotations.Nullable;
@@ -179,6 +180,26 @@ final class StackFrames {
             .compile("[\\p{L}\\p{N}._~:/?#!$&'*+,;=%@\\[\\]{}|\\\\<>-]+");
 
     /**
+     * Schemes whose "path" is a payload rather than a place, and so are not
+     * locations however well shaped they are.
+     * <p>
+     * A {@code data:} URL's body is a few hundred bytes the page chose, and it
+     * passes every other rule without trying —
+     * {@code data:text/javascript;base64,AAAA:1:2} has the slash and the
+     * character set {@link #FILE} admits, so the cap on the text is the only
+     * thing standing between it and the payload. A {@code blob:} URL names an
+     * object that died with the page that made it, so it locates nothing anyone
+     * can open. Both are published whatever
+     * {@link ObservabilitySettings#isInsightsDetails()} says.
+     * <p>
+     * Matched by prefix rather than through {@link #hasScheme}, which knows
+     * only the {@code scheme://authority} form: neither of these has an
+     * authority of its own.
+     */
+    private static final List<String> OPAQUE_SCHEMES = List.of("data:",
+            "blob:");
+
+    /**
      * One stack line, taken apart.
      *
      * @param location
@@ -345,16 +366,26 @@ final class StackFrames {
      * stops, and guessing is what makes one backtrack.
      */
     private static boolean isLocation(String text) {
+        return fileOf(text) != null;
+    }
+
+    /**
+     * The file part of a location — everything before its {@code :line} and
+     * optional {@code :col} — or {@code null} when the text is not a location
+     * at all. {@link #isLocation} is this question asked without the answer,
+     * and {@link #namesDocument} is the one caller that needs the file itself.
+     */
+    private static @Nullable String fileOf(String text) {
         int lastNumber = numberStart(text, text.length());
         if (lastNumber < 0) {
-            return false;
+            return null;
         }
         int firstNumber = numberStart(text, lastNumber);
         // An over-long run has to fail the location, not fall through to being
         // part of the file: appending a column is otherwise all it takes to
         // get an arbitrary number published inside the "file".
         if (firstNumber == OVER_LONG) {
-            return false;
+            return null;
         }
         String file = text.substring(0,
                 firstNumber == NO_NUMBER ? lastNumber : firstNumber);
@@ -367,13 +398,85 @@ final class StackFrames {
         // nothing. A port survives: "http://host:8080/app.js" does not end in
         // a number.
         if (numberStart(file, file.length()) != NO_NUMBER) {
-            return false;
+            return null;
         }
         // A location names a file, and a file has an extension or a path
         // separator. Without this, any "word:1" would be one.
-        return (file.indexOf('.') >= 0 || file.indexOf('/') >= 0)
+        boolean location = (file.indexOf('.') >= 0 || file.indexOf('/') >= 0)
                 && FILE.matcher(file).matches() && separatorIn(file) < 0
-                && !hasUserInfo(file);
+                && !hasUserInfo(file) && !hasOpaqueScheme(file);
+        return location ? file : null;
+    }
+
+    /** Whether the file opens with one of the {@link #OPAQUE_SCHEMES}. */
+    private static boolean hasOpaqueScheme(String file) {
+        for (String scheme : OPAQUE_SCHEMES) {
+            // Case-insensitively, because a scheme is: "DATA:" names the same
+            // thing. ASCII case folding either way — none of these letters has
+            // a locale that moves it.
+            if (file.regionMatches(true, 0, scheme, 0, scheme.length())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a location names the page's own document rather than a script.
+     * <p>
+     * For an error thrown from an inline script, an inline event handler or
+     * {@code Page.executeJs} code, a browser reports the <em>document</em> URL
+     * as the error's {@code filename} and writes it into the stack frame. That
+     * is not where the code is, and unlike a script URL it carries the page's
+     * query string — a token, an order id — which would then be published with
+     * {@link ObservabilitySettings#isInsightsDetails()} off, and would split
+     * one finding into one per parameter value besides.
+     * <p>
+     * Compared on the path alone, so the query string that is the point of the
+     * rule cannot evade it, and against the path the report itself carried:
+     * that is the page the browser was on, and the only page this server knows
+     * the report to be about. The in-browser collector drops the plain case
+     * before it sends; this is the same rule where a crafted payload, or a
+     * stack frame rather than a {@code filename}, also reaches.
+     *
+     * @param location
+     *            a location, as {@link #location} returned it, may be
+     *            {@code null}
+     * @param pagePath
+     *            the path the browser reported being on, may be {@code null}
+     * @return {@code true} when the location names that page
+     */
+    static boolean namesDocument(@Nullable String location,
+            @Nullable String pagePath) {
+        if (location == null || pagePath == null || pagePath.isBlank()) {
+            return false;
+        }
+        String file = fileOf(location);
+        return file != null && pathOf(file).equals(pagePath);
+    }
+
+    /**
+     * The path of a file: its authority and its scheme taken off the front, its
+     * query and fragment off the end. What is left is what a browser's
+     * {@code location.pathname} reports for the same URL.
+     */
+    private static String pathOf(String file) {
+        String path = file;
+        int authority = -1;
+        if (hasScheme(path)) {
+            authority = path.indexOf(':') + 3;
+        } else if (path.startsWith("//")) {
+            authority = 2;
+        }
+        if (authority >= 0) {
+            int slash = path.indexOf('/', authority);
+            path = slash < 0 ? "/" : path.substring(slash);
+        }
+        int query = path.indexOf('?');
+        int fragment = path.indexOf('#');
+        int cut = query < 0 ? fragment
+                : (fragment < 0 ? query : Math.min(query, fragment));
+        return cut < 0 ? path : path.substring(0, cut);
     }
 
     /**
@@ -463,13 +566,24 @@ final class StackFrames {
      * does not load subresources from userinfo URLs, so nothing real is lost.
      * The empty-userinfo form is not that: {@code webpack://@scope/pkg/…} puts
      * a scoped package where an authority would go, and has to survive.
+     * <p>
+     * A protocol-relative URL — {@code //user:pw@host/app.js:1:2} — is the same
+     * shape with the scheme left out, and has to be asked the same question. It
+     * has none, so a check that starts at one answered {@code false} and let
+     * the password through {@link #partOfPath}, which accepts the {@code @}
+     * because the prefix begins with a slash.
      */
     private static boolean hasUserInfo(String file) {
-        if (!hasScheme(file)) {
+        int start;
+        if (hasScheme(file)) {
+            // Past the colon and its two slashes, up to the next one.
+            start = file.indexOf(':') + 3;
+        } else if (file.startsWith("//")) {
+            // Protocol-relative: the authority starts after the slashes.
+            start = 2;
+        } else {
             return false;
         }
-        // Past the colon and its two slashes, up to the next one.
-        int start = file.indexOf(':') + 3;
         int slash = file.indexOf('/', start);
         String authority = slash < 0 ? file.substring(start)
                 : file.substring(start, slash);

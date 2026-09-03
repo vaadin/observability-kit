@@ -37,6 +37,14 @@ import com.vaadin.observability.micrometer.insights.ClientErrorCollector;
 public final class ClientMetricsBinder {
 
     private static final int MAX_ROUTE_LEN = 200;
+
+    /**
+     * Longest duration a browser sample may report. A page load, a navigation
+     * or a web vital measured in hours is not a measurement; what it is, is a
+     * value chosen to move a timer's sum, which no later sample can undo.
+     */
+    private static final double MAX_DURATION_MS = 3_600_000.0;
+
     private static final String[] EMPTY = new String[0];
 
     private final MeterRegistry registry;
@@ -116,10 +124,24 @@ public final class ClientMetricsBinder {
 
     private void recordDuration(String name, String[] tags,
             ClientSample sample) {
-        long nanos = (long) (sample.getValueMs() * 1_000_000.0);
-        if (nanos < 0) {
+        double valueMs = sample.getValueMs();
+        // The browser clamps this, but the browser is not the enforcement
+        // point: any script on the page can call the @ClientCallable directly,
+        // and the rate limiter bounds how many samples arrive, not what is in
+        // them. A cast is no filter either -- NaN becomes 0, recording a
+        // phantom 0 ms sample, and 1e300 saturates to Long.MAX_VALUE, which
+        // adds some 292 years to the timer's sum. That sum is monotonic, so
+        // rate(sum)/rate(count) stays wrecked for the life of the process and
+        // a second such sample wraps the adder negative. One hour is past
+        // anything a browser timing means.
+        if (!Double.isFinite(valueMs) || valueMs < 0
+                || valueMs > MAX_DURATION_MS) {
+            // Counted where every other sample that never reached a meter is,
+            // rather than discarded in silence.
+            recordDropped(1);
             return;
         }
+        long nanos = (long) (valueMs * 1_000_000.0);
         registry.timer(name, tags).record(Duration.ofNanos(nanos));
     }
 
@@ -187,8 +209,16 @@ public final class ClientMetricsBinder {
         if (rawPath == null || rawPath.length() > MAX_ROUTE_LEN) {
             return MeterNames.ROUTE_UNKNOWN;
         }
-        String path = appRelative(rawPath);
         try {
+            // Inside the guard, because it reads the current request through
+            // getters that can throw: a recycled Tomcat RequestFacade answers
+            // getContextPath with an IllegalStateException, and a wrapper is
+            // free to do the same. On the error path this runs after the
+            // counter was incremented, so a throw escaping to ingest() would
+            // have it count the very same sample as dropped -- the double
+            // count ClientErrorCollector says must not happen. The existing
+            // _unknown fallback covers it instead.
+            String path = appRelative(rawPath);
             RouteConfiguration rc = RouteConfiguration.forSessionScope();
             Optional<Class<? extends Component>> target = rc.getRoute(path);
             if (target.isPresent()) {

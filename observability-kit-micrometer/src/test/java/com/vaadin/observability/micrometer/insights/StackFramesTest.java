@@ -279,6 +279,60 @@ class StackFramesTest {
     }
 
     @Test
+    void aProtocolRelativeUrlIsAskedTheSameQuestionAboutCredentials() {
+        // The bypass: no scheme, so a check that starts at one said "no
+        // credentials here" -- and partOfPath accepts the @ because the prefix
+        // begins with a slash. The password then travelled in a field that is
+        // published with insights-details off.
+        Assertions
+                .assertNull(StackFrames.location("//user:pw@host/app.js:1:2"));
+        Assertions.assertNull(StackFrames.frame("//user@host/app.js:1:2"));
+        Assertions.assertNull(
+                StackFrames.parse("loadData@//user:pw@host/app.js:1:2"));
+        // And the same URL without them is still a location: this is a rule
+        // about the authority, not about the two slashes.
+        Assertions.assertEquals("//cdn.example.com/app.js:1:2",
+                StackFrames.location("//cdn.example.com/app.js:1:2"));
+    }
+
+    @Test
+    void aSchemeThatCarriesAPayloadIsNotALocation() {
+        // data: passes every other rule -- the slash in its media type is all
+        // the "path separator" test asks for -- so a few hundred bytes the
+        // page chose would be published under insights-details off. blob:
+        // names an object that died with the page that minted it.
+        Assertions.assertNull(StackFrames
+                .location("data:text/javascript;base64,YWxlcnQoMSk=:1:2"));
+        Assertions.assertNull(StackFrames
+                .parse("at f (data:text/javascript;base64,YWxlcnQoMSk=:1:2)"));
+        Assertions.assertNull(StackFrames.location("blob:https://host/9f2c:0"));
+        // A scheme is case-insensitive, and so is the rule.
+        Assertions.assertNull(StackFrames
+                .location("DATA:text/javascript;base64,YWxlcnQoMSk=:1:2"));
+        Assertions.assertNull(StackFrames.location("Blob:https://host/9f2c:0"));
+    }
+
+    @Test
+    void aLocationThatNamesThePageItselfIsNotAScriptLocation() {
+        // What a browser reports for an error from an inline script, an inline
+        // handler or executeJs code: the document URL, with the query string
+        // that route templating exists to fold away. Published above the
+        // detail gate, so the token in it would be too.
+        Assertions.assertTrue(StackFrames.namesDocument(
+                "https://app.example.com/orders?token=abc123:0", "/orders"));
+        Assertions.assertTrue(
+                StackFrames.namesDocument("/orders#section:0", "/orders"));
+        Assertions.assertTrue(StackFrames.namesDocument(
+                "https://app.example.com/orders:12:3", "/orders"));
+        // A real script on the same page is not the page.
+        Assertions.assertFalse(StackFrames.namesDocument(
+                "https://app.example.com/VAADIN/build/x.js:1:2", "/orders"));
+        // And nothing to compare against decides nothing.
+        Assertions.assertFalse(StackFrames.namesDocument("/orders:0", null));
+        Assertions.assertFalse(StackFrames.namesDocument(null, "/orders"));
+    }
+
+    @Test
     void anOverLongNumberIsNotRescuedByAppendingAColumn() {
         // The cap has to reject rather than fall back: an over-long run that
         // is merely not taken as the line number ends up inside the "file",
@@ -320,8 +374,9 @@ class StackFramesTest {
         // shapes a browser legitimately produces for generated code.
         Assertions.assertEquals("/VAADIN/build/chart.js:44",
                 StackFrames.location("/VAADIN/build/chart.js:44"));
-        Assertions.assertEquals("blob:https://host/9f2c-3a:0",
-                StackFrames.location("blob:https://host/9f2c-3a:0"));
+        Assertions.assertEquals("//cdn.example.com/app.js:1:2",
+                StackFrames.location("//cdn.example.com/app.js:1:2"),
+                "a protocol-relative script URL is a location");
         Assertions.assertNull(
                 StackFrames
                         .location("card number 4111 1111 1111 1111 declined:1"),

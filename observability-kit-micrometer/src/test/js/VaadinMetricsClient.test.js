@@ -9,9 +9,12 @@
 //   node observability-kit-micrometer/src/test/js/VaadinMetricsClient.test.js
 //
 // No dependencies and no runner: the module has no JavaScript build, and this
-// is deliberately something `node` alone can execute. It is not part of `mvn
-// test`, so run it by hand when touching VaadinMetricsClient.js. Exits
-// non-zero on failure, so CI can call it as-is if a JS step is ever added.
+// is deliberately something `node` alone can execute. Exits non-zero on
+// failure, and `mvn test` runs it that way (exec-maven-plugin, bound to the
+// test phase in the module's pom) -- the location grammar lives in two
+// languages, and nothing but this file checks the browser copy, so a one-sided
+// change to it has to fail a build rather than wait for someone to run this by
+// hand. Skipped with -Dskip.js.tests when node is not on PATH.
 const fs = require('fs');
 const path = require('path');
 
@@ -39,9 +42,12 @@ const corpus = fs
     return { verdict: columns[0], line: columns[1], location: columns[2] };
   });
 
-// parseFrame lives inside the IIFE; reach it by evaluating the body with a
-// probe appended, in a throwaway environment separate from the one below.
-function frameRule() {
+// parseFrame and isLocation live inside the IIFE; reach them by evaluating the
+// body with a probe appended, in a throwaway environment separate from the one
+// below. Both are needed: parseFrame is the stack-line rule, isLocation the
+// rule applied to `source` and to a bare `frame`, and the corpus has rows that
+// only one of the two decides.
+function frameRules() {
   const open = src.indexOf('(function () {');
   const close = src.lastIndexOf('})();');
   const body = src.slice(open + '(function () {'.length, close);
@@ -53,7 +59,7 @@ function frameRule() {
     'history',
     'setInterval',
     'requestAnimationFrame',
-    body + '\n; return parseFrame;'
+    body + '\n; return { parseFrame: parseFrame, isLocation: isLocation };'
   )(
     { addEventListener() {}, location: { pathname: '/' }, sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} } },
     { querySelector: () => null, addEventListener() {} },
@@ -82,7 +88,10 @@ const collector = { $server: { recordSamples: (batch) => { sent.push(batch); ret
 
 global.window = {
   addEventListener: add,
-  location: { pathname: '/orders/17' },
+  // href as well as pathname: a browser reports the whole document URL as the
+  // filename of an error thrown from inline code, and the query string is
+  // exactly what must not be published.
+  location: { pathname: '/orders/17', href: 'https://app.example.com/orders/17?token=abc123' },
   sessionStorage: { store: {}, getItem(k) { return this.store[k] || null; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } },
   Vaadin: { connectionState: store },
   __vaadinMicrometerDetails: true
@@ -116,6 +125,38 @@ async function recoverAndFlush() {
   const batch = sent.flat().filter((s) => s.name === 'vaadin.client.errors');
   sent = [];
   return batch;
+}
+
+// A second collector in an environment of its own, installed over a
+// sessionStorage that already holds `stored`. The one below has already run
+// its restore() by the time any test can seed storage, so this is the only way
+// to ask what a restore makes of what it finds. Returns the fake window, whose
+// `handlers` hold the listeners the collector installed.
+function freshCollector(stored) {
+  const win = {
+    handlers: {},
+    addEventListener(name, cb) {
+      (this.handlers[name] = this.handlers[name] || []).push(cb);
+    },
+    location: { pathname: '/x', href: 'https://app.example.com/x' },
+    sessionStorage: {
+      store: { 'vaadin.observability.buffer': stored },
+      getItem(k) { return this.store[k] === undefined ? null : this.store[k]; },
+      setItem(k, v) { this.store[k] = v; },
+      removeItem(k) { delete this.store[k]; }
+    },
+    __vaadinMicrometerDetails: false
+  };
+  new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', src)(
+    win,
+    { querySelector: () => null, addEventListener() {}, visibilityState: 'visible' },
+    { getEntriesByType: () => [], now: () => 0 },
+    function () { throw new Error('unsupported'); },
+    {},
+    () => 0,
+    () => 0
+  );
+  return win;
 }
 
 function err(message, stack) {
@@ -175,10 +216,10 @@ function err(message, stack) {
   //     location -- that is what makes "the two copies agree" a fact rather
   //     than a sentence in a javadoc.
   {
-    const parseFrame = frameRule();
+    const rules = frameRules();
     let mismatches = 0;
     for (const entry of corpus) {
-      const frame = parseFrame(entry.line);
+      const frame = rules.parseFrame(entry.line);
       const got = frame === null ? null : frame.location;
       const want = entry.verdict === 'keep' ? entry.location : null;
       if (got !== want) {
@@ -189,6 +230,21 @@ function err(message, stack) {
       }
     }
     check(`the shared corpus (${corpus.length} lines) agrees with the server`, mismatches, 0);
+
+    // The other half of the same rule, and the half the loop above cannot
+    // see: a `loc` row is a bare location, which parseFrame refuses by
+    // definition, so every row asserting what may be published as `source` --
+    // a credentialed URL, a data: payload -- used to be checked on the server
+    // alone. isLocation is what the browser decides those with.
+    let wrongVerdicts = 0;
+    for (const entry of corpus) {
+      const want = entry.verdict === 'loc';
+      if (rules.isLocation(entry.line) !== want) {
+        wrongVerdicts++;
+        console.log(`FAIL  corpus location rule ${JSON.stringify(entry.line)}\n        want ${want}`);
+      }
+    }
+    check('and the location rule agrees on every row too', wrongVerdicts, 0);
   }
 
   // 5b'''. The function name travels separately, and only under the gate.
@@ -279,6 +335,90 @@ function err(message, stack) {
   check('a real frame is reported, as its location', batch[0].detail.frame, 'chart.js:44:13');
   check('a real filename is reported as script:line', batch[0].detail.source, '/VAADIN/build/chart.js:44');
   check('the route travels as the browser path, for the server to template', batch[0].detail.route, '/orders/17');
+
+  // 6b. The document URL is not a script location. Browsers report it as the
+  //     filename for an error from an inline script, an inline handler or
+  //     executeJs code -- the page's own path with its query string, which is
+  //     published above the message gate.
+  {
+    fire('error', {
+      message: 'boom',
+      filename: global.window.location.href,
+      lineno: 12,
+      error: err('boom', 'Error: boom\n    at handler (/app/inline.js:1:1)')
+    });
+    const one = (await recoverAndFlush())[0];
+    check('the document URL is not reported as a source', one.detail.source, undefined);
+    check('and the page query string is nowhere in the report', JSON.stringify(one).includes('abc123'), false);
+    check('the frame the stack named is still reported', one.detail.frame, '/app/inline.js:1:1');
+  }
+
+  // 6c. A stack line longer than the cap is skipped, not cut. A cut line can
+  //     still parse -- the ":line:col" it ends in is what the cut removes --
+  //     and then names a place that does not exist, or blames the frame below
+  //     it. Long lines are real in dev: webpack virtual paths and Vite "?t="
+  //     URLs go past 400 characters.
+  {
+    const path = '/x/' + 'a'.repeat(388) + '.js';
+    const stack = 'Error: boom\n    at ' + path + ':1234:56\n    at g (/app/real.js:9:5)';
+    fire('error', { message: 'boom', filename: '', lineno: 0, error: err('boom', stack) });
+    const one = (await recoverAndFlush())[0];
+    check('an over-long frame line is skipped rather than truncated', one.detail.frame, '/app/real.js:9:5');
+  }
+
+  // 6d. The message of a rejection is the only thing identifying it, so a
+  //     falsy reason has to be reported rather than replaced by the generic
+  //     fallback -- otherwise reject(0), reject(false) and an object reason
+  //     all merge into one indistinguishable group.
+  {
+    fire('unhandledrejection', { reason: 0 });
+    fire('unhandledrejection', { reason: '' });
+    fire('unhandledrejection', { reason: false });
+    fire('unhandledrejection', { reason: { code: 42 } });
+    const batch = await recoverAndFlush();
+    check(
+      'a falsy or object rejection reason keeps its own message',
+      batch.map((s) => s.detail.message),
+      // The empty string is the one that legitimately has nothing to report:
+      // an empty message and no message are the same claim.
+      ['0', 'Unhandled rejection', 'false', '{"code":42}']
+    );
+  }
+
+  // 6e. A lost answer must not stall the collector for the life of the tab.
+  //     The $server promise settles on the server's answer, and an answer can
+  //     be lost for good -- which is exactly the case a recovery flush is.
+  {
+    const answering = collector.$server.recordSamples;
+    collector.$server.recordSamples = (batch) => {
+      sent.push(batch);
+      return new Promise(() => {});
+    };
+    fire('error', { message: 'stalled', filename: '/app.js', lineno: 1, error: err('stalled') });
+    await recoverAndFlush();
+
+    collector.$server.recordSamples = answering;
+    fire('error', { message: 'behind it', filename: '/app.js', lineno: 2, error: err('behind it') });
+    let batch = await recoverAndFlush();
+    check('a batch is not re-sent while its answer may still be coming', batch.length, 0);
+
+    clock += 31000;
+    batch = await recoverAndFlush();
+    check('past the deadline the batch is taken back and both reports go out', batch.length, 2);
+  }
+
+  // 6f. sessionStorage holds whatever is under the key: an older version's
+  //     shape, another script's data. One primitive element used to throw
+  //     after the buffer had been replaced and the stored copy removed, and
+  //     every later push and flush threw on the poisoned array until reload.
+  {
+    const survivor = { name: 'vaadin.client.errors', tags: { kind: 'uncaught' }, valueMs: 0, ts: 1, ageMs: 0 };
+    const poisoned = freshCollector(JSON.stringify([null, 'x', 7, survivor]));
+    poisoned.handlers.error.forEach((cb) =>
+      cb({ message: 'after the restore', filename: '/app.js', lineno: 1, error: err('after the restore') })
+    );
+    check('a poisoned stored buffer costs neither the restore nor the count', poisoned.__vaadinMicrometer.bufferSize(), 2);
+  }
 
   // 7. The message gate, and what it keeps out of sessionStorage.
   global.window.__vaadinMicrometerDetails = false;

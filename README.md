@@ -245,7 +245,7 @@ ObservabilitySettings.builder()
 | `vaadin.client.errors` | Counter | Errors reported by the browser, tagged `kind` (`uncaught` or `promise`). The message, script and stack frame that identify the error are kept as an insight, not as tags. |
 | `vaadin.client.connection` | Counter | Browser connection-state transitions, tagged by the `state` entered: `connected`, `connection-lost`, `reconnecting`. See [Connection and client-side problems](#connection-and-client-side-problems). |
 | `vaadin.client.connection.downtime` | Timer | How long a browser stayed unable to reach the server, measured on the browser's clock and tagged by the `state` it was spent in (`connection-lost`, `reconnecting`). |
-| `vaadin.client.dropped` | Counter | Client samples dropped before recording. |
+| `vaadin.client.dropped` | Counter | Client samples dropped before recording — one the registry refused, and one whose reported duration is not a measurement at all: negative, not finite, or over an hour. A timer's sum only ever grows, so one saturating value would skew its average for the life of the process. |
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
 | `vaadin.db.query` | Timer | Duration of a JDBC query, tagged by `route`. Produced alongside the query span when database monitoring and tracing are both on. |
@@ -435,7 +435,9 @@ Five things about those numbers are worth knowing:
   until the server has answered for it, so a tab closed while a send is still
   in flight re-reports it on its next load rather than losing it — at the
   price of counting a batch twice when it did arrive and only the answer was
-  lost.
+  lost. The same price buys the tab a way out of a lost answer: a batch nobody
+  has answered for within 30 s is taken back and sent again, so one dropped
+  reply cannot stall the collector for the life of the tab.
 - **The downtime timer under-reports by construction.** Three ways, all of them
   the same shape — a segment is only measured when the browser leaves the state,
   and only reportable once it can reach the server again, so an outage nobody
@@ -519,6 +521,18 @@ page's own path is not substituted, because that is not where the code is and
 it would carry the ids that route templating exists to fold away, one finding
 per order id instead of one per bug.
 
+**At most 20 client-error insights per payload, most-reported first.** These are
+the only insights whose grouping key is partly the browser's to choose —
+`source` and `frame` are page-determined text, where every other insight groups
+on server-derived, cardinality-capped values — so a script calling the
+collector's endpoint directly with a distinct frame per report could otherwise
+fill the payload with one group per report and bury the real findings. Groups
+are ranked by occurrences before the cut, with ties going to the most recent: a
+flood of crafted reports is one occurrence per group, while the error real users
+keep hitting is many. The cap is on the payload only; `vaadin.client.errors`
+still counts every report, and `insights-capacity` still says how many are
+retained.
+
 The message follows the same policy as a server exception message — withheld
 unless `vaadin.observability.insights-details` is on, because a browser error
 can quote anything the page was working with. **The `function` name is gated
@@ -561,7 +575,25 @@ A URL carrying credentials — `http://user@host/app.js:1:2` — is refused, by 
 separate rule about the authority rather than by the one above: browsers do not
 load subresources from userinfo URLs, and a location with a password in it is
 the last thing that should travel in a forwarded payload. The empty-userinfo
-form `webpack://@scope/…` is not that, and survives.
+form `webpack://@scope/…` is not that, and survives. A protocol-relative URL is
+asked the same question — `//user:pw@host/app.js:1:2` is refused and
+`//cdn.example.com/app.js:1:2` is kept — since leaving the scheme out does not
+make the authority a path.
+
+Two schemes are refused whatever shape they are in: `data:`, whose body is a
+few hundred bytes the page chose rather than a place, and `blob:`, which names
+an object that died with the page that minted it and so locates nothing anyone
+can open. Both are published regardless of `insights-details`, which is what
+makes "a location, or nothing" the only workable rule for them.
+
+**The page's own URL is not a script location.** For an error thrown from an
+inline script, an inline event handler or `Page.executeJs` code, browsers report
+the *document* URL as the error's `filename` and write it into the stack frame —
+the page's path with its query string. That is not where the code is, and it
+carries the ids route templating exists to fold away, so it is dropped: in the
+browser before the report is buffered, and again on the server, compared on the
+path against the page the report says it came from. A real script served from
+the same page's origin is unaffected.
 
 A stack line is split on the separator its engine uses, and only the location
 half is validated and kept. V8's form is delimited by the engine — `at `, or
@@ -582,6 +614,8 @@ and something that passes for a location.
 | `outer/inner@http://host/app.js:1:1` — Firefox nested function | `http://host/app.js:1:1` |
 | `renderChart@chart.js:44:13` | `chart.js:44:13` — the name goes to `function` |
 | `http://user@host/app.js:1:2` | none — a location with credentials in it |
+| `//user:pw@host/app.js:1:2` | none — the same, with the scheme left out |
+| `data:text/javascript;base64,…:1:2` | none — a payload, not a place |
 | `@http://host/app.js:3:7` — Firefox, no function | `http://host/app.js:3:7` |
 | `at f (http://host/app/übersicht.js:1:2)` | `http://host/app/übersicht.js:1:2` |
 | `at Object.<anonymous> (C:\app\x.js:1:2)` | `C:\app\x.js:1:2` |

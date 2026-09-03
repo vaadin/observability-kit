@@ -117,14 +117,19 @@ public class ClientErrorCollector {
         try {
             StackFrames.Frame frame = StackFrames
                     .frame(detail.get(DETAIL_FRAME));
+            // The page the browser said it was on, as the browser wrote it:
+            // the raw path, before the route templating the tag went through.
+            // What the document-URL rule is applied against.
+            String pagePath = detail.get(DETAIL_ROUTE);
             buffer.add(new CapturedClientError(Instant.now(), route, kind(kind),
                     details ? InsightDetails
                             .truncate(detail.get(DETAIL_MESSAGE)) : null,
                     // Source and frame both reduce to a location: both are
                     // published whatever the detail policy says, so a location
                     // is all either may be.
-                    StackFrames.location(detail.get(DETAIL_SOURCE)),
-                    frame != null ? frame.location() : null,
+                    script(StackFrames.location(detail.get(DETAIL_SOURCE)),
+                            pagePath),
+                    frame != null ? script(frame.location(), pagePath) : null,
                     // The function name is a string the page chose, so it is
                     // gated with the message rather than published beside the
                     // location. Truncated, not validated: there is no rule that
@@ -149,6 +154,23 @@ public class ClientErrorCollector {
                     "Could not retain a reported browser error as an insight",
                     e);
         }
+    }
+
+    /**
+     * A location, unless it names the page's own document rather than a script.
+     * <p>
+     * A browser reports the document URL — the page's path <em>with its query
+     * string</em> — for an error from an inline script, an inline handler or
+     * {@code executeJs} code, both as the error's {@code filename} and in the
+     * stack frame it writes. That is not a script location: it is the value
+     * route templating exists to fold away, and it travels above the detail
+     * gate. The collector in the browser drops the plain case before it sends;
+     * this is where a crafted payload, and a frame rather than a
+     * {@code filename}, meet the same rule.
+     */
+    private static @Nullable String script(@Nullable String location,
+            @Nullable String pagePath) {
+        return StackFrames.namesDocument(location, pagePath) ? null : location;
     }
 
     /**

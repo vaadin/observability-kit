@@ -13,6 +13,17 @@
   var COLLECTOR_TAG = 'vaadin-metrics-collector';
   var BUFFER_MAX = 200;
   var FLUSH_INTERVAL_MS = 5000;
+  // How long a handed-over batch may go unanswered before a flush takes it
+  // back. The server's answer is the only thing that clears the in-flight
+  // slot, and an answer can be lost for good -- a connection dropped mid-call,
+  // a session expired -- so without a deadline one lost answer stalls the
+  // collector for the life of the tab, including the recovery flush after an
+  // outage, which is the case this feature exists for. Six flush intervals:
+  // long enough that a merely slow answer is not overtaken, short enough that
+  // the reports of an outage still go out while somebody is looking at them.
+  // What it risks is the duplicate flush() already accepts as the cheaper of
+  // the two failures.
+  var INFLIGHT_TIMEOUT_MS = 30000;
   // Per-tab, and deliberately not localStorage: a buffer is about the tab that
   // filled it, and sharing one across tabs would need locking to avoid two
   // tabs flushing the same samples.
@@ -38,6 +49,12 @@
   // with it. Only ever one batch: a server that stops answering then costs one
   // batch of memory rather than another one every flush interval.
   var inFlight = null;
+
+  // When the in-flight batch was handed over, read off the monotonic clock for
+  // the reason that clock exists: an NTP step or a manual clock change during
+  // an outage must not make a waiting batch look overdue, or keep an overdue
+  // one waiting.
+  var inFlightSince = 0;
 
   // The last connection state that was not LOADING, maintained by the
   // connection listener below and read by the flush guard. Undefined until the
@@ -188,6 +205,15 @@
       if (!Array.isArray(samples)) {
         return;
       }
+      // Storage holds whatever is under the key: an older version's shape, or
+      // another script's data. One primitive or null element would throw in
+      // the baseline loop below -- after `buffer` had been replaced and the
+      // stored copy removed -- and the catch does not put `buffer` back, so
+      // every later pushSample and flush would throw on the poisoned array
+      // until the tab was reloaded.
+      samples = samples.filter(function (sample) {
+        return sample !== null && typeof sample === 'object';
+      });
       // Oldest first, ahead of anything this page load has produced.
       // Truncated from the tail, matching the send priority: the head of a
       // persisted buffer is the transition that started the outage.
@@ -274,6 +300,14 @@
       persist();
       return;
     }
+    if (inFlight !== null && monotonicNow() - inFlightSince > INFLIGHT_TIMEOUT_MS) {
+      // The answer is not coming. Take the batch back rather than hold the
+      // slot forever: a settle() that turns up afterwards finds a different
+      // batch in the slot and does nothing, so a promise that never settles
+      // cannot stall every later flush -- including the one a recovery
+      // triggers, which is the whole point of buffering.
+      settle(inFlight, true);
+    }
     if (inFlight !== null) {
       // One batch out at a time. Until the server has answered for the last
       // one, the persisted copy is all that is left of it, and a second send
@@ -300,6 +334,7 @@
       sample.ageMs = bufferedMs(sample);
     });
     inFlight = batch;
+    inFlightSince = monotonicNow();
     // Written before the send, and cleared only by settle(): between these two
     // lines the persisted copy is the only record that the batch existed.
     persist();
@@ -472,6 +507,18 @@
   // is the only one the insight falls back to `source`.
   var AT_FORM_LINE = /^[\p{L}\p{N}._~:/?#!$&'*+,;=%@[\]{}|\\<>-]+$/u;
 
+  // Schemes whose "path" is a payload rather than a place. A data: URL's body
+  // is a few hundred bytes the page chose, and it passes the location rules
+  // without trying -- "data:text/javascript;base64,AAAA:1:2" has the slash and
+  // the character set FILE admits. A blob: URL names an object that died with
+  // the page that made it, so it locates nothing anybody can open. Both are
+  // published whatever the message policy says, so neither may be a location.
+  //
+  // Matched by prefix rather than through hasScheme, which only recognizes the
+  // scheme://authority form -- "data:" and "blob:https:" have no authority of
+  // their own. Case-insensitive because a scheme is.
+  var OPAQUE_SCHEME = /^(?:data|blob):/i;
+
   // Longest run of digits a line or column number may be. A real one is a
   // position in a file; a longer one is a number that wanted to be published.
   var MAX_NUMBER_DIGITS = 8;
@@ -534,7 +581,8 @@
       (file.indexOf('.') >= 0 || file.indexOf('/') >= 0) &&
       FILE.test(file) &&
       separatorIn(file) < 0 &&
-      !hasUserInfo(file)
+      !hasUserInfo(file) &&
+      !OPAQUE_SCHEME.test(file)
     );
   }
 
@@ -613,12 +661,24 @@
   // in a forwarded payload, and a browser does not load subresources from
   // userinfo URLs, so nothing real is lost. The empty-userinfo form is not
   // that: webpack://@scope/pkg/… has to survive.
+  //
+  // A protocol-relative URL is the same shape with the scheme left out, and it
+  // has to be asked the same question: it has no scheme, so a check that
+  // starts at one lets a password straight through. The two leading slashes
+  // are spelled out character by character rather than written as a string,
+  // because the loader's comment stripper would read the pair as the start of
+  // a line comment and eat the rest of the line -- see hasScheme.
   function hasUserInfo(file) {
-    if (!hasScheme(file)) {
+    var start;
+    if (hasScheme(file)) {
+      // Past the colon and its two slashes, up to the next one.
+      start = file.indexOf(':') + 3;
+    } else if (file.charAt(0) === '/' && file.charAt(1) === '/') {
+      // Protocol-relative: the authority starts after the slashes.
+      start = 2;
+    } else {
       return false;
     }
-    // Past the colon and its two slashes, up to the next one.
-    var start = file.indexOf(':') + 3;
     var slash = file.indexOf('/', start);
     var authority = slash < 0 ? file.slice(start) : file.slice(start, slash);
     return authority.indexOf('@') > 0;
@@ -691,15 +751,27 @@
   // location-ish: a message continuation line above the real frame would
   // otherwise be preferred over it.
   //
-  // Capped before it is inspected: a line is as long as whatever built the
-  // stack made it.
+  // Bounded before anything is inspected: a line is as long as whatever built
+  // the stack made it. Over the cap it is skipped rather than cut, because a
+  // cut line can still parse and then names a place that does not exist.
   function firstFrame(error) {
     if (!error || !error.stack) {
       return null;
     }
     var lines = String(error.stack).split('\n');
     for (var i = 0; i < lines.length; i++) {
-      var frame = parseFrame(detailText(lines[i].trim()));
+      var line = lines[i].trim();
+      if (line.length > DETAIL_MAX) {
+        // Truncating instead would publish a wrong number: a frame line cut
+        // mid ":line:col" still parses, with whatever digits the cut left
+        // behind, or stops parsing and lets the caller's frame take the blame.
+        // Long lines are real in dev -- a webpack virtual path or a Vite
+        // "?t=" URL goes past the cap -- and the server cannot catch this,
+        // since it marks its own over-cap lines but this location is minted
+        // here. Skipping matches what StackFrames does with one.
+        continue;
+      }
+      var frame = parseFrame(line);
       if (frame) {
         return frame;
       }
@@ -727,6 +799,16 @@
       // route templating exists to fold away, which would split one bug into
       // one finding per order id.
       var file = event && event.filename;
+      // For an error from an inline script, an inline handler or executeJs
+      // code, browsers put the *document* URL here -- the page's own path with
+      // its query string, which is not where the code is and carries the very
+      // ids route templating exists to fold away. It travels above the detail
+      // gate, so a token or an order id in the query would be published with
+      // insights-details off. The server applies the same rule again, against
+      // the path the report carries, for the other routes to the same value.
+      if (file === (window.location && window.location.href)) {
+        file = null;
+      }
       if (file) {
         detail.source = detailText(file + ':' + ((event && event.lineno) || 0));
       }
@@ -744,9 +826,31 @@
     }
     if (detailsEnabled()) {
       try {
-        detail.message = detailText(
-          (event && event.message) || (error && error.message) || error || fallbackMessage
-        );
+        // Asked for each field in turn rather than through an || chain, which
+        // treats a real reason as an absent one: Promise.reject(0),
+        // reject('') and reject(false) would all report the generic fallback,
+        // and since a rejection has no other identifying field, every one of
+        // them would merge into a single indistinguishable group.
+        var message = event && event.message;
+        if (message === undefined || message === null || message === '') {
+          message = error && error.message;
+        }
+        if (message === undefined || message === null || message === '') {
+          message = error;
+        }
+        if (message === undefined || message === null || message === '') {
+          message = fallbackMessage;
+        }
+        if (typeof message === 'object' && message !== null) {
+          try {
+            // Reject({code: 42}) says "[object Object]" through String(),
+            // which names the type of every such reason and identifies none.
+            message = JSON.stringify(message);
+          } catch (ignored) {
+            /* circular or hostile: String() below still names its type */
+          }
+        }
+        detail.message = detailText(String(message));
       } catch (e) {
         /* ignore */
       }
@@ -759,12 +863,26 @@
     return detail;
   }
 
+  // Both listener bodies are wrapped, because everything they touch outside
+  // errorDetail can throw too -- a buffer restored from storage in a shape
+  // this code did not write, a full sessionStorage -- and the count is the one
+  // part of a report that has to work whatever else fails. A throw here would
+  // also propagate out of the page's own error handling, from a listener the
+  // application did not install.
   window.addEventListener('error', function (event) {
-    pushSample(CLIENT_ERRORS, { kind: 'uncaught' }, 0, errorDetail(event, event && event.error, 'Error'));
+    try {
+      pushSample(CLIENT_ERRORS, { kind: 'uncaught' }, 0, errorDetail(event, event && event.error, 'Error'));
+    } catch (e) {
+      /* ignore */
+    }
   });
   window.addEventListener('unhandledrejection', function (event) {
-    // No event fields to read: a rejection carries only its reason.
-    pushSample(CLIENT_ERRORS, { kind: 'promise' }, 0, errorDetail(null, event && event.reason, 'Unhandled rejection'));
+    try {
+      // No event fields to read: a rejection carries only its reason.
+      pushSample(CLIENT_ERRORS, { kind: 'promise' }, 0, errorDetail(null, event && event.reason, 'Unhandled rejection'));
+    } catch (e) {
+      /* ignore */
+    }
   });
 
   // Connection state. Flow's client already keeps this in
