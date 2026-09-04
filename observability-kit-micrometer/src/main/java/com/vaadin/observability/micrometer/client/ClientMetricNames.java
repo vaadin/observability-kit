@@ -85,8 +85,7 @@ final class ClientMetricNames {
             .of(MeterNames.TRIGGER_BACK, MeterNames.TRIGGER_PROGRAMMATIC);
 
     /** The browser events the collector reports an error for. */
-    static final Set<String> ERROR_KINDS = Set.of(MeterNames.KIND_UNCAUGHT,
-            MeterNames.KIND_PROMISE);
+    static final Set<String> ERROR_KINDS = MeterNames.KINDS;
 
     static boolean isAllowed(String name) {
         return name != null && ALLOWED.contains(name);

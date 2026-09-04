@@ -1,0 +1,6 @@
+# The stack-frame corpus is data read by two test suites, one of which splits
+# it on tabs and compares the last column against an exact expected location.
+# A CRLF checkout puts a stray \r on the end of every such column, which fails
+# every row while looking identical on screen. Both loaders strip it anyway;
+# this keeps the file itself from arriving mangled.
+*.tsv text eol=lf

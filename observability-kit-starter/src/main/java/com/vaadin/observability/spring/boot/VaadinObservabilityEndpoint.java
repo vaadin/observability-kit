@@ -43,6 +43,7 @@ public class VaadinObservabilityEndpoint {
             return null;
         }
         return new InsightsService(ObservabilityKit.getRecentInteractions(),
-                ObservabilityKit.getRecentQueries()).payload();
+                ObservabilityKit.getRecentQueries(),
+                ObservabilityKit.getRecentClientErrors()).payload();
     }
 }

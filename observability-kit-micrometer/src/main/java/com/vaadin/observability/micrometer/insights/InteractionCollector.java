@@ -8,12 +8,8 @@
  */
 package com.vaadin.observability.micrometer.insights;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -74,15 +70,6 @@ public class InteractionCollector {
             "net.bytebuddy.", "org.objenesis.", "javassist.", "org.javassist.");
 
     private static final int STACK_TOP_FRAMES = 5;
-
-    /**
-     * Exception messages are truncated to this many characters even when detail
-     * is enabled: a message is free-form text and can carry a whole payload.
-     */
-    private static final int MAX_MESSAGE_LENGTH = 200;
-
-    /** Hex characters kept of the hashed session id. */
-    private static final int SESSION_HASH_LENGTH = 12;
 
     private final RecentInteractions buffer;
     private final boolean captureErrors;
@@ -202,11 +189,13 @@ public class InteractionCollector {
                 component, event.getName(), event.getType(),
                 CapturedInteraction.OUTCOME_ERROR, durationMs, -1, details,
                 rootCause.getClass().getName(),
-                details ? truncate(rootCause.getMessage()) : null,
+                details ? InsightDetails
+                        .truncate(rootCause.getMessage()) : null,
                 firstApplicationFrame(stack).orElse(null),
                 details ? Arrays.stream(stack).limit(STACK_TOP_FRAMES)
                         .map(StackTraceElement::toString).toList() : null,
-                sessionId(ui), ui != null ? ui.getUIId() : -1);
+                InsightDetails.sessionId(ui, details),
+                ui != null ? ui.getUIId() : -1);
     }
 
     private CapturedInteraction slowInteraction(
@@ -218,7 +207,8 @@ public class InteractionCollector {
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
                 component, event.getName(), event.getType(),
                 CapturedInteraction.OUTCOME_SUCCESS, durationMs, uxBudgetMs,
-                details, null, null, null, null, sessionId(ui),
+                details, null, null, null, null,
+                InsightDetails.sessionId(ui, details),
                 ui != null ? ui.getUIId() : -1);
     }
 
@@ -238,42 +228,6 @@ public class InteractionCollector {
     private static String location(UI ui) {
         return ui == null ? null
                 : ui.getInternals().getActiveViewLocation().getPath();
-    }
-
-    /**
-     * The session id, reduced to a short one-way hash unless detail is enabled.
-     * The hash still correlates the examples of one insight while not being an
-     * identifier that could be replayed against the running application.
-     */
-    private String sessionId(UI ui) {
-        if (ui == null || ui.getSession() == null
-                || ui.getSession().getSession() == null) {
-            return null;
-        }
-        String id = ui.getSession().getSession().getId();
-        if (id == null) {
-            return null;
-        }
-        return details ? id : hash(id);
-    }
-
-    private static String hash(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest).substring(0,
-                    SESSION_HASH_LENGTH);
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is required of every JVM; never fall back to the raw id.
-            return null;
-        }
-    }
-
-    private static String truncate(String message) {
-        if (message == null || message.length() <= MAX_MESSAGE_LENGTH) {
-            return message;
-        }
-        return message.substring(0, MAX_MESSAGE_LENGTH) + "…";
     }
 
     private static Optional<String> firstApplicationFrame(

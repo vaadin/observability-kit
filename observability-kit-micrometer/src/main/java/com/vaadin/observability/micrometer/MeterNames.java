@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.Set;
+
 /**
  * Names of the meters published by Observability Kit. These form the public
  * telemetry contract scraped by metrics backends, so treat changes as breaking.
@@ -209,6 +211,14 @@ public final class MeterNames {
 
     /** {@link #TAG_KIND} value for a kind that is none of the above. */
     public static final String KIND_UNKNOWN = "_unknown";
+
+    /**
+     * The {@link #TAG_KIND} values a browser error may be attributed to,
+     * {@link #KIND_UNKNOWN} aside. Held here because two enforcement points
+     * need the same set — the tag on the counter and the grouping key of the
+     * insight — and two copies of a bounded set is one copy too many.
+     */
+    public static final Set<String> KINDS = Set.of(KIND_UNCAUGHT, KIND_PROMISE);
 
     /**
      * Tag key: the browser connection state entered, on

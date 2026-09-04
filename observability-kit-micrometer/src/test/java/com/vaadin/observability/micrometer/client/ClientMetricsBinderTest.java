@@ -23,8 +23,12 @@ import org.junit.jupiter.api.Test;
 
 import com.vaadin.observability.micrometer.MeterNames;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+import com.vaadin.observability.micrometer.insights.CapturedClientError;
+import com.vaadin.observability.micrometer.insights.ClientErrorCollector;
+import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * Unit tests for {@link ClientMetricsBinder}.
@@ -151,6 +155,43 @@ class ClientMetricsBinderTest {
         binder.ingest(List.of(sample));
 
         assertEquals(0L,
+                registry.timer(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                        MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN)
+                        .count());
+    }
+
+    @Test
+    void ingestSampleWithAnImpossibleValueIsSkippedAndCounted() {
+        // The browser clamps this, and the browser is not the enforcement
+        // point: any script on the page can call the @ClientCallable itself,
+        // and the rate limiter bounds how many samples arrive, not what is in
+        // them. A cast is no filter either -- NaN becomes 0 and 1e300
+        // saturates to Long.MAX_VALUE, some 292 years, which a timer's sum
+        // carries for the life of the process because it only ever grows.
+        for (double impossible : new double[] { Double.NaN,
+                Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, 1e300,
+                3_600_001.0 }) {
+            binder.ingest(List.of(sample(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                    impossible, Map.of())));
+        }
+
+        Timer timer = registry.timer(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN);
+        assertEquals(0L, timer.count(), "no sample should have been recorded");
+        assertEquals(0.0, timer.totalTime(TimeUnit.NANOSECONDS),
+                "and the sum has to be untouched, since nothing lowers it");
+        assertEquals(5.0, registry.counter(MeterNames.CLIENT_DROPPED).count(),
+                "a sample that never reached a meter is counted as dropped");
+    }
+
+    @Test
+    void ingestSampleAtTheLimitIsStillRecorded() {
+        // The cap is on values a browser timing cannot mean, so an hour
+        // exactly is still a measurement.
+        binder.ingest(List.of(sample(MeterNames.CLIENT_BOOTSTRAP_DURATION,
+                3_600_000.0, Map.of())));
+
+        assertEquals(1L,
                 registry.timer(MeterNames.CLIENT_BOOTSTRAP_DURATION,
                         MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN)
                         .count());
@@ -401,6 +442,129 @@ class ClientMetricsBinderTest {
                 registry.find(MeterNames.CLIENT_CONNECTION_DOWNTIME)
                         .tag(MeterNames.TAG_STATE, MeterNames.STATE_UNKNOWN)
                         .timer().count());
+    }
+
+    // --- ingest: browser error detail ---
+
+    @Test
+    void errorDetailIsRetainedAsAnInsightAlongsideTheCount() {
+        RecentClientErrors errors = new RecentClientErrors(10);
+        ClientMetricsBinder detailed = new ClientMetricsBinder(registry,
+                ObservabilitySettings.builder().insightsDetails(true).build(),
+                new ClientErrorCollector(errors, ObservabilitySettings.builder()
+                        .insightsDetails(true).build()));
+
+        ClientSample s = sample(MeterNames.CLIENT_ERRORS, 0.0,
+                Map.of("kind", "uncaught"));
+        s.setAgeMs(3200);
+        s.setDetail(Map.of(ClientErrorCollector.DETAIL_ROUTE, "/uc5",
+                ClientErrorCollector.DETAIL_MESSAGE,
+                "rendering the chart failed",
+                ClientErrorCollector.DETAIL_SOURCE, "/VAADIN/build/chart.js:44",
+                ClientErrorCollector.DETAIL_FRAME, "chart.js:44:9",
+                ClientErrorCollector.DETAIL_FUNCTION, "renderChart"));
+        detailed.ingest(List.of(s));
+
+        assertEquals(1.0, registry
+                .counter(MeterNames.CLIENT_ERRORS, "kind", "uncaught").count(),
+                1e-9);
+        CapturedClientError captured = errors.snapshot().get(0);
+        assertEquals("uncaught", captured.kind());
+        assertEquals("rendering the chart failed", captured.message());
+        // The browser sends the location and the name in separate fields now.
+        assertEquals("chart.js:44:9", captured.frame());
+        assertEquals("renderChart", captured.function());
+        // Measured in the browser, because the report could only be sent once
+        // the connection it describes came back.
+        assertEquals(3200L, captured.bufferedMs());
+    }
+
+    @Test
+    void errorMessageIsWithheldUnlessDetailsAreEnabled() {
+        RecentClientErrors errors = new RecentClientErrors(10);
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .build();
+        ClientMetricsBinder plain = new ClientMetricsBinder(registry, settings,
+                new ClientErrorCollector(errors, settings));
+
+        ClientSample s = sample(MeterNames.CLIENT_ERRORS, 0.0,
+                Map.of("kind", "promise"));
+        s.setDetail(Map.of(ClientErrorCollector.DETAIL_MESSAGE,
+                "fetching /api/quotes?token=secret failed",
+                ClientErrorCollector.DETAIL_SOURCE,
+                "/VAADIN/build/quotes.js:31"));
+        plain.ingest(List.of(s));
+
+        CapturedClientError captured = errors.snapshot().get(0);
+        assertNull(captured.message());
+        // What stays is still actionable, and is not free-form user data --
+        // and the source has to be a location to stay at all: a page path,
+        // which is what this fixture used to carry, is not one.
+        assertEquals("promise", captured.kind());
+        assertEquals("/VAADIN/build/quotes.js:31", captured.source());
+    }
+
+    @Test
+    void errorWithoutDetailStillCountsAndRetainsNothing() {
+        RecentClientErrors errors = new RecentClientErrors(10);
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .build();
+        ClientMetricsBinder plain = new ClientMetricsBinder(registry, settings,
+                new ClientErrorCollector(errors, settings));
+
+        plain.ingest(List.of(sample(MeterNames.CLIENT_ERRORS, 0.0,
+                Map.of("kind", "uncaught"))));
+
+        assertEquals(1.0, registry
+                .counter(MeterNames.CLIENT_ERRORS, "kind", "uncaught").count(),
+                1e-9);
+        assertEquals(List.of(), errors.snapshot());
+    }
+
+    @Test
+    void errorDetailNeverBecomesATag() {
+        RecentClientErrors errors = new RecentClientErrors(10);
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .build();
+        ClientMetricsBinder plain = new ClientMetricsBinder(registry, settings,
+                new ClientErrorCollector(errors, settings));
+
+        ClientSample s = sample(MeterNames.CLIENT_ERRORS, 0.0,
+                Map.of("kind", "uncaught"));
+        s.setDetail(Map.of(ClientErrorCollector.DETAIL_MESSAGE,
+                "one message per user would be one series per user"));
+        plain.ingest(List.of(s));
+
+        assertEquals(List.of("kind"),
+                registry.find(MeterNames.CLIENT_ERRORS).counter().getId()
+                        .getTags().stream().map(Tag::getKey).toList());
+    }
+
+    // --- route resolution: the prefix the app is served under ---
+
+    @Test
+    void theApplicationsOwnPrefixComesOffTheBrowsersPath() {
+        // Every pathname a browser reports carries the context path and the
+        // servlet mapping; no route does. Left on, a WAR under /myapp would
+        // resolve nothing and tag every client sample _unknown -- and the
+        // browser-error insight would group on that and tell a reader to open
+        // route '_unknown'.
+        assertEquals("orders/17", ClientMetricsBinder
+                .stripPrefix("/myapp/orders/17", "/myapp").substring(1));
+        assertEquals("", ClientMetricsBinder.stripPrefix("/myapp", "/myapp"));
+        // Nothing to take off: the common root deployment.
+        assertEquals("/orders/17",
+                ClientMetricsBinder.stripPrefix("/orders/17", ""));
+        assertEquals("/orders/17",
+                ClientMetricsBinder.stripPrefix("/orders/17", "/"));
+    }
+
+    @Test
+    void aPrefixThatOnlyLooksLikeOneIsLeftAlone() {
+        // "/uc" is not a prefix of "/uc5" in path terms, and treating it as
+        // one would resolve the route "5".
+        assertEquals("/uc5/orders",
+                ClientMetricsBinder.stripPrefix("/uc5/orders", "/uc"));
     }
 
     // --- helpers ---

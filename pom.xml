@@ -53,6 +53,7 @@
         <maven.surefire.version>3.2.5</maven.surefire.version>
         <maven.failsafe.version>3.2.5</maven.failsafe.version>
         <maven.war.version>3.5.1</maven.war.version>
+        <exec.plugin.version>3.6.3</exec.plugin.version>
         <spotless.plugin.version>3.5.1</spotless.plugin.version>
         <spotless.license-header>${maven.multiModuleProjectDirectory}/eclipse/vaadin-commercial-license-header.txt</spotless.license-header>
         <spotless.ratchetFrom/>
@@ -205,6 +206,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-war-plugin</artifactId>
                     <version>${maven.war.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec.plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>com.diffplug.spotless</groupId>
