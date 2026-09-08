@@ -23,8 +23,8 @@ import {
   LongTaskInstrumentation
 } from "@opentelemetry/instrumentation-long-task";
 import {OTLPTraceExporter} from "@opentelemetry/exporter-trace-otlp-http";
-import {Resource} from "@opentelemetry/resources";
-import {SemanticResourceAttributes} from "@opentelemetry/semantic-conventions";
+import {defaultResource, resourceFromAttributes} from "@opentelemetry/resources";
+import {ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION} from "@opentelemetry/semantic-conventions";
 import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation';
 
 @customElement('vaadin-observability-client')
@@ -57,30 +57,29 @@ export class ObservabilityClient extends LitElement {
     super.firstUpdated(_changedProperties);
 
     const resource =
-      Resource.default().merge(
-        new Resource({
-          [SemanticResourceAttributes.SERVICE_NAME]: this.serviceName,
-          [SemanticResourceAttributes.SERVICE_VERSION]: this.serviceVersion,
+      defaultResource().merge(
+        resourceFromAttributes({
+          [ATTR_SERVICE_NAME]: this.serviceName,
+          [ATTR_SERVICE_VERSION]: this.serviceVersion,
         })
       );
-
-    this.provider = new WebTracerProvider({
-      resource: resource,
-    });
 
     const exporter = new OTLPTraceExporter({
       url: '/?v-r=o11y&id=' + this.instanceId,
     })
-    this.provider.addSpanProcessor(new BatchSpanProcessor(exporter, {
-      // The maximum queue size. After the size is reached spans are dropped.
-      maxQueueSize: 100,
-      // The maximum batch size of every export. It must be smaller or equal to maxQueueSize.
-      maxExportBatchSize: 10,
-      // The interval between two consecutive exports
-      scheduledDelayMillis: 500,
-      // How long the export can run before it is cancelled
-      exportTimeoutMillis: 30000,
-    }));
+    this.provider = new WebTracerProvider({
+      resource: resource,
+      spanProcessors: [new BatchSpanProcessor(exporter, {
+        // The maximum queue size. After the size is reached spans are dropped.
+        maxQueueSize: 100,
+        // The maximum batch size of every export. It must be smaller or equal to maxQueueSize.
+        maxExportBatchSize: 10,
+        // The interval between two consecutive exports
+        scheduledDelayMillis: 500,
+        // How long the export can run before it is cancelled
+        exportTimeoutMillis: 30000,
+      })],
+    });
 
     this.provider.register({
       // Changing default contextManager to use StackContextManager

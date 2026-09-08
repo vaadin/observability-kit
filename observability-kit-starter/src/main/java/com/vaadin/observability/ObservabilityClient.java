@@ -26,13 +26,16 @@ import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.dependency.NpmPackage;
 import com.vaadin.flow.internal.JacksonUtils;
 
-@NpmPackage(value = "@opentelemetry/sdk-trace-web", version = "1.8.0")
-@NpmPackage(value = "@opentelemetry/instrumentation", version = "0.35.0")
-@NpmPackage(value = "@opentelemetry/instrumentation-document-load", version = "0.31.0")
-@NpmPackage(value = "@opentelemetry/instrumentation-user-interaction", version = "0.32.0")
-@NpmPackage(value = "@opentelemetry/instrumentation-xml-http-request", version = "0.34.0")
-@NpmPackage(value = "@opentelemetry/instrumentation-long-task", version = "0.32.0")
-@NpmPackage(value = "@opentelemetry/exporter-trace-otlp-http", version = "0.35.0")
+@NpmPackage(value = "@opentelemetry/api", version = "1.9.0")
+@NpmPackage(value = "@opentelemetry/resources", version = "2.11.0")
+@NpmPackage(value = "@opentelemetry/semantic-conventions", version = "1.43.0")
+@NpmPackage(value = "@opentelemetry/sdk-trace-web", version = "2.11.0")
+@NpmPackage(value = "@opentelemetry/instrumentation", version = "0.222.0")
+@NpmPackage(value = "@opentelemetry/instrumentation-document-load", version = "0.67.0")
+@NpmPackage(value = "@opentelemetry/instrumentation-user-interaction", version = "0.66.0")
+@NpmPackage(value = "@opentelemetry/instrumentation-xml-http-request", version = "0.222.0")
+@NpmPackage(value = "@opentelemetry/instrumentation-long-task", version = "0.66.0")
+@NpmPackage(value = "@opentelemetry/exporter-trace-otlp-http", version = "0.222.0")
 @Tag("vaadin-observability-client")
 @JsModule("./components/observability-client.ts")
 class ObservabilityClient extends Component

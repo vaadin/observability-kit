@@ -36,19 +36,19 @@
     "access": "public"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.4.1",
-    "@opentelemetry/context-zone": "^1.13.0",
-    "@opentelemetry/instrumentation": "~0.39.1",
-    "@opentelemetry/instrumentation-document-load": "~0.32.2",
-    "@opentelemetry/instrumentation-long-task": "~0.32.4",
-    "@opentelemetry/instrumentation-user-interaction": "~0.32.3",
-    "@opentelemetry/instrumentation-xml-http-request": "~0.39.1",
-    "@opentelemetry/otlp-exporter-base": "~0.39.1",
-    "@opentelemetry/otlp-transformer": "~0.39.1",
-    "@opentelemetry/resources": "~1.13.0",
-    "@opentelemetry/sdk-trace-base": "~1.13.0",
-    "@opentelemetry/sdk-trace-web": "~1.13.0",
-    "@opentelemetry/semantic-conventions": "~1.13.0"
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-zone": "~2.11.0",
+    "@opentelemetry/core": "~2.11.0",
+    "@opentelemetry/instrumentation": "~0.222.0",
+    "@opentelemetry/instrumentation-document-load": "~0.67.0",
+    "@opentelemetry/instrumentation-long-task": "~0.66.0",
+    "@opentelemetry/instrumentation-user-interaction": "~0.66.0",
+    "@opentelemetry/instrumentation-xml-http-request": "~0.222.0",
+    "@opentelemetry/otlp-transformer": "~0.222.0",
+    "@opentelemetry/resources": "~2.11.0",
+    "@opentelemetry/sdk-trace-base": "~2.11.0",
+    "@opentelemetry/sdk-trace-web": "~2.11.0",
+    "@opentelemetry/semantic-conventions": "~1.43.0"
   },
   "devDependencies": {
     "karma": "^6.4.2"
