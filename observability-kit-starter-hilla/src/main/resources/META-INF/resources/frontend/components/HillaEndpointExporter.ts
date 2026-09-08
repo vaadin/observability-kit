@@ -1,48 +1,46 @@
 import { diag } from '@opentelemetry/api';
+import { ExportResult, ExportResultCode } from '@opentelemetry/core';
+import { JsonTraceSerializer } from '@opentelemetry/otlp-transformer';
 import { ReadableSpan, SpanExporter } from '@opentelemetry/sdk-trace-base';
-import { OTLPExporterBrowserBase, OTLPExporterError, OTLPExporterConfigBase } from '@opentelemetry/otlp-exporter-base';
-import { createExportTraceServiceRequest, IExportTraceServiceRequest } from '@opentelemetry/otlp-transformer';
 
-export class HillaEndpointExporter
-  extends OTLPExporterBrowserBase<ReadableSpan, IExportTraceServiceRequest>
-  implements SpanExporter
-{
+export class HillaEndpointExporter implements SpanExporter {
   protected _endpoint: (jsonString: string) => Promise<void>;
+  private _isShutdown = false;
 
   constructor(config: HillaEndpointExporterConfig) {
-    super(config);
     this._endpoint = config.endpoint;
   }
 
-  convert(spans: ReadableSpan[]): IExportTraceServiceRequest {
-    return createExportTraceServiceRequest(spans, true);
-  }
-
-  send(spans: ReadableSpan[], onSuccess: () => void, onError: (error: OTLPExporterError) => void): void {
-    if (this._shutdownOnce.isCalled) {
+  export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
+    if (this._isShutdown) {
       diag.debug('Shutdown already started. Cannot send objects');
+      resultCallback({ code: ExportResultCode.FAILED, error: new Error('Exporter has already been shut down') });
       return;
     }
 
     diag.debug('Sending spans');
-    try {
-      const serviceRequest = this.convert(spans);
-      const jsonString = JSON.stringify(serviceRequest);
-
-      this._endpoint(jsonString).then(onSuccess).catch(onError);
-    } catch (e: unknown) {
-      onError(e as OTLPExporterError);
+    const payload = JsonTraceSerializer.serializeRequest(spans);
+    if (!payload) {
+      resultCallback({ code: ExportResultCode.FAILED, error: new Error('Could not serialize spans') });
+      return;
     }
+
+    this._endpoint(new TextDecoder().decode(payload)).then(
+      () => resultCallback({ code: ExportResultCode.SUCCESS }),
+      (error: unknown) => resultCallback({ code: ExportResultCode.FAILED, error: error as Error })
+    );
   }
 
-  // OTLPExporterBrowserBase contains some useful exporter implementation,
-  // however it is based on a URL endpoint, hence the getDefaultUrl function
-  // needs to be defined even though it is not used in practice.
-  getDefaultUrl(config: OTLPExporterConfigBase): string {
-    return typeof config.url === 'string' ? config.url : '';
+  async forceFlush(): Promise<void> {
+    // Spans are handed to the endpoint as soon as `export` is called, so there
+    // is nothing buffered in the exporter itself.
+  }
+
+  async shutdown(): Promise<void> {
+    this._isShutdown = true;
   }
 }
 
-export interface HillaEndpointExporterConfig extends OTLPExporterConfigBase {
+export interface HillaEndpointExporterConfig {
   endpoint: (jsonString: string) => Promise<void>;
 }
