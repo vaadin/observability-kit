@@ -15,8 +15,6 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.openqa.selenium.Cookie;
 
@@ -78,11 +76,11 @@ public class ResyncMetricsIT extends AbstractIT {
 
         String prometheus = fetchPrometheus();
 
-        assertThat(meterValue(prometheus, "vaadin_resync_total", "resend"))
-                .as("vaadin_resync_total{type=\"resend\"}")
+        assertThat(prometheusValue(prometheus, "vaadin_resync_total",
+                "type=\"resend\"")).as("vaadin_resync_total{type=\"resend\"}")
                 .isGreaterThanOrEqualTo(1.0);
-        assertThat(meterValue(prometheus, "vaadin_resync_total", "resync"))
-                .as("vaadin_resync_total{type=\"resync\"}")
+        assertThat(prometheusValue(prometheus, "vaadin_resync_total",
+                "type=\"resync\"")).as("vaadin_resync_total{type=\"resync\"}")
                 .isGreaterThanOrEqualTo(1.0);
     }
 
@@ -130,20 +128,5 @@ public class ResyncMetricsIT extends AbstractIT {
             }
         }
         return out.toString();
-    }
-
-    /**
-     * Returns the value of the first Prometheus sample line for {@code name}
-     * carrying the label {@code type="<type>"}, or {@code -1.0} if absent.
-     */
-    private static double meterValue(String prometheusBody, String name,
-            String type) {
-        Pattern pattern = Pattern.compile(
-                "^" + Pattern.quote(name) + "\\{[^}]*type=\""
-                        + Pattern.quote(type) + "\"[^}]*\\}\\s+"
-                        + "([0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)",
-                Pattern.MULTILINE);
-        Matcher m = pattern.matcher(prometheusBody);
-        return m.find() ? Double.parseDouble(m.group(1)) : -1.0;
     }
 }

@@ -89,6 +89,28 @@ class ClientMetricsBinderTest {
                         .count());
     }
 
+    @Test
+    void ingestRequestDurationSampleRecordsTimerByRoute() {
+        binder.ingest(List.of(sample(MeterNames.CLIENT_REQUEST_DURATION, 180.0,
+                Map.of("route", "/orders/17"))));
+
+        Timer timer = registry.timer(MeterNames.CLIENT_REQUEST_DURATION,
+                MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN);
+        assertEquals(1L, timer.count());
+        assertEquals(180.0, timer.totalTime(TimeUnit.MILLISECONDS), 1e-6);
+    }
+
+    @Test
+    void ingestRenderDurationSampleRecordsTimerByRoute() {
+        binder.ingest(List.of(sample(MeterNames.CLIENT_RENDER_DURATION, 12.0,
+                Map.of("route", "/orders/17"))));
+
+        Timer timer = registry.timer(MeterNames.CLIENT_RENDER_DURATION,
+                MeterNames.TAG_ROUTE, MeterNames.ROUTE_UNKNOWN);
+        assertEquals(1L, timer.count());
+        assertEquals(12.0, timer.totalTime(TimeUnit.MILLISECONDS), 1e-6);
+    }
+
     // --- ingest: counter ---
 
     @Test
@@ -119,12 +141,11 @@ class ClientMetricsBinderTest {
 
     @Test
     void ingestDisallowedNameIsDropped() {
-        ClientSample sample = sample("vaadin.client.rpc.duration", 50.0,
-                Map.of());
+        ClientSample sample = sample("vaadin.client.made.up", 50.0, Map.of());
         binder.ingest(List.of(sample));
 
         // The disallowed sample is NOT recorded as a timer
-        assertEquals(0L, registry.find("vaadin.client.rpc.duration").timers()
+        assertEquals(0L, registry.find("vaadin.client.made.up").timers()
                 .stream().mapToLong(t -> t.count()).sum());
         // No dropped counter incremented here (dropped is only for
         // unrecognized *incoming* names; recordDropped is a separate method)

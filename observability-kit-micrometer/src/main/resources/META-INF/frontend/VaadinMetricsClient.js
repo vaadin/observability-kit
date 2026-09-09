@@ -29,6 +29,15 @@
   var CONNECTION = 'vaadin.client.connection';
   var CONNECTION_DOWNTIME = 'vaadin.client.connection.downtime';
   var CLIENT_ERRORS = 'vaadin.client.errors';
+  var REQUEST_DURATION = 'vaadin.client.request.duration';
+  var RENDER_DURATION = 'vaadin.client.render.duration';
+  // Flow marks every UIDL request with this query parameter; heartbeat and
+  // push requests carry other values and are not interactions.
+  var UIDL_REQUEST = /[?&]v-r=uidl(?:&|$)/;
+  // How long a flush is given to leave the browser before the request it was
+  // waiting to ride on is assumed lost, and the next UIDL request is treated
+  // as the user's again.
+  var OWN_REQUEST_MAX_WAIT_MS = 30000;
 
   var buffer = [];
 
@@ -236,6 +245,10 @@
     // lines the persisted copy is the only record that the batch existed.
     persist();
     try {
+      // The samples ride on a UIDL request of their own, which the request
+      // observer below would otherwise time as an interaction -- and then
+      // report, and then flush, forever. Mark it so the observer can skip it.
+      ownRequestAt = performance.now();
       var sent = el.$server.recordSamples(batch);
       var answered = function () {
         // The server either recorded the batch or answered that it could not.
@@ -353,6 +366,12 @@
           // A request starting, not a connection event.
           return;
         }
+        if (isLoading(previous) && ownRequestAt === null) {
+          // A request just ended and its response has been applied. Not while
+          // the collector's own flush is out, since that is the response
+          // being applied then.
+          sampleRender(false);
+        }
         var to = normalizeState(current);
         if (to === lastState) {
           return;
@@ -375,6 +394,118 @@
     }
   } catch (e) {
     /* store unavailable, skip */
+  }
+
+  // Interaction timing: the browser's side of the server's request timer.
+  //
+  // Every UIDL POST leaves a Resource Timing entry, so the round trip as the
+  // browser saw it -- queueing, wire, server, and the response body -- needs no
+  // hook into Flow and works in production. What the browser then spent
+  // applying the response is Flow's own figure: when its requestTiming
+  // setting is on (the default outside production mode), each client under
+  // window.Vaadin.Flow.clients publishes getProfilingData(), whose first value
+  // is the processing time of the last response and whose second is the
+  // running total. The total only moves when a response was applied, so a
+  // check that runs more than once per response reports it once.
+  //
+  // The check has two triggers because neither alone sees every response: the
+  // observer fires before Flow has necessarily applied the response it saw,
+  // and the connection store's loading round trip is muted for some events.
+
+  // When the collector last asked Flow to send its samples; null once the
+  // request that carried them has been seen. The flush request is timed like
+  // any other UIDL request, and would report itself, so the observer skips
+  // the first UIDL request that starts after this mark.
+  var ownRequestAt = null;
+  // Per Flow client, the processing total at the last check.
+  var processingTotals = {};
+
+  function flowClients() {
+    var flow = window.Vaadin && window.Vaadin.Flow;
+    return (flow && flow.clients) || null;
+  }
+
+  // Reports the processing time of every response applied since the last
+  // check, or with discard set only takes note of it -- for the collector's
+  // own flush, whose response is not an interaction.
+  function sampleRender(discard) {
+    var clients = flowClients();
+    if (!clients) {
+      return;
+    }
+    for (var id in clients) {
+      var client = clients[id];
+      if (!client || typeof client.getProfilingData !== 'function') {
+        continue;
+      }
+      var data;
+      try {
+        data = client.getProfilingData();
+      } catch (e) {
+        continue;
+      }
+      if (!data || typeof data[0] !== 'number' || typeof data[1] !== 'number') {
+        continue;
+      }
+      var total = data[1];
+      var seen = processingTotals[id];
+      processingTotals[id] = total;
+      // The first check only takes the baseline: the initial UIDL is the
+      // bootstrap, already covered by vaadin.client.bootstrap.duration.
+      if (seen === undefined || total === seen || discard) {
+        continue;
+      }
+      pushSample(RENDER_DURATION, { route: currentRoute() }, data[0]);
+    }
+  }
+  // Baseline now, so the bootstrap does not count as the first interaction.
+  sampleRender(true);
+
+  function isOwnRequest(entry) {
+    if (ownRequestAt === null) {
+      return false;
+    }
+    if (performance.now() - ownRequestAt > OWN_REQUEST_MAX_WAIT_MS) {
+      ownRequestAt = null;
+      return false;
+    }
+    // Flow sends one request at a time, so the first UIDL request to start
+    // after the mark is the one carrying the samples, alone or with whatever
+    // the user queued in the same tick.
+    if (entry.startTime + 1 < ownRequestAt) {
+      return false;
+    }
+    ownRequestAt = null;
+    return true;
+  }
+
+  try {
+    var requestObserver = new PerformanceObserver(function (list) {
+      list.getEntries().forEach(function (entry) {
+        if (!UIDL_REQUEST.test(entry.name || '')) {
+          return;
+        }
+        if (isOwnRequest(entry)) {
+          // Take note of what applying the flush response cost, now and once
+          // more after the current task in case Flow deferred it, so it is not
+          // reported as the next interaction's.
+          sampleRender(true);
+          setTimeout(function () {
+            sampleRender(true);
+          }, 0);
+          return;
+        }
+        pushSample(REQUEST_DURATION, { route: currentRoute() }, entry.duration);
+        // The response may not be applied yet when its entry is delivered;
+        // give Flow the current task and look afterwards.
+        setTimeout(function () {
+          sampleRender(false);
+        }, 0);
+      });
+    });
+    requestObserver.observe({ type: 'resource' });
+  } catch (e) {
+    /* unsupported, skip */
   }
 
   // Navigation timing: observe history changes.
