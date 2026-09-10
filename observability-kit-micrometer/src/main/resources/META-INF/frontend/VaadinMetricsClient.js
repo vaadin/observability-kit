@@ -45,9 +45,9 @@
   // Flow marks every UIDL request with this query parameter; heartbeat and
   // push requests carry other values and are not interactions.
   var UIDL_REQUEST = /[?&]v-r=uidl(?:&|$)/;
-  // How long a flush is given to leave the browser before the request it was
-  // waiting to ride on is assumed lost, and the next UIDL request is treated
-  // as the user's again.
+  // How long a flush is given to leave the browser and be answered before the
+  // request it was waiting to ride on is assumed lost, and the next UIDL
+  // request and the next applied response are treated as the user's again.
   var OWN_REQUEST_MAX_WAIT_MS = 30000;
 
   var buffer = [];
@@ -348,10 +348,12 @@
     // lines the persisted copy is the only record that the batch existed.
     persist();
     try {
-      // The samples ride on a UIDL request of their own, which the request
-      // observer below would otherwise time as an interaction -- and then
-      // report, and then flush, forever. Mark it so the observer can skip it.
+      // The samples ride on a UIDL request of their own, which the interaction
+      // timing below would otherwise time as an interaction -- and then
+      // report, and then flush, forever. Mark it so the request observer skips
+      // the request and the render check skips the response.
       ownRequestAt = monotonicNow();
+      ownRenderAt = ownRequestAt;
       var sent = el.$server.recordSamples(batch);
       var answered = function () {
         // The server either recorded the batch or answered that it could not.
@@ -369,7 +371,9 @@
       }
     } catch (e) {
       // The call never entered Flow's message queue, so nothing was sent and
-      // requeueing cannot double-count.
+      // requeueing cannot double-count -- and no request of ours is coming.
+      ownRequestAt = null;
+      ownRenderAt = null;
       settle(batch, true);
     }
   }
@@ -928,11 +932,9 @@
           // A request starting, not a connection event.
           return;
         }
-        if (isLoading(previous) && ownRequestAt === null) {
-          // A request just ended and its response has been applied. Not while
-          // the collector's own flush is out, since that is the response
-          // being applied then.
-          sampleRender(false);
+        if (isLoading(previous)) {
+          // A request just ended and its response has been applied.
+          requestEnded();
         }
         var to = normalizeState(current);
         if (to === lastState) {
@@ -982,16 +984,28 @@
   // check that runs more than once per response reports it once.
   //
   // The check has two triggers because neither alone sees every response: the
-  // observer fires before Flow has necessarily applied the response it saw,
-  // and the connection store's loading round trip is muted for some events.
+  // observer can fire before Flow has applied the response it saw, and is
+  // absent when the UIDL rides a websocket; the connection store's loading
+  // round trip is muted for some events.
 
-  // When the collector last asked Flow to send its samples; null once the
-  // request that carried them has been seen. The flush request is timed like
-  // any other UIDL request, and would report itself, so the observer skips
-  // the first UIDL request that starts after this mark.
+  // The collector's own flush rides on a UIDL request, and would otherwise be
+  // timed as an interaction: the request by the observer, the response by the
+  // render check. Two marks, both set by flush() and each consumed by the
+  // check it is for -- the request mark by the first UIDL entry to start after
+  // it, the render mark by the first applied response after it -- so neither
+  // depends on the other having fired. In particular the render mark does not
+  // wait for a resource entry: with @Push(transport = WEBSOCKET) the UIDL
+  // rides the websocket and leaves none, and the observer may not install at
+  // all. Both marks expire, so a flush whose request or answer was lost does
+  // not hold either check for the life of the tab.
   var ownRequestAt = null;
+  var ownRenderAt = null;
   // Per Flow client, the processing total at the last check.
   var processingTotals = {};
+
+  function pending(mark) {
+    return mark !== null && monotonicNow() - mark <= OWN_REQUEST_MAX_WAIT_MS;
+  }
 
   function flowClients() {
     var flow = window.Vaadin && window.Vaadin.Flow;
@@ -999,13 +1013,17 @@
   }
 
   // Reports the processing time of every response applied since the last
-  // check, or with discard set only takes note of it -- for the collector's
-  // own flush, whose response is not an interaction.
+  // check, and returns whether one was. With discard set it only takes note,
+  // which is how the baseline is taken. The first applied response after a
+  // flush is the flush's own -- Flow sends one request at a time -- and is
+  // dropped; a user RPC that shared the request, or was in flight when the
+  // flush was called, costs one misattributed sample and nothing more.
   function sampleRender(discard) {
     var clients = flowClients();
     if (!clients) {
-      return;
+      return false;
     }
+    var applied = false;
     for (var id in clients) {
       var client = clients[id];
       if (!client || typeof client.getProfilingData !== 'function') {
@@ -1025,27 +1043,38 @@
       processingTotals[id] = total;
       // The first check only takes the baseline: the initial UIDL is the
       // bootstrap, already covered by vaadin.client.bootstrap.duration.
-      if (seen === undefined || total === seen || discard) {
+      if (seen === undefined || total === seen) {
+        continue;
+      }
+      applied = true;
+      if (discard) {
+        continue;
+      }
+      if (pending(ownRenderAt)) {
+        ownRenderAt = null;
         continue;
       }
       pushSample(RENDER_DURATION, { route: currentRoute() }, data[0]);
     }
+    return applied;
   }
   // Baseline now, so the bootstrap does not count as the first interaction.
   sampleRender(true);
 
+  // A request ended, so its response has been applied. A flush response that
+  // cost the browser nothing does not move the total, which is the one case
+  // the render check cannot see; the request ending is what says it is over.
+  function requestEnded() {
+    if (!sampleRender(false) && pending(ownRenderAt)) {
+      ownRenderAt = null;
+    }
+  }
+
+  // The first UIDL request to start after the mark is the one carrying the
+  // samples, alone or with whatever the user queued in the same tick. An entry
+  // that started before the mark is a request that was already in flight.
   function isOwnRequest(entry) {
-    if (ownRequestAt === null) {
-      return false;
-    }
-    if (monotonicNow() - ownRequestAt > OWN_REQUEST_MAX_WAIT_MS) {
-      ownRequestAt = null;
-      return false;
-    }
-    // Flow sends one request at a time, so the first UIDL request to start
-    // after the mark is the one carrying the samples, alone or with whatever
-    // the user queued in the same tick.
-    if (entry.startTime + 1 < ownRequestAt) {
+    if (!pending(ownRequestAt) || entry.startTime + 1 < ownRequestAt) {
       return false;
     }
     ownRequestAt = null;
@@ -1058,19 +1087,14 @@
         if (!UIDL_REQUEST.test(entry.name || '')) {
           return;
         }
-        if (isOwnRequest(entry)) {
-          // Take note of what applying the flush response cost, now and once
-          // more after the current task in case Flow deferred it, so it is not
-          // reported as the next interaction's.
-          sampleRender(true);
-          setTimeout(function () {
-            sampleRender(true);
-          }, 0);
-          return;
+        if (!isOwnRequest(entry)) {
+          pushSample(REQUEST_DURATION, { route: currentRoute() }, entry.duration);
         }
-        pushSample(REQUEST_DURATION, { route: currentRoute() }, entry.duration);
-        // The response may not be applied yet when its entry is delivered;
-        // give Flow the current task and look afterwards.
+        // The entry can be delivered before or after Flow applies the
+        // response: the two are separate tasks with no order between them.
+        // Look now and once more after the current task; a response applied
+        // later still is seen by the request ending.
+        sampleRender(false);
         setTimeout(function () {
           sampleRender(false);
         }, 0);

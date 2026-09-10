@@ -736,8 +736,8 @@ and what is left is the network:
   rate(vaadin_client_request_duration_seconds_sum[5m])
 / rate(vaadin_client_request_duration_seconds_count[5m])
 -
-  rate(vaadin_request_duration_seconds_sum{type="uidl"}[5m])
-/ rate(vaadin_request_duration_seconds_count{type="uidl"}[5m])
+  rate(vaadin_request_duration_seconds_sum{vaadin_request_type="uidl"}[5m])
+/ rate(vaadin_request_duration_seconds_count{vaadin_request_type="uidl"}[5m])
 ```
 
 **`vaadin.client.render.duration`** is the third segment, after the network
@@ -750,11 +750,15 @@ own, published through `getProfilingData()` on each client only when Flow's
 production mode; in production, set `vaadin.requestTiming=true` to record this
 meter. Without it the meter is absent rather than zero.
 
-Three things are worth knowing about both:
+Four things are worth knowing about both:
 
 - **Only UIDL requests are timed.** Heartbeats, push and static resources are
   not interactions and are left out. The collector's own request that carries
   the samples to the server is left out too, so the kit does not report itself.
+- **The request meter needs the default transport.** It is read from Resource
+  Timing, which sees HTTP requests. With `@Push(transport = WEBSOCKET)` the
+  UIDL rides the websocket and leaves no entry, so only the render meter is
+  recorded.
 - **Bootstrap is not an interaction.** The first UIDL response, which builds
   the page, is covered by `vaadin.client.bootstrap.duration` and excluded here.
 - **The route is the browser's.** Both meters carry the route the browser was

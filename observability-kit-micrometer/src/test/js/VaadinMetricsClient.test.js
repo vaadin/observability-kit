@@ -471,17 +471,25 @@ function err(message, stack) {
     );
     const collectorApi = win.__vaadinMicrometer;
 
-    // A UIDL request completes on the wire; Flow applies the response, which
-    // ends the loading round trip. Returns nothing; the caller reads samples.
+    // The two halves of a round trip, separately, because the order between
+    // them is what several of the checks below are about: `wire` delivers the
+    // request's Resource Timing entry, `apply` has Flow apply the response and
+    // end the loading round trip.
     const settle = () => new Promise((r) => setTimeout(r, 5));
-    async function roundTrip(processingMs, entryName) {
+    function wire(duration, entryName) {
       const startTime = now;
-      now += 180;
+      now += duration;
+      observer.cb({ getEntries: () => [{ name: entryName || '/?v-r=uidl&v-uiId=0', duration: duration, startTime: startTime }] });
+    }
+    function apply(processingMs) {
       flow.last = processingMs;
       flow.total += processingMs;
       cs.go('loading');
       cs.go('connected');
-      observer.cb({ getEntries: () => [{ name: entryName || '/?v-r=uidl&v-uiId=0', duration: 180, startTime: startTime }] });
+    }
+    async function roundTrip(processingMs) {
+      apply(processingMs);
+      wire(180);
       await settle();
     }
     async function drain() {
@@ -544,6 +552,59 @@ function err(message, stack) {
       all = await drain();
       check('a response applied after its entry is still reported once',
         timing(all), [['request', '/orders/17', 90], ['render', '/orders/17', 7]]);
+    }
+
+    // 8f. The flush's entry is delivered before Flow applies its response.
+    //     The two are separate tasks with no order between them, and this
+    //     order is the one that used to report the flush's render, refill the
+    //     buffer, and flush again forever.
+    {
+      wire(180);
+      await settle();
+      apply(3);
+      await settle();
+      check("a flush response applied after its entry is still the collector's own", collectorApi.bufferSize(), 0);
+      await roundTrip(30);
+      all = await drain();
+      check('and the interaction after it is timed once',
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
+    }
+
+    // 8g. No resource entries at all: the UIDL rides a websocket, or the
+    //     observer never installed. The render check must not wait for one.
+    {
+      apply(2);
+      await settle();
+      check('without entries the flush response is still recognised as the collector\'s own', collectorApi.bufferSize(), 0);
+      apply(45);
+      await settle();
+      all = await drain();
+      check('and the interaction after it is still timed in the browser',
+        timing(all), [['render', '/orders/17', 45]]);
+    }
+
+    // 8h. A flush response that cost nothing does not move the total. The
+    //     request ending is what says it is over, so the next interaction is
+    //     not taken for it.
+    {
+      apply(0);
+      wire(180);
+      await settle();
+      check('a free flush response leaves nothing behind', collectorApi.bufferSize(), 0);
+      await roundTrip(25);
+      all = await drain();
+      check('and does not swallow the interaction after it',
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 25]]);
+    }
+
+    // 8i. A flush whose request or answer was lost must not hold either check
+    //     for the life of the tab.
+    {
+      now += 31000;
+      await roundTrip(9);
+      all = await drain();
+      check('a lost flush releases both marks after the deadline',
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 9]]);
     }
 
     // 8e. Without profiling data -- production mode with requestTiming off --
