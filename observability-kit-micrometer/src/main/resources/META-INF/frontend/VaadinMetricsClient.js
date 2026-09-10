@@ -351,7 +351,7 @@
       // The samples ride on a UIDL request of their own, which the request
       // observer below would otherwise time as an interaction -- and then
       // report, and then flush, forever. Mark it so the observer can skip it.
-      ownRequestAt = performance.now();
+      ownRequestAt = monotonicNow();
       var sent = el.$server.recordSamples(batch);
       var answered = function () {
         // The server either recorded the batch or answered that it could not.
@@ -1038,7 +1038,7 @@
     if (ownRequestAt === null) {
       return false;
     }
-    if (performance.now() - ownRequestAt > OWN_REQUEST_MAX_WAIT_MS) {
+    if (monotonicNow() - ownRequestAt > OWN_REQUEST_MAX_WAIT_MS) {
       ownRequestAt = null;
       return false;
     }

@@ -78,7 +78,8 @@ public class ClientProblemsIT extends AbstractIT {
 
         assertThat(prometheusValue(prometheus, "vaadin_client_connection_total",
                 "state=\"connection-lost\""))
-                .as("a transition into connection-lost should be counted")
+                .as("a transition into connection-lost should be counted in:%n%s",
+                        prometheus)
                 .isGreaterThanOrEqualTo(1.0);
         assertThat(prometheusValue(prometheus, "vaadin_client_connection_total",
                 "state=\"connected\"")).as("the recovery should be counted too")

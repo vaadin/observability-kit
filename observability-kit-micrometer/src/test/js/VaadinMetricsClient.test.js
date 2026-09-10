@@ -429,5 +429,132 @@ function err(message, stack) {
   batch = await recoverAndFlush();
   check('no message is gathered when details are off', batch.map((s) => s.detail.message), [null]);
 
+  // 8. Interaction timing: the request observer and the render check. The
+  //    environment above has no PerformanceObserver, which is the case the
+  //    rest of the collector must survive; this one has a working observer,
+  //    a Flow client publishing profiling data, and a connection store, all
+  //    driven by hand.
+  {
+    let observer = null;
+    let batches = [];
+    const flow = { total: 0, last: 0 };
+    const cs = {
+      state: 'connected',
+      cbs: [],
+      addStateChangeListener(cb) { this.cbs.push(cb); },
+      go(to) { const prev = this.state; this.state = to; this.cbs.forEach((cb) => cb(prev, to)); }
+    };
+    const win = {
+      handlers: {},
+      addEventListener(name, cb) { (this.handlers[name] = this.handlers[name] || []).push(cb); },
+      location: { pathname: '/orders/17', href: 'https://app.example.com/orders/17' },
+      sessionStorage: { store: {}, getItem(k) { return this.store[k] === undefined ? null : this.store[k]; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } },
+      Vaadin: {
+        connectionState: cs,
+        Flow: { clients: { app: { getProfilingData: () => [flow.last, flow.total, -1, -1, 0] } } }
+      },
+      __vaadinMicrometerDetails: false
+    };
+    const doc = {
+      querySelector: (sel) => (sel === 'vaadin-metrics-collector'
+        ? { $server: { recordSamples: (batch) => { batches.push(batch); return Promise.resolve(); } } }
+        : null),
+      addEventListener() {},
+      visibilityState: 'visible'
+    };
+    let now = 50000;
+    const perf = { getEntriesByType: () => [], now: () => now };
+    function Observer(cb) { this.cb = cb; }
+    Observer.prototype.observe = function (opts) { if (opts.type === 'resource') { observer = this; } };
+    new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', src)(
+      win, doc, perf, Observer, {}, () => 0, () => 0
+    );
+    const collectorApi = win.__vaadinMicrometer;
+
+    // A UIDL request completes on the wire; Flow applies the response, which
+    // ends the loading round trip. Returns nothing; the caller reads samples.
+    const settle = () => new Promise((r) => setTimeout(r, 5));
+    async function roundTrip(processingMs, entryName) {
+      const startTime = now;
+      now += 180;
+      flow.last = processingMs;
+      flow.total += processingMs;
+      cs.go('loading');
+      cs.go('connected');
+      observer.cb({ getEntries: () => [{ name: entryName || '/?v-r=uidl&v-uiId=0', duration: 180, startTime: startTime }] });
+      await settle();
+    }
+    async function drain() {
+      cs.go('connection-lost');
+      cs.go('connected');
+      await settle();
+      const all = batches.flat();
+      batches = [];
+      return all;
+    }
+    // Which trigger reports the render first is a detail of the environment,
+    // so the samples are compared as a set: request before render.
+    const timing = (all) => all.filter((s) => s.name === 'vaadin.client.request.duration' || s.name === 'vaadin.client.render.duration')
+      .map((s) => [s.name.split('.')[2], s.tags.route, s.valueMs])
+      .sort((a, b) => (a[0] === b[0] ? a[2] - b[2] : a[0] === 'request' ? -1 : 1));
+
+    check('a fresh collector has timed nothing yet', collectorApi.bufferSize(), 0);
+
+    // 8a. One click: one request sample and one render sample, not two of
+    //     either, though both triggers fired for the same response.
+    await roundTrip(12);
+    let all = await drain();
+    check('a round trip is timed once on the wire and once in the browser',
+      timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 12]]);
+
+    // 8b. The flush that just delivered those samples is itself a UIDL
+    //     request. It is neither timed nor does its render count, and the
+    //     next real interaction is timed as usual.
+    await roundTrip(1);
+    let leftover = collectorApi.bufferSize();
+    check("the collector's own flush request produces no samples", leftover, 0);
+    await roundTrip(30);
+    all = await drain();
+    check('the interaction after a flush is timed normally',
+      timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
+
+    // 8c. Heartbeat and push requests are not interactions.
+    await roundTrip(1);
+    observer.cb({ getEntries: () => [
+      { name: '/?v-r=heartbeat&v-uiId=0', duration: 20, startTime: now },
+      { name: '/?v-r=push&v-uiId=0&X-Atmosphere-Transport=websocket', duration: 20, startTime: now },
+      { name: '/VAADIN/build/app.js', duration: 20, startTime: now }
+    ] });
+    await settle();
+    check('heartbeat, push and static resources are not timed', collectorApi.bufferSize(), 0);
+
+    // 8d. A response Flow has not applied by the time its entry is delivered
+    //     is still reported once, by the trigger that sees it applied. Nothing
+    //     was flushed since 8c, so there is no own request to consume first.
+    {
+      const startTime = now;
+      now += 90;
+      observer.cb({ getEntries: () => [{ name: '/?v-r=uidl&v-uiId=0', duration: 90, startTime: startTime }] });
+      await settle();
+      flow.last = 7;
+      flow.total += 7;
+      cs.go('loading');
+      cs.go('connected');
+      await settle();
+      all = await drain();
+      check('a response applied after its entry is still reported once',
+        timing(all), [['request', '/orders/17', 90], ['render', '/orders/17', 7]]);
+    }
+
+    // 8e. Without profiling data -- production mode with requestTiming off --
+    //     the wire is still timed and the browser is simply not.
+    await roundTrip(1);
+    delete win.Vaadin.Flow.clients.app.getProfilingData;
+    await roundTrip(40);
+    all = await drain();
+    check('without profiling data only the request is timed',
+      timing(all), [['request', '/orders/17', 180]]);
+  }
+
   process.exit(failures === 0 ? 0 : 1);
 })();
