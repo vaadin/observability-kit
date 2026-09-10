@@ -437,7 +437,7 @@ function err(message, stack) {
   {
     let observer = null;
     let batches = [];
-    const flow = { total: 0, last: 0 };
+    const flow = { total: 0, last: 0, active: false };
     const cs = {
       state: 'connected',
       cbs: [],
@@ -451,7 +451,7 @@ function err(message, stack) {
       sessionStorage: { store: {}, getItem(k) { return this.store[k] === undefined ? null : this.store[k]; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } },
       Vaadin: {
         connectionState: cs,
-        Flow: { clients: { app: { getProfilingData: () => [flow.last, flow.total, -1, -1, 0] } } }
+        Flow: { clients: { app: { isActive: () => flow.active, getProfilingData: () => [flow.last, flow.total, -1, -1, 0] } } }
       },
       __vaadinMicrometerDetails: false
     };
@@ -605,6 +605,39 @@ function err(message, stack) {
       all = await drain();
       check('a lost flush releases both marks after the deadline',
         timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 9]]);
+    }
+
+    // 8j. A flush called while the user's request is in flight goes out
+    //     behind it. The user's response is then the first applied and must
+    //     be reported; the flush's own is the second and must not be, or the
+    //     meter would trade a real sample for a near-zero one.
+    {
+      await roundTrip(1);
+      const userStart = now;
+      now += 100;
+      flow.active = true;
+      cs.go('loading');
+      // Something to flush, then the timer fires mid-request.
+      win.handlers.error.forEach((cb) => cb({ message: 'x', filename: '/app.js', lineno: 1, error: err('x') }));
+      collectorApi.flush();
+      flow.active = false;
+      // The user's response is applied and its entry delivered, the request
+      // having started before the flush was called.
+      flow.last = 60;
+      flow.total += 60;
+      cs.go('connected');
+      observer.cb({ getEntries: () => [{ name: '/?v-r=uidl&v-uiId=0', duration: 180, startTime: userStart }] });
+      await settle();
+      // Then the flush's own request goes out and comes back.
+      cs.go('loading');
+      flow.last = 1;
+      flow.total += 1;
+      cs.go('connected');
+      wire(40);
+      await settle();
+      all = await drain();
+      check("a flush during a request keeps the user's render and drops its own",
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 60]]);
     }
 
     // 8e. Without profiling data -- production mode with requestTiming off --

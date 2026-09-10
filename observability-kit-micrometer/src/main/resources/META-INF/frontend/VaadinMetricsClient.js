@@ -351,7 +351,10 @@
       // The samples ride on a UIDL request of their own, which the interaction
       // timing below would otherwise time as an interaction -- and then
       // report, and then flush, forever. Mark it so the request observer skips
-      // the request and the render check skips the response.
+      // the request and the render check skips the response. If a request is
+      // in flight right now, ours goes out after it, so the response to let
+      // through first is the user's; asked before the call, which queues ours.
+      ownRenderSkip = anyFlowClientActive() ? 1 : 0;
       ownRequestAt = monotonicNow();
       ownRenderAt = ownRequestAt;
       var sent = el.$server.recordSamples(batch);
@@ -374,6 +377,7 @@
       // requeueing cannot double-count -- and no request of ours is coming.
       ownRequestAt = null;
       ownRenderAt = null;
+      ownRenderSkip = 0;
       settle(batch, true);
     }
   }
@@ -1000,6 +1004,13 @@
   // not hold either check for the life of the tab.
   var ownRequestAt = null;
   var ownRenderAt = null;
+  // How many applied responses belong to the user before the flush's own
+  // arrives: one when a request was in flight as flush() was called, since
+  // Flow sends one request at a time and ours waits behind it. Without this
+  // the user's response would consume the render mark, dropping their real
+  // render sample, and the flush's near-zero one would then be reported in
+  // its place under their route -- a bias towards zero, not just a gap.
+  var ownRenderSkip = 0;
   // Per Flow client, the processing total at the last check.
   var processingTotals = {};
 
@@ -1012,12 +1023,47 @@
     return (flow && flow.clients) || null;
   }
 
+  // Whether any Flow client has a request in flight. isActive() is published
+  // in every mode, and is what TestBench waits on for the same question.
+  function anyFlowClientActive() {
+    var clients = flowClients();
+    if (!clients) {
+      return false;
+    }
+    for (var id in clients) {
+      var client = clients[id];
+      try {
+        if (client && typeof client.isActive === 'function' && client.isActive()) {
+          return true;
+        }
+      } catch (e) {
+        /* not a client */
+      }
+    }
+    return false;
+  }
+
+  // An applied response while a flush is outstanding: the user's if one was
+  // still owed, otherwise the flush's own. Returns whether to report it.
+  function claimApplied() {
+    if (!pending(ownRenderAt)) {
+      return true;
+    }
+    if (ownRenderSkip > 0) {
+      ownRenderSkip--;
+      return true;
+    }
+    ownRenderAt = null;
+    return false;
+  }
+
   // Reports the processing time of every response applied since the last
   // check, and returns whether one was. With discard set it only takes note,
-  // which is how the baseline is taken. The first applied response after a
-  // flush is the flush's own -- Flow sends one request at a time -- and is
-  // dropped; a user RPC that shared the request, or was in flight when the
-  // flush was called, costs one misattributed sample and nothing more.
+  // which is how the baseline is taken. The flush's own response -- the first
+  // applied after the flush, or the second when a request was in flight as it
+  // was called -- is dropped. What remains is a user RPC queued in the same
+  // tick as the flush, which shares its request: that response is dropped
+  // with it, one missing sample and nothing reported in its place.
   function sampleRender(discard) {
     var clients = flowClients();
     if (!clients) {
@@ -1047,11 +1093,7 @@
         continue;
       }
       applied = true;
-      if (discard) {
-        continue;
-      }
-      if (pending(ownRenderAt)) {
-        ownRenderAt = null;
+      if (discard || !claimApplied()) {
         continue;
       }
       pushSample(RENDER_DURATION, { route: currentRoute() }, data[0]);
@@ -1065,8 +1107,8 @@
   // cost the browser nothing does not move the total, which is the one case
   // the render check cannot see; the request ending is what says it is over.
   function requestEnded() {
-    if (!sampleRender(false) && pending(ownRenderAt)) {
-      ownRenderAt = null;
+    if (!sampleRender(false)) {
+      claimApplied();
     }
   }
 
