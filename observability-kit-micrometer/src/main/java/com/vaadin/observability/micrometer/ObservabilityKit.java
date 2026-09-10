@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 
+import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 import com.vaadin.observability.micrometer.insights.RecentQueries;
 
@@ -46,6 +47,13 @@ public final class ObservabilityKit {
      */
     private static final AtomicReference<RecentInteractions> RECENT_INTERACTIONS = new AtomicReference<>();
     private static final AtomicReference<RecentQueries> RECENT_QUERIES = new AtomicReference<>();
+
+    /**
+     * The browser-error buffer instrumentation was bound to, recorded at
+     * {@code serviceInit} time like the two above. Read by the insights
+     * endpoint.
+     */
+    private static final AtomicReference<RecentClientErrors> RECENT_CLIENT_ERRORS = new AtomicReference<>();
 
     private ObservabilityKit() {
     }
@@ -112,6 +120,25 @@ public final class ObservabilityKit {
         return RECENT_QUERIES.get();
     }
 
+    /**
+     * Records the browser-error buffer instrumentation was bound to. Called
+     * from {@code MetricsServiceInitListener} for all deployment types.
+     */
+    static void setRecentClientErrors(RecentClientErrors buffer) {
+        RECENT_CLIENT_ERRORS.set(buffer);
+    }
+
+    /**
+     * Gets the retained browser errors, or {@code null} when any of the three
+     * settings they need was off — the in-browser collector, insights, or error
+     * instrumentation.
+     *
+     * @return the browser-error buffer, or {@code null}
+     */
+    public static RecentClientErrors getRecentClientErrors() {
+        return RECENT_CLIENT_ERRORS.get();
+    }
+
     static void setRecentInteractions(RecentInteractions buffer) {
         RECENT_INTERACTIONS.set(buffer);
     }
@@ -143,5 +170,6 @@ public final class ObservabilityKit {
         ACTIVE_METER_REGISTRY.set(null);
         RECENT_INTERACTIONS.set(null);
         RECENT_QUERIES.set(null);
+        RECENT_CLIENT_ERRORS.set(null);
     }
 }

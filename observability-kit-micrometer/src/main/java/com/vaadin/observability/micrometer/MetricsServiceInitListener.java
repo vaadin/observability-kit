@@ -22,8 +22,10 @@ import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceInitListener;
+import com.vaadin.observability.micrometer.insights.ClientErrorCollector;
 import com.vaadin.observability.micrometer.insights.DataQueryCollector;
 import com.vaadin.observability.micrometer.insights.InteractionCollector;
+import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 import com.vaadin.observability.micrometer.insights.RecentQueries;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
@@ -254,11 +256,25 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     .register(service.getEventBus());
         }
 
+        // Browser errors are counted by the client collector and described
+        // here: the message, the script and the first stack frame are what a
+        // counter cannot hold, and they are the difference between knowing
+        // that browsers are failing and being able to fix it. Built before the
+        // UI binder because the client binder it feeds is created in there.
+        ClientErrorCollector clientErrors = null;
+        if (settings.isClient() && settings.isInsights()
+                && settings.isErrors()) {
+            RecentClientErrors browserErrors = new RecentClientErrors(
+                    settings.getInsightsCapacity());
+            clientErrors = new ClientErrorCollector(browserErrors, settings);
+            ObservabilityKit.setRecentClientErrors(browserErrors);
+        }
+
         NavigationMetricsBinder navigationBinder = null;
         if (settings.isUis() || settings.isNavigation()
                 || settings.isClient()) {
             UiMetricsBinder uiBinder = new UiMetricsBinder(registry,
-                    observationRegistry, settings);
+                    observationRegistry, settings, clientErrors);
             service.addUIInitListener(uiBinder);
             navigationBinder = uiBinder.getNavigationBinder();
         }

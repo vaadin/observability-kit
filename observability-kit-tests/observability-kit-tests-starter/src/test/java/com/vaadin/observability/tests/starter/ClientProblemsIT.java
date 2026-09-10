@@ -86,5 +86,13 @@ public class ClientProblemsIT extends AbstractIT {
         assertThat(prometheusValue(prometheus, "vaadin_client_errors_total",
                 "kind=\"uncaught\"")).as("the browser error should be counted")
                 .isGreaterThanOrEqualTo(1.0);
+
+        // The counter says an error happened; the insight says what it was.
+        String insights = fetch("/actuator/vaadin/observability");
+        assertThat(insights).as("a client-error insight should be reported")
+                .contains("\"type\":\"client-error\"");
+        assertThat(insights)
+                .as("the insight should name where the error came from")
+                .contains("\"kind\":\"uncaught\"");
     }
 }

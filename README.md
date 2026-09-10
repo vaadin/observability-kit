@@ -20,6 +20,66 @@ code, no annotations, no configuration required.
 - Spring Boot 4 (only for the `observability-kit-starter`; plain-Spring and
   standalone setups are also supported)
 
+## How it works
+
+The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request interceptor, the RPC and data-query events on `VaadinServiceEventBus`, navigation listeners, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows work across `UI.access(...)` thread hops.
+
+The kit also enriches telemetry the framework emits anyway: through its HTTP observation hooks, the Spring HTTP observation gets the Vaadin request type, the active view's route template as its `uri` tag (template-only, and budgeted to stay under Boot's `max-uri-tags` cap), and error status for failures Vaadin handles internally on a 200 response.
+
+On the browser side, an injected collector gathers bootstrap timing, Web Vitals, client errors, connection state and navigation timing into a priority-ordered buffer, persisted to `sessionStorage` across outages and page closes, and ships batches to the server over a rate-limited `@ClientCallable`. Every sample is validated against a per-meter tag-key allowlist and bounded tag values before recording. Failed and slow interactions are additionally retained by the insights collectors and exposed at `/actuator/vaadin`, so a user report can be backtracked to the exact interaction.
+
+```mermaid
+flowchart LR
+    subgraph Browser
+        collector["VaadinMetricsClient.js<br/>bootstrap, web vitals, errors,<br/>connection state, navigation"]
+    end
+
+    subgraph Server["Vaadin application"]
+        httpobs["Spring HTTP observation<br/>http.server.requests"]
+        resync["Resync detection filter<br/>vaadin.resync"]
+        flow["VaadinService + Flow SPIs<br/>requests, RPC, navigation,<br/>data queries, sessions, UIs, errors"]
+
+        subgraph Kit["Observability Kit binders"]
+            reqb["RequestMetricsBinder<br/>vaadin.request.duration"]
+            rpcb["RpcMetricsBinder<br/>vaadin.rpc.duration"]
+            navb["NavigationMetricsBinder<br/>vaadin.navigation"]
+            datab["DataQueryMetricsBinder<br/>vaadin.data.fetch / count"]
+            errb["ErrorMetricsBinder<br/>vaadin.errors"]
+            lifeb["Session / UI / Lock / State binders<br/>vaadin.sessions.*, vaadin.ui.*"]
+            clientb["ClientMetricsBinder<br/>vaadin.client.*"]
+            dbproxy["DataSource proxy, Boot opt-in<br/>vaadin.db.query / fetch.rows"]
+        end
+
+        hooks["HTTP observation hooks<br/>request type, route template, error"]
+        insights["Insights collectors<br/>/actuator/vaadin"]
+        texec["TracingExecutor<br/>context across UI.access"]
+    end
+
+    subgraph Micrometer
+        meters["MeterRegistry"]
+        obsreg["ObservationRegistry"]
+        handler["Meter observation handler<br/>observations become Timers"]
+    end
+
+    subgraph Backends
+        prom["/actuator/prometheus<br/>Prometheus, Grafana, Datadog, ..."]
+        bridge["Tracing bridge<br/>OpenTelemetry, Zipkin, Jaeger"]
+    end
+
+    collector -- "rate-limited batches<br/>over a ClientCallable" --> clientb
+    flow -- "listener and event-bus callbacks" --> Kit
+    resync --> meters
+    reqb -- "enrich and mark" --> hooks --> httpobs
+    reqb & rpcb & navb & datab --> obsreg
+    errb & lifeb & clientb & dbproxy --> meters
+    errb & reqb -- "failed / slow interactions" --> insights
+    texec --> obsreg
+    obsreg --> handler --> meters
+    obsreg -- "spans" --> bridge
+    httpobs --> obsreg
+    meters -- "scrape" --> prom
+```
+
 ## Getting started (Spring Boot)
 
 Add the starter:
@@ -190,9 +250,9 @@ vaadin.observability.traces=false
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the session id as a span attribute. |
-| `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions. |
-| `vaadin.observability.insights-details` | `false` | Allow retained interactions to carry the raw session id, exception message and top stack frames. Off by default since the insights payload is meant to be forwarded. |
-| `vaadin.observability.insights-capacity` | `100` | Maximum number of retained interactions; the oldest is evicted once the cap is reached. |
+| `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. |
+| `vaadin.observability.insights-details` | `false` | Allow retained interactions to carry the raw session id, exception message and top stack frames, and retained browser errors their message and the function name from their stack frame. Off by default since the insights payload is meant to be forwarded. For a browser error this governs collection, not just retention: unless it is on and something is there to retain a message, the browser never gathers one, so nothing to withhold is buffered or sent — see [Connection and client-side problems](#connection-and-client-side-problems). Read by a page when it loads, so a change reaches already-open tabs only after a reload. |
+| `vaadin.observability.insights-capacity` | `100` | Maximum number of retained records per buffer — interactions, data provider queries and browser errors are capped separately; the oldest is evicted once the cap is reached. |
 | `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. Also caps the `component` and `exception` tag values of `vaadin.errors`. |
 | `vaadin.observability.client-rate-per-session` | `100` | Maximum client-side samples accepted per session (throttling guard). |
 | `vaadin.observability.ui-state-sample-interval` | `10000` | Minimum milliseconds between two measurements of the same UI. One measurement walks that UI's whole component tree under its session lock, so this is the knob that bounds the cost of the feature. |
@@ -244,10 +304,10 @@ ObservabilitySettings.builder()
 | `vaadin.client.render.duration` | Timer | Time Flow's client spent applying one UIDL response to the page, tagged by `route`. Needs Flow's `requestTiming` setting, on by default outside production mode. |
 | `vaadin.client.web_vitals.lcp` | Timer | Largest Contentful Paint. |
 | `vaadin.client.web_vitals.fcp` | Timer | First Contentful Paint. |
-| `vaadin.client.errors` | Counter | Errors reported by the browser, tagged by `kind`: `uncaught` or `promise`. |
+| `vaadin.client.errors` | Counter | Errors reported by the browser, tagged `kind` (`uncaught` or `promise`). The message, script and stack frame that identify the error are kept as an insight, not as tags. |
 | `vaadin.client.connection` | Counter | Browser connection-state transitions, tagged by the `state` entered: `connected`, `connection-lost`, `reconnecting`. See [Connection and client-side problems](#connection-and-client-side-problems). |
 | `vaadin.client.connection.downtime` | Timer | How long a browser stayed unable to reach the server, measured on the browser's clock and tagged by the `state` it was spent in (`connection-lost`, `reconnecting`). |
-| `vaadin.client.dropped` | Counter | Client samples dropped before recording. |
+| `vaadin.client.dropped` | Counter | Client samples dropped before recording — one the registry refused, and one whose reported duration is not a measurement at all: negative, not finite, or over an hour. A timer's sum only ever grows, so one saturating value would skew its average for the life of the process. |
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
 | `vaadin.db.query` | Timer | Duration of a JDBC query, tagged by `route`. Produced alongside the query span when database monitoring and tracing are both on. |
@@ -437,7 +497,9 @@ Five things about those numbers are worth knowing:
   until the server has answered for it, so a tab closed while a send is still
   in flight re-reports it on its next load rather than losing it — at the
   price of counting a batch twice when it did arrive and only the answer was
-  lost.
+  lost. The same price buys the tab a way out of a lost answer: a batch nobody
+  has answered for within 30 s is taken back and sent again, so one dropped
+  reply cannot stall the collector for the life of the tab.
 - **The downtime timer under-reports by construction.** Three ways, all of them
   the same shape — a segment is only measured when the browser leaves the state,
   and only reportable once it can reach the server again, so an outage nobody
@@ -469,6 +531,191 @@ through ends the outage as far as the browser is concerned, so a polling tab
 reports shorter downtime than a passive one sitting on the same network. If a
 view exists to show these meters, refresh it from the report rather than from a
 schedule: the browser flushes on recovery, and that flush is itself an RPC.
+
+**Browser errors.** `vaadin.client.errors` counts uncaught errors and unhandled
+rejections. What identifies one — the message, the script it came from and the
+first stack frame — is not a number and would be one time series per distinct
+message, so it is kept as an insight instead, alongside the retained
+interactions:
+
+```
+GET /actuator/vaadin/observability
+```
+
+```json
+{
+  "type": "client-error",
+  "severity": "error",
+  "summary": "A browser error (uncaught) at chart.js:44:13 on route 'orders' (12 occurrences), at least one of them reported only after the browser got the server back",
+  "evidence": {
+    "route": "orders",
+    "kind": "uncaught",
+    "source": "/VAADIN/build/chart.js:44",
+    "frame": "chart.js:44:13",
+    "detail": "message and function name were not collected; enable vaadin.observability.insights-details to collect them",
+    "occurrences": 12,
+    "maxBufferedMs": 7400
+  }
+}
+```
+
+`maxBufferedMs` is how long a *report* waited for its browser to reach the
+server again. It counts only time the browser spent unreachable, never the wait
+for the next flush, so a routine error reports zero however long it sat in the
+buffer. Read a non-zero value as "this could not be delivered when it was
+raised" rather than "this happened during an outage": a report taken while the
+browser was still connected accrues the outage that starts before the next
+flush, so the two are not the same claim. It is the largest value in the group,
+so it speaks for at least one occurrence and not necessarily the most recent;
+`examples[].bufferedMs` says which ones waited. A report that survives a reload
+keeps the wait it had accrued — it is written to `sessionStorage` alongside the
+report — but the clock it would have gone on accruing against is gone with the
+page, so a tab that reloads mid-outage resumes counting from the load.
+
+`source` and `frame` are both *locations* — `script-url:line` and
+`script-url:line:col`. `frame` is not the stack line the browser wrote: the
+function name that stood in front of it is not part of it, and travels as its
+own field. Both are present only when the browser supplied something that is
+actually a location, and dropped otherwise — see [What counts as a
+location](#what-counts-as-a-location). A cross-origin script reports
+`Script error.` with no filename, and a rejection has no filename at all; the
+page's own path is not substituted, because that is not where the code is and
+it would carry the ids that route templating exists to fold away, one finding
+per order id instead of one per bug.
+
+**At most 20 client-error insights per payload, most-reported first.** These are
+the only insights whose grouping key is partly the browser's to choose —
+`source` and `frame` are page-determined text, where every other insight groups
+on server-derived, cardinality-capped values — so a script calling the
+collector's endpoint directly with a distinct frame per report could otherwise
+fill the payload with one group per report and bury the real findings. Groups
+are ranked by occurrences before the cut, with ties going to the most recent: a
+flood of crafted reports is one occurrence per group, while the error real users
+keep hitting is many. The cap is on the payload only; `vaadin.client.errors`
+still counts every report, and `insights-capacity` still says how many are
+retained.
+
+The message follows the same policy as a server exception message — withheld
+unless `vaadin.observability.insights-details` is on, because a browser error
+can quote anything the page was working with. **The `function` name is gated
+the same way, and for the same reason**: a page can set any function's name to
+any string, and the browser prints whatever it is told, so a name is text the
+page chose rather than a fact about the code. For a browser error the setting
+governs *collection*, not just retention: unless it is on **and** something is
+there to retain them, the in-browser collector never gathers the message or the
+name, so neither is buffered, written to the tab's `sessionStorage`, or sent.
+With it on, note the converse — an error report waiting out an outage sits in
+`sessionStorage` with both in it until the browser can deliver it. The kind,
+source and frame location are kept whatever the setting.
+
+### What counts as a location
+
+`source` and `frame` are published regardless of `insights-details`, so the kit
+keeps them only when they are locations. Both are checked twice — in the
+browser, to keep the buffer and the request small, and again on the server,
+which is the check that counts, because any script on the page can call the
+collector's endpoint directly.
+
+A location is a `file:line` or `file:line:col` whose file has an extension or a
+path separator, contains no whitespace of any kind, and is built only from the
+characters a path or URL is made of. The line and column are at most eight
+digits each — a position in a file, not a number somebody wanted published. The
+*file* is not capped that way: a bundle really can be called
+`chunk-1234567890123.js`, so digits there are not evidence of anything.
+
+An `@` is part of the path when the text before it is **rooted or schemed** —
+`/node_modules/@vaadin/router/router.js`, `https://unpkg.com/lit@3.1.0/…`,
+`webpack://@scope/pkg/./src/x.js`, a dev server's `/@fs/…`, `/@id/…`,
+`/@vite/client` — so all of those survive whole, version pins included. An `@`
+after anything else is a function name glued to a path, a "location" nobody can
+open, so it is read as an engine's `name@location` separator and taken apart,
+with the path in `frame` and the name in `function`. A leading `@` is a
+separator only when a location plainly follows it; otherwise it opens a scoped
+bare specifier such as `@vaadin/grid/x.js`, which keeps it.
+
+A URL carrying credentials — `http://user@host/app.js:1:2` — is refused, by a
+separate rule about the authority rather than by the one above: browsers do not
+load subresources from userinfo URLs, and a location with a password in it is
+the last thing that should travel in a forwarded payload. The empty-userinfo
+form `webpack://@scope/…` is not that, and survives. A protocol-relative URL is
+asked the same question — `//user:pw@host/app.js:1:2` is refused and
+`//cdn.example.com/app.js:1:2` is kept — since leaving the scheme out does not
+make the authority a path.
+
+Two schemes are refused whatever shape they are in: `data:`, whose body is a
+few hundred bytes the page chose rather than a place, and `blob:`, which names
+an object that died with the page that minted it and so locates nothing anyone
+can open. Both are published regardless of `insights-details`, which is what
+makes "a location, or nothing" the only workable rule for them.
+
+**The page's own URL is not a script location.** For an error thrown from an
+inline script, an inline event handler or `Page.executeJs` code, browsers report
+the *document* URL as the error's `filename` and write it into the stack frame —
+the page's path with its query string. That is not where the code is, and it
+carries the ids route templating exists to fold away, so it is dropped: in the
+browser before the report is buffered, and again on the server, compared on the
+path against the page the report says it came from. A real script served from
+the same page's origin is unaffected.
+
+A stack line is split on the separator its engine uses, and only the location
+half is validated and kept. V8's form is delimited by the engine — `at `, or
+`" ("`…`")"` — so the split point is not in doubt. The `@` form of SpiderMonkey
+and JSC has no delimiter, so before its `@` counts as a separator the whole
+line must look like a frame line: **no whitespace anywhere, and both a line and
+a column**. Without that, any sentence containing an `@` splits into a "name"
+and something that passes for a location.
+
+| Line | `frame` |
+| --- | --- |
+| `at renderChart (chart.js:44:13)` | `chart.js:44:13` |
+| `at Array.map [as forEach] (/app/x.js:1:2)` | `/app/x.js:1:2` |
+| `at f (/node_modules/@vaadin/router/router.js:12:3)` | `/node_modules/@vaadin/router/router.js:12:3` |
+| `at f (/@fs/home/u/app/x.js:1:2)` — Vite | `/@fs/home/u/app/x.js:1:2` |
+| `at f (https://unpkg.com/lit@3.1.0/index.js:1:2)` — CDN version pin | `https://unpkg.com/lit@3.1.0/index.js:1:2` |
+| `@vaadin/grid/x.js:1:2` — import-map specifier | `@vaadin/grid/x.js:1:2` |
+| `outer/inner@http://host/app.js:1:1` — Firefox nested function | `http://host/app.js:1:1` |
+| `renderChart@chart.js:44:13` | `chart.js:44:13` — the name goes to `function` |
+| `http://user@host/app.js:1:2` | none — a location with credentials in it |
+| `//user:pw@host/app.js:1:2` | none — the same, with the scheme left out |
+| `data:text/javascript;base64,…:1:2` | none — a payload, not a place |
+| `@http://host/app.js:3:7` — Firefox, no function | `http://host/app.js:3:7` |
+| `at f (http://host/app/übersicht.js:1:2)` | `http://host/app/übersicht.js:1:2` |
+| `at Object.<anonymous> (C:\app\x.js:1:2)` | `C:\app\x.js:1:2` |
+| `at 4111111111111111 (/app/card.js:1:1)` | `/app/card.js:1:1` — the name is not part of it |
+| `Error: failed to fetch https://user@api.example.com:8443` | none — not a frame line |
+| `refused by redis@cache.internal.example:6379` | none — not a frame line |
+| `https://alice@files.example.com/private/q3-report.pdf:1` | none — a message continuation line |
+| `at f (/a.js:4111111111111111:1)` | none — that is not a line number |
+| `at <anonymous>:1:5` | none — no file to open |
+| `global code@http://host/app.js:1:1` — Safari | none — see below |
+
+The message-line rejections are the ones worth knowing about, and not because
+of what they would add: V8 opens a stack with the error's message, a message
+can span lines, and the *first* line that parses wins — so
+`new Error('Upload failed for:\n' + url)` would not merely contribute a host,
+it would take the place of the frame that actually threw. This can only be
+caught in the browser, which is the only place the stack exists.
+
+**What the `@`-form rule costs.** Safari writes `global code@…`,
+`module code@…` and `eval code@…`, and Firefox writes space-containing async
+markers such as `promise callback*loadData@…`. These contain spaces, so they
+are no longer read as frames; the search moves to the next line, and where such
+a line is the only one in the stack the insight falls back to `source`, which
+the browser supplies for a top-level script error. The alternative was an
+allowlist of engine-generated names, and a rule about what may stand in front
+of the `@` is exactly what kept leaking.
+
+One thing this does *not* claim: a location is still text the page determined.
+A script URL can carry a query string, a filename can be digits, and the kit
+does not try to tell a real script URL from a crafted one. A location is
+bounded and shaped, not secret-free — which is the boundary the field's purpose
+requires, since an insight that cannot say where the code is says nothing worth
+reading. What *is* guaranteed is narrower and worth stating plainly: nothing
+reaches `frame` or `source` unless it has the shape of a location, and a
+function name — the one part a page names outright — is never part of either.
+
+Requires `insights` and `errors` in addition to `client`; with any of the three
+off, browser errors are still counted but nothing describes them.
 
 ## Interaction timing from the browser
 

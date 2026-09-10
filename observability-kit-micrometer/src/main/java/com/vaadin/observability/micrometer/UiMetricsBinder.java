@@ -14,12 +14,14 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
+import org.jspecify.annotations.Nullable;
 
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.observability.micrometer.client.ClientMetricsBinder;
 import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
+import com.vaadin.observability.micrometer.insights.ClientErrorCollector;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
@@ -36,9 +38,30 @@ final class UiMetricsBinder implements UIInitListener {
     private final NavigationMetricsBinder navigationBinder;
     private final ClientMetricsBinder clientBinder;
 
+    /**
+     * Whether the in-browser collector should gather an error message at all.
+     * Both halves matter: the setting has to be on, and something has to be
+     * there to retain it — with insights off, gathering a message would buffer
+     * it in the tab and post it for nothing to read.
+     */
+    private final boolean collectErrorMessages;
+
     UiMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings) {
+        this(registry, observationRegistry, settings, null);
+    }
+
+    /**
+     * @param clientErrors
+     *            retains the detail of a browser error reported through the
+     *            in-browser collector, or {@code null} to record only the
+     *            {@code vaadin.client.errors} count
+     */
+    UiMetricsBinder(MeterRegistry registry,
+            ObservationRegistry observationRegistry,
+            ObservabilitySettings settings,
+            @Nullable ClientErrorCollector clientErrors) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
@@ -53,8 +76,10 @@ final class UiMetricsBinder implements UIInitListener {
                                 settings.getRouteCardinalityLimit()))
                 : null;
         this.clientBinder = settings.isClient()
-                ? new ClientMetricsBinder(registry, settings)
+                ? new ClientMetricsBinder(registry, settings, clientErrors)
                 : null;
+        this.collectErrorMessages = clientErrors != null
+                && settings.isInsightsDetails();
     }
 
     /**
@@ -95,7 +120,8 @@ final class UiMetricsBinder implements UIInitListener {
             });
         }
         if (clientBinder != null) {
-            ui.add(new MetricsCollectorElement(clientBinder, settings));
+            ui.add(new MetricsCollectorElement(clientBinder, settings,
+                    collectErrorMessages));
         }
     }
 }

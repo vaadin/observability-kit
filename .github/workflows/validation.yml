@@ -33,6 +33,14 @@ jobs:
           java-version: '21'
           cache: maven
 
+      # The in-browser collector's test suite runs under `mvn test` and needs
+      # node: it is the only check on the browser copy of the stack-frame
+      # rules, which the server's copy has to stay in step with.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Set TB License
         run: |
           TB_LICENSE=${{secrets.VAADIN_PRO_KEY}}

@@ -499,6 +499,38 @@ class MetricsServiceInitListenerTest {
                 "the buffer should be bounded by the configured capacity");
     }
 
+    @Test
+    void bindsTheBrowserErrorBufferWhenTheClientCollectorIsOn() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().build());
+        initAndFireFailedInvocation();
+
+        Assertions.assertNotNull(ObservabilityKit.getRecentClientErrors(),
+                "the browser-error buffer should be bound out of the box");
+    }
+
+    @Test
+    void bindsNoBrowserErrorBufferWithoutTheClientCollector() {
+        // Nothing would ever report into it: the detail arrives on the samples
+        // the in-browser collector sends.
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().client(false).build());
+        initAndFireFailedInvocation();
+
+        Assertions.assertNull(ObservabilityKit.getRecentClientErrors(),
+                "no browser-error buffer when the client collector is off");
+    }
+
+    @Test
+    void bindsNoBrowserErrorBufferWhenInsightsAreOff() {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().insights(false).build());
+        initAndFireFailedInvocation();
+
+        Assertions.assertNull(ObservabilityKit.getRecentClientErrors(),
+                "no browser-error buffer when insights are off");
+    }
+
     private static CapturedInteraction interaction(String component) {
         return new CapturedInteraction(Instant.now(), "orders", "orders/17",
                 component, "click", "event",

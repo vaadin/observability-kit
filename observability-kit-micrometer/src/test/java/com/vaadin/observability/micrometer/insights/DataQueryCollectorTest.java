@@ -9,6 +9,7 @@
 package com.vaadin.observability.micrometer.insights;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.junit.jupiter.api.Assertions;
@@ -205,6 +206,51 @@ class DataQueryCollectorTest {
         Assertions.assertTrue(
                 insight.get("summary").toString().contains("2,000,000"),
                 "and say it where a reader looks first");
+    }
+
+    @Test
+    void theSummaryReadsTheSameUnderEveryDefaultLocale() {
+        // The payload is a contract read by machines, so the numbers in it
+        // cannot come from the server's locale. They did: `%,d` takes its
+        // grouping separator from the default format locale (2.000.000 under
+        // de-DE, 2 000 000 under fi-FI) and plain `%d` takes its digits from
+        // it, so ar-EG rendered "takes ١٢ ms".
+        Locale original = Locale.getDefault(Locale.Category.FORMAT);
+        try {
+            String reference = null;
+            for (String tag : new String[] { "en-US", "fi-FI", "de-DE", "ar-EG",
+                    "hi-IN-u-nu-deva" }) {
+                Locale.setDefault(Locale.Category.FORMAT,
+                        Locale.forLanguageTag(tag));
+
+                RecentQueries queries = new RecentQueries(10);
+                DataQueryCollector collector = new DataQueryCollector(queries,
+                        ObservabilitySettings.builder().errors(true)
+                                .requests(true).build(),
+                        CAPTURE_ALL);
+                collector.countStarted(
+                        new DataCountStartedEvent(ui, component, false));
+                collector.countEnded(new DataCountEndedEvent(ui, component,
+                        false, 2_000_000));
+
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                        null, queries).payload().get("insights");
+                String summary = insights.get(0).get("summary").toString();
+
+                Assertions.assertTrue(summary.contains("2,000,000"),
+                        () -> "grouping separator followed the locale under "
+                                + tag + ": " + summary);
+                if (reference == null) {
+                    reference = summary;
+                } else {
+                    Assertions.assertEquals(reference, summary,
+                            () -> "the summary differed under " + tag);
+                }
+            }
+        } finally {
+            Locale.setDefault(Locale.Category.FORMAT, original);
+        }
     }
 
     @Test

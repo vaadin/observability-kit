@@ -209,10 +209,12 @@ public final class ObservabilitySettings {
 
     /**
      * Maximum number of records retained for the insights endpoint, applied to
-     * <em>each</em> buffer rather than shared between them: interactions and
-     * data provider queries are retained separately, so with both collectors
-     * active the total is twice this value. Keeping them apart means a burst of
-     * slow queries cannot evict the failed interactions, and vice versa.
+     * <em>each</em> buffer rather than shared between them: interactions, data
+     * provider queries and browser errors are retained separately, so with all
+     * three collectors active the total is three times this value. Keeping them
+     * apart means a burst of slow queries cannot evict the failed interactions,
+     * and neither can the flood of buffered reports that arrives when a network
+     * outage ends.
      *
      * @return the per-buffer capacity
      */
