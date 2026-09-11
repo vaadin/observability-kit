@@ -53,11 +53,19 @@ class ClientMetricNamesTest {
     }
 
     @Test
-    void clientRpcDurationIsNotAllowed() {
-        // Deliberate reduction: RPC is measured server-side; client RPC timing
-        // removed.
+    void requestDurationIsAllowedAndIsNotCounter() {
+        assertTrue(ClientMetricNames
+                .isAllowed(MeterNames.CLIENT_REQUEST_DURATION));
+        assertFalse(ClientMetricNames
+                .isCounter(MeterNames.CLIENT_REQUEST_DURATION));
+    }
+
+    @Test
+    void renderDurationIsAllowedAndIsNotCounter() {
+        assertTrue(
+                ClientMetricNames.isAllowed(MeterNames.CLIENT_RENDER_DURATION));
         assertFalse(
-                ClientMetricNames.isAllowed(MeterNames.CLIENT_RPC_DURATION));
+                ClientMetricNames.isCounter(MeterNames.CLIENT_RENDER_DURATION));
     }
 
     @Test
@@ -202,6 +210,16 @@ class ClientMetricNamesTest {
     void aMeterNobodyDeclaredCarriesNoTagKeys() {
         assertTrue(ClientMetricNames.tagKeys("vaadin.client.unknown.metric")
                 .isEmpty());
+    }
+
+    @Test
+    void interactionTimingMetersCarryOnlyTheRouteTag() {
+        // One series per view, like the server-side request and navigation
+        // meters they sit next to. No type tag: only UIDL requests are timed.
+        assertEquals(List.of(MeterNames.TAG_ROUTE),
+                ClientMetricNames.tagKeys(MeterNames.CLIENT_REQUEST_DURATION));
+        assertEquals(List.of(MeterNames.TAG_ROUTE),
+                ClientMetricNames.tagKeys(MeterNames.CLIENT_RENDER_DURATION));
     }
 
     @Test

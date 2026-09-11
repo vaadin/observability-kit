@@ -300,6 +300,8 @@ ObservabilitySettings.builder()
 | `vaadin.resync` | Counter | UIDL message recovery events observed on incoming requests, tagged by `type`: `resend` for a duplicate message the client re-sent because it never got the previous response, `resync` for a full client-requested UI-state rebuild. Both mean the client lost a server message. Disable with `vaadin.observability.resync=false`. |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
 | `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time, tagged by `route` and by the `trigger` that started it (`back` or `programmatic`). |
+| `vaadin.client.request.duration` | Timer | One UIDL request as the browser saw it, from queueing to the last byte of the response, tagged by `route`. The browser's side of `vaadin.request.duration`. See [Interaction timing from the browser](#interaction-timing-from-the-browser). |
+| `vaadin.client.render.duration` | Timer | Time Flow's client spent applying one UIDL response to the page, tagged by `route`. Needs Flow's `requestTiming` setting, on by default outside production mode. |
 | `vaadin.client.web_vitals.lcp` | Timer | Largest Contentful Paint. |
 | `vaadin.client.web_vitals.fcp` | Timer | First Contentful Paint. |
 | `vaadin.client.errors` | Counter | Errors reported by the browser, tagged `kind` (`uncaught` or `promise`). The message, script and stack frame that identify the error are kept as an insight, not as tags. |
@@ -714,6 +716,54 @@ function name — the one part a page names outright — is never part of either
 
 Requires `insights` and `errors` in addition to `client`; with any of the three
 off, browser errors are still counted but nothing describes them.
+
+## Interaction timing from the browser
+
+When a user says a click took a second and `vaadin.request.duration` says the
+server took forty milliseconds, the other nine hundred and sixty are somewhere
+the server cannot see: on the wire, in the browser's request queue, or in the
+browser applying the response. Two meters make that remainder readable, with no
+configuration beyond `vaadin.observability.client` (on by default).
+
+**`vaadin.client.request.duration`** is the same round trip as
+`vaadin.request.duration`, measured at the browser's end: from the moment the
+UIDL request was queued to the last byte of the response. It is read off the
+Resource Timing entry every UIDL `POST` leaves behind, so it needs nothing from
+Flow and works in production. Subtract the server's figure for the same route
+and what is left is the network:
+
+```promql
+  rate(vaadin_client_request_duration_seconds_sum[5m])
+/ rate(vaadin_client_request_duration_seconds_count[5m])
+-
+  rate(vaadin_request_duration_seconds_sum{vaadin_request_type="uidl"}[5m])
+/ rate(vaadin_request_duration_seconds_count{vaadin_request_type="uidl"}[5m])
+```
+
+**`vaadin.client.render.duration`** is the third segment, after the network
+and the server: how long Flow's client spent applying the response to the page.
+A response that arrives in fifty milliseconds and takes four hundred to render
+is a browser problem, typically a heavy component tree or an expensive
+renderer, and neither of the other two timers can show it. The figure is Flow's
+own, published through `getProfilingData()` on each client only when Flow's
+`requestTiming` deployment setting is on. That is the default outside
+production mode; in production, set `vaadin.requestTiming=true` to record this
+meter. Without it the meter is absent rather than zero.
+
+Four things are worth knowing about both:
+
+- **Only UIDL requests are timed.** Heartbeats, push and static resources are
+  not interactions and are left out. The collector's own request that carries
+  the samples to the server is left out too, so the kit does not report itself.
+- **The request meter needs the default transport.** It is read from Resource
+  Timing, which sees HTTP requests. With `@Push(transport = WEBSOCKET)` the
+  UIDL rides the websocket and leaves no entry, so only the render meter is
+  recorded.
+- **Bootstrap is not an interaction.** The first UIDL response, which builds
+  the page, is covered by `vaadin.client.bootstrap.duration` and excluded here.
+- **The route is the browser's.** Both meters carry the route the browser was
+  on when the response arrived, which for a navigation request is the view
+  navigated to, as on the server's request span.
 
 ## Database fetch size
 

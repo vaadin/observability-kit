@@ -22,16 +22,22 @@ import com.vaadin.observability.micrometer.MeterNames;
  * buggy clients.
  *
  * <p>
- * Note: {@link MeterNames#CLIENT_RPC_DURATION} is intentionally excluded from
- * {@link #ALLOWED} because RPC timing is measured server-side only.
+ * The two interaction timings are the browser's side of the server's
+ * {@link MeterNames#REQUEST_DURATION}:
+ * {@link MeterNames#CLIENT_REQUEST_DURATION} is the same round trip seen from
+ * the other end of the wire, and {@link MeterNames#CLIENT_RENDER_DURATION} what
+ * the browser then spent applying the response, which no server-side timer can
+ * see.
  */
 final class ClientMetricNames {
 
     static final Set<String> ALLOWED = Set.of(
             MeterNames.CLIENT_BOOTSTRAP_DURATION,
             MeterNames.CLIENT_NAVIGATION_DURATION,
-            MeterNames.CLIENT_WEB_VITALS_LCP, MeterNames.CLIENT_WEB_VITALS_FCP,
-            MeterNames.CLIENT_ERRORS, MeterNames.CLIENT_CONNECTION,
+            MeterNames.CLIENT_REQUEST_DURATION,
+            MeterNames.CLIENT_RENDER_DURATION, MeterNames.CLIENT_WEB_VITALS_LCP,
+            MeterNames.CLIENT_WEB_VITALS_FCP, MeterNames.CLIENT_ERRORS,
+            MeterNames.CLIENT_CONNECTION,
             MeterNames.CLIENT_CONNECTION_DOWNTIME);
 
     static final Set<String> COUNTER_NAMES = Set.of(MeterNames.CLIENT_ERRORS,
@@ -53,6 +59,8 @@ final class ClientMetricNames {
             MeterNames.CLIENT_BOOTSTRAP_DURATION, List.of(MeterNames.TAG_ROUTE),
             MeterNames.CLIENT_NAVIGATION_DURATION,
             List.of(MeterNames.TAG_ROUTE, MeterNames.TAG_TRIGGER),
+            MeterNames.CLIENT_REQUEST_DURATION, List.of(MeterNames.TAG_ROUTE),
+            MeterNames.CLIENT_RENDER_DURATION, List.of(MeterNames.TAG_ROUTE),
             MeterNames.CLIENT_WEB_VITALS_LCP, List.of(MeterNames.TAG_ROUTE),
             MeterNames.CLIENT_WEB_VITALS_FCP, List.of(MeterNames.TAG_ROUTE),
             MeterNames.CLIENT_ERRORS, List.of(MeterNames.TAG_KIND),

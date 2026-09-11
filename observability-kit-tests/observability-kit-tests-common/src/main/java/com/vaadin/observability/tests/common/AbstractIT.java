@@ -8,7 +8,18 @@
  */
 package com.vaadin.observability.tests.common;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -119,6 +130,80 @@ public abstract class AbstractIT extends BrowserTestBase
                 .usingPort(port).withSilent(true).build();
         ChromeDriver chromeDriver = new ChromeDriver(service, headlessOptions);
         return TestBench.createDriver(chromeDriver);
+    }
+
+    /**
+     * Polls the Prometheus endpoint until {@code done} holds. The in-browser
+     * collector flushes on a timer and on recovery, so its samples arrive
+     * shortly after the browser produced them rather than synchronously.
+     *
+     * @param done
+     *            the condition on the scrape body to wait for
+     * @param what
+     *            what was waited for, for the failure message
+     * @param timeout
+     *            how long to keep polling
+     * @return the scrape body that satisfied {@code done}
+     */
+    protected String awaitPrometheus(Predicate<String> done, String what,
+            Duration timeout) throws IOException {
+        Instant deadline = Instant.now().plus(timeout);
+        String body = "";
+        while (Instant.now().isBefore(deadline)) {
+            body = fetch("/actuator/prometheus");
+            if (done.test(body)) {
+                return body;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError(
+                "timed out waiting for " + what + " in:\n" + body);
+    }
+
+    /**
+     * Fetches {@code path} from the running server and returns the body,
+     * asserting a 200.
+     */
+    protected String fetch(String path) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection) URI
+                .create(getRootURL() + path).toURL().openConnection();
+        conn.setRequestMethod("GET");
+        int status = conn.getResponseCode();
+        if (status != 200) {
+            throw new AssertionError("GET " + path + " returned " + status);
+        }
+        StringBuilder out = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                out.append(line).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * Returns the value of the first Prometheus sample line for {@code name},
+     * optionally narrowed to one whose label set contains {@code label}, or
+     * {@code -1.0} if absent.
+     */
+    protected static double prometheusValue(String prometheusBody, String name,
+            String label) {
+        Pattern pattern = Pattern.compile(
+                "^" + Pattern.quote(name)
+                        + (label == null ? "(?:\\{[^}]*\\})?"
+                                : "\\{[^}]*" + Pattern.quote(label)
+                                        + "[^}]*\\}")
+                        + "\\s+([0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)",
+                Pattern.MULTILINE);
+        Matcher m = pattern.matcher(prometheusBody);
+        return m.find() ? Double.parseDouble(m.group(1)) : -1.0;
     }
 
     static ChromeOptions createHeadlessChromeOptions() {
