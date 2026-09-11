@@ -434,7 +434,7 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                             + "submitted to it will not be traced. Trace "
                             + "context will not propagate to those tasks and "
                             + "no {} spans will be recorded.",
-                    ObservationNames.UI_ACCESS, e);
+                    ObservationNames.EXECUTOR_TASK, e);
             return null;
         }
     }

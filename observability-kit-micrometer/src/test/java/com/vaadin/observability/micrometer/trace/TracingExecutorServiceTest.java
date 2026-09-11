@@ -94,7 +94,7 @@ class TracingExecutorServiceTest {
 
         Assertions.assertEquals(4, recorder.names.size());
         Assertions.assertTrue(recorder.names.stream()
-                .allMatch(ObservationNames.UI_ACCESS::equals));
+                .allMatch(ObservationNames.EXECUTOR_TASK::equals));
     }
 
     @Test

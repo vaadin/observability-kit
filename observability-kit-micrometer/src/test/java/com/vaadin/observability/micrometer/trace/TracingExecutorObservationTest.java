@@ -44,7 +44,7 @@ class TracingExecutorObservationTest {
     }
 
     @Test
-    void everyTaskEmitsUiAccessObservation() {
+    void everyTaskEmitsExecutorTaskObservation() {
         ObservationRegistry obs = ObservationRegistry.create();
         NameRecorder recorder = new NameRecorder();
         obs.observationConfig().observationHandler(recorder);
@@ -58,9 +58,9 @@ class TracingExecutorObservationTest {
         });
 
         Assertions.assertEquals(2, recorder.names.size());
-        Assertions.assertEquals(ObservationNames.UI_ACCESS,
+        Assertions.assertEquals(ObservationNames.EXECUTOR_TASK,
                 recorder.names.get(0));
-        Assertions.assertEquals(ObservationNames.UI_ACCESS,
+        Assertions.assertEquals(ObservationNames.EXECUTOR_TASK,
                 recorder.contextualNames.get(0));
     }
 

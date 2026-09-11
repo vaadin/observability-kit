@@ -24,17 +24,18 @@ import io.micrometer.observation.ObservationRegistry;
  * <li>the trace context (and any other
  * {@link io.micrometer.context.ThreadLocalAccessor}-backed state) active when a
  * task is <em>submitted</em> is restored when the task <em>runs</em>; and</li>
- * <li>each task gets its own {@code vaadin.ui.access} span when an
+ * <li>each task gets its own {@code vaadin.executor.task} span when an
  * {@link ObservationRegistry} is supplied. The span is parented to the
  * propagated trace, so work handed to the executor from a request thread ends
  * up with a continuous trace tree across the thread hop.</li>
  * </ol>
  * <p>
- * The service executor is what Vaadin uses to dispatch signal effects and
- * result notifications, and what applications are expected to use for their own
- * background tasks (typically ones that end with {@code UI.access(...)}); it is
- * not used by {@code UI.access} itself, which runs pending commands on the
- * thread that unlocks the session.
+ * The scope is tasks submitted to the Vaadin service executor, including the
+ * signal-driven {@code UI.access} notifications Vaadin dispatches through it,
+ * and the background tasks applications are expected to hand to it. It is not
+ * every {@code UI.access(...)}: a plain call from a background thread queues a
+ * command that whichever thread unlocks the session drains, so it never passes
+ * through this executor and gets no span of its own.
  * <p>
  * Use {@link #wrap(Executor, ObservationRegistry)} rather than the constructors
  * so that an {@link ExecutorService} delegate keeps its lifecycle methods:
@@ -92,7 +93,7 @@ public class TracingExecutor implements Executor {
 
     /**
      * Captures the current context and returns a task that restores it and
-     * opens a {@code vaadin.ui.access} span before running {@code command}.
+     * opens a {@code vaadin.executor.task} span before running {@code command}.
      * <p>
      * Must be called on the submitting thread, since that is where the context
      * to propagate lives.
@@ -150,9 +151,9 @@ public class TracingExecutor implements Executor {
 
     private Observation startObservation() {
         return Observation
-                .createNotStarted(ObservationNames.UI_ACCESS,
+                .createNotStarted(ObservationNames.EXECUTOR_TASK,
                         observationRegistry)
-                .contextualName(ObservationNames.UI_ACCESS).start();
+                .contextualName(ObservationNames.EXECUTOR_TASK).start();
     }
 
     /** Exposed for tests. */

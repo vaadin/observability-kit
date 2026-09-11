@@ -22,7 +22,7 @@ code, no annotations, no configuration required.
 
 ## How it works
 
-The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request interceptor, the RPC and data-query events on `VaadinServiceEventBus`, navigation listeners, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows work across `UI.access(...)` thread hops.
+The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request interceptor, the RPC and data-query events on `VaadinServiceEventBus`, navigation listeners, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows the tasks submitted to it — signal-driven `UI.access` notifications and application background tasks — across the thread hop, each under a `vaadin.executor.task` span. A plain `UI.access(...)` from a background thread does not go through that executor: it queues a command that whichever thread unlocks the session runs, so it has no span of its own.
 
 The kit also enriches telemetry the framework emits anyway: through its HTTP observation hooks, the Spring HTTP observation gets the Vaadin request type, the active view's route template as its `uri` tag (template-only, and budgeted to stay under Boot's `max-uri-tags` cap), and error status for failures Vaadin handles internally on a 200 response.
 
@@ -52,7 +52,7 @@ flowchart LR
 
         hooks["HTTP observation hooks<br/>request type, route template, error"]
         insights["Insights collectors<br/>/actuator/vaadin"]
-        texec["TracingExecutor<br/>context across UI.access"]
+        texec["TracingExecutor<br/>vaadin.executor.task"]
     end
 
     subgraph Micrometer

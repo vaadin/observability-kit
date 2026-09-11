@@ -137,7 +137,7 @@ class ObservationContractTest {
         driveRpc();
         driveDataCount();
         driveDataFetch();
-        driveUiAccess();
+        driveExecutorTask();
 
         String actual = render(recorder.snapshots);
         Assertions.assertEquals(golden(), actual.strip(),
@@ -364,7 +364,7 @@ class ObservationContractTest {
                 new DataFetchEndedEvent(ui, component, 0, 50, true, 30));
     }
 
-    private void driveUiAccess() {
+    private void driveExecutorTask() {
         TracingExecutor.wrap(Runnable::run, observations).execute(() -> {
         });
     }

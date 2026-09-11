@@ -27,7 +27,16 @@ public final class ObservationNames {
 
     public static final String REQUEST = "vaadin.request";
     public static final String NAVIGATION = "vaadin.navigation";
-    public static final String UI_ACCESS = "vaadin.ui.access";
+
+    /**
+     * Observation/span name for one task run by the Vaadin service executor,
+     * including the signal-driven {@code UI.access} notifications Vaadin
+     * dispatches through it. An ordinary {@code UI.access(...)} call from a
+     * background thread does not reach the executor — it queues a command that
+     * whichever thread unlocks the session drains — so it is deliberately not
+     * named after {@code UI.access}.
+     */
+    public static final String EXECUTOR_TASK = "vaadin.executor.task";
 
     /**
      * Low-cardinality key that becomes the {@link MeterNames#TAG_OUTCOME} tag
