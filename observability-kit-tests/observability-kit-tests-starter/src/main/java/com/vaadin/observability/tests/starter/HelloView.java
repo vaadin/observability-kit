@@ -9,6 +9,7 @@
 package com.vaadin.observability.tests.starter;
 
 import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.html.NativeButton;
 import com.vaadin.flow.component.html.Span;
 import com.vaadin.flow.router.Route;
 
@@ -23,5 +24,15 @@ public class HelloView extends Div {
         Span greeting = new Span("Hello micrometer boot");
         greeting.setId("greeting");
         add(greeting);
+
+        // One server round trip per click, for the browser-side interaction
+        // timing ITs: the click is a UIDL request the collector must time, and
+        // the response that changes the count is one it must see applied.
+        Span clicks = new Span("0");
+        clicks.setId("clicks");
+        NativeButton bump = new NativeButton("Bump", event -> clicks.setText(
+                String.valueOf(Integer.parseInt(clicks.getText()) + 1)));
+        bump.setId("bump");
+        add(bump, clicks);
     }
 }

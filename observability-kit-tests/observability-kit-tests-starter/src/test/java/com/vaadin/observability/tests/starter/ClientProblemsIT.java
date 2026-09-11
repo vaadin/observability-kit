@@ -8,17 +8,8 @@
  */
 package com.vaadin.observability.tests.starter;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.function.Predicate;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.openqa.selenium.JavascriptExecutor;
 
@@ -76,22 +67,31 @@ public class ClientProblemsIT extends AbstractIT {
         js.executeScript("window.Vaadin.connectionState.state = 'connected';");
 
         // The simulated outage goes straight to connection-lost, so that is
-        // the state the downtime is attributed to.
-        String prometheus = await(
-                body -> meterValue(body,
-                        "vaadin_client_connection_downtime_seconds_count",
-                        "state=\"connection-lost\"") >= 1.0,
-                "vaadin_client_connection_downtime_seconds_count"
-                        + "{state=\"connection-lost\"}");
+        // the state the downtime is attributed to. Wait for every meter this
+        // test asserts, not just one of them: the app is shared with the other
+        // ITs, so a meter another tab happened to produce would otherwise end
+        // the wait before this tab's own batch has arrived.
+        String prometheus = awaitPrometheus(body -> prometheusValue(body,
+                "vaadin_client_connection_downtime_seconds_count",
+                "state=\"connection-lost\"") >= 1.0
+                && prometheusValue(body, "vaadin_client_connection_total",
+                        "state=\"connection-lost\"") >= 1.0
+                && prometheusValue(body, "vaadin_client_connection_total",
+                        "state=\"connected\"") >= 1.0
+                && prometheusValue(body, "vaadin_client_errors_total",
+                        "kind=\"uncaught\"") >= 1.0,
+                "the outage's downtime and transitions and the browser error",
+                TIMEOUT);
 
-        assertThat(meterValue(prometheus, "vaadin_client_connection_total",
+        assertThat(prometheusValue(prometheus, "vaadin_client_connection_total",
                 "state=\"connection-lost\""))
-                .as("a transition into connection-lost should be counted")
+                .as("a transition into connection-lost should be counted in:%n%s",
+                        prometheus)
                 .isGreaterThanOrEqualTo(1.0);
-        assertThat(meterValue(prometheus, "vaadin_client_connection_total",
+        assertThat(prometheusValue(prometheus, "vaadin_client_connection_total",
                 "state=\"connected\"")).as("the recovery should be counted too")
                 .isGreaterThanOrEqualTo(1.0);
-        assertThat(meterValue(prometheus, "vaadin_client_errors_total",
+        assertThat(prometheusValue(prometheus, "vaadin_client_errors_total",
                 "kind=\"uncaught\"")).as("the browser error should be counted")
                 .isGreaterThanOrEqualTo(1.0);
 
@@ -102,64 +102,5 @@ public class ClientProblemsIT extends AbstractIT {
         assertThat(insights)
                 .as("the insight should name where the error came from")
                 .contains("\"kind\":\"uncaught\"");
-    }
-
-    /**
-     * Polls the Prometheus endpoint until {@code done} holds. The collector
-     * flushes on recovery and on a timer, so the samples arrive shortly after
-     * the browser is back rather than synchronously with it.
-     */
-    private String await(Predicate<String> done, String what)
-            throws IOException {
-        Instant deadline = Instant.now().plus(TIMEOUT);
-        String body = "";
-        while (Instant.now().isBefore(deadline)) {
-            body = fetch("/actuator/prometheus");
-            if (done.test(body)) {
-                return body;
-            }
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-        throw new AssertionError(
-                "timed out waiting for " + what + " in:\n" + body);
-    }
-
-    private String fetch(String path) throws IOException {
-        HttpURLConnection conn = (HttpURLConnection) URI
-                .create(getRootURL() + path).toURL().openConnection();
-        conn.setRequestMethod("GET");
-        assertThat(conn.getResponseCode()).as("GET %s", path).isEqualTo(200);
-        StringBuilder out = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                conn.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                out.append(line).append('\n');
-            }
-        }
-        return out.toString();
-    }
-
-    /**
-     * Returns the value of the first Prometheus sample line for {@code name},
-     * optionally narrowed to one whose label set contains {@code label}, or
-     * {@code -1.0} if absent.
-     */
-    private static double meterValue(String prometheusBody, String name,
-            String label) {
-        Pattern pattern = Pattern.compile(
-                "^" + Pattern.quote(name)
-                        + (label == null ? "(?:\\{[^}]*\\})?"
-                                : "\\{[^}]*" + Pattern.quote(label)
-                                        + "[^}]*\\}")
-                        + "\\s+([0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)",
-                Pattern.MULTILINE);
-        Matcher m = pattern.matcher(prometheusBody);
-        return m.find() ? Double.parseDouble(m.group(1)) : -1.0;
     }
 }
