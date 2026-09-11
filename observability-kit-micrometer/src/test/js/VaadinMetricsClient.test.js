@@ -440,6 +440,7 @@ function err(message, stack) {
     let observer = null;
     let batches = [];
     let answers = [];
+    let promiseless = false;
     const flow = { total: 0, last: 0 };
     const cs = {
       state: 'connected',
@@ -460,7 +461,7 @@ function err(message, stack) {
     };
     const doc = {
       querySelector: (sel) => (sel === 'vaadin-metrics-collector'
-        ? { $server: { recordSamples: (batch) => { batches.push(batch); return new Promise((r) => answers.push(r)); } } }
+        ? { $server: { recordSamples: (batch) => { batches.push(batch); return promiseless ? undefined : new Promise((r) => answers.push(r)); } } }
         : null),
       addEventListener() {},
       visibilityState: 'visible'
@@ -678,6 +679,45 @@ function err(message, stack) {
       all = await drain();
       check('a flush with no request in flight drops only its own response',
         timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 35]]);
+    }
+
+    // 8m. The answer lands before Flow applies the response. Flow does not do
+    //     this, but nothing promises it never will, and the answer must not
+    //     then leave the flush's own response to be reported.
+    {
+      await ownRoundTrip(1);
+      nudge();
+      collectorApi.flush();
+      answer();
+      await settle();
+      apply(3);
+      wire(40);
+      await settle();
+      check('an answer before the response still claims the response', collectorApi.bufferSize(), 0);
+      await roundTrip(30);
+      all = await drain();
+      check('and the interaction after it is timed once',
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
+    }
+
+    // 8n. $server returns no promise at all. No answer is coming, so the
+    //     default rule stands: the first response applied after the flush is
+    //     the flush's own.
+    {
+      await ownRoundTrip(1);
+      promiseless = true;
+      nudge();
+      collectorApi.flush();
+      promiseless = false;
+      await settle();
+      apply(3);
+      wire(40);
+      await settle();
+      check('without a promise the first response after the flush is still its own', collectorApi.bufferSize(), 0);
+      await roundTrip(30);
+      all = await drain();
+      check('and the interaction after it is timed once',
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
     }
 
     // 8e. Without profiling data -- production mode with requestTiming off --

@@ -67,13 +67,20 @@ public class ClientProblemsIT extends AbstractIT {
         js.executeScript("window.Vaadin.connectionState.state = 'connected';");
 
         // The simulated outage goes straight to connection-lost, so that is
-        // the state the downtime is attributed to.
-        String prometheus = awaitPrometheus(
-                body -> prometheusValue(body,
-                        "vaadin_client_connection_downtime_seconds_count",
-                        "state=\"connection-lost\"") >= 1.0,
-                "vaadin_client_connection_downtime_seconds_count"
-                        + "{state=\"connection-lost\"}",
+        // the state the downtime is attributed to. Wait for every meter this
+        // test asserts, not just one of them: the app is shared with the other
+        // ITs, so a meter another tab happened to produce would otherwise end
+        // the wait before this tab's own batch has arrived.
+        String prometheus = awaitPrometheus(body -> prometheusValue(body,
+                "vaadin_client_connection_downtime_seconds_count",
+                "state=\"connection-lost\"") >= 1.0
+                && prometheusValue(body, "vaadin_client_connection_total",
+                        "state=\"connection-lost\"") >= 1.0
+                && prometheusValue(body, "vaadin_client_connection_total",
+                        "state=\"connected\"") >= 1.0
+                && prometheusValue(body, "vaadin_client_errors_total",
+                        "kind=\"uncaught\"") >= 1.0,
+                "the outage's downtime and transitions and the browser error",
                 TIMEOUT);
 
         assertThat(prometheusValue(prometheus, "vaadin_client_connection_total",
