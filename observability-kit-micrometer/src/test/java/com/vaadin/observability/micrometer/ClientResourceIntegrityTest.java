@@ -15,6 +15,8 @@ import java.util.List;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.vaadin.flow.internal.StringUtil;
 
@@ -34,10 +36,17 @@ import com.vaadin.flow.internal.StringUtil;
  * So this checks the artefact that actually reaches the browser rather than the
  * source. It cannot parse JavaScript, but it can tell that nothing was eaten:
  * brackets balance, and every function the file declares is still declared.
+ * <p>
+ * Both scripts the loader injects are checked, not just the collector: the
+ * dev-tools panel goes through the same stripping, and its failure mode is the
+ * quieter one — a truncated panel script leaves the developer with no panel and
+ * no meter or insight to notice missing.
  */
 class ClientResourceIntegrityTest {
 
     private static final String RESOURCE = "META-INF/frontend/VaadinMetricsClient.js";
+
+    private static final String PANEL_RESOURCE = "META-INF/frontend/VaadinObservabilityDevTools.js";
 
     /**
      * The functions the collector is built out of. Named explicitly rather than
@@ -52,17 +61,17 @@ class ClientResourceIntegrityTest {
             "separatorIn", "partOfPath", "hasUserInfo", "parseFrame",
             "firstFrame", "errorDetail");
 
-    private static String source() throws IOException {
+    private static String source(String resource) throws IOException {
         try (InputStream in = ClientResourceIntegrityTest.class.getClassLoader()
-                .getResourceAsStream(RESOURCE)) {
-            Assertions.assertNotNull(in, RESOURCE + " is missing");
+                .getResourceAsStream(resource)) {
+            Assertions.assertNotNull(in, resource + " is missing");
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 
     @Test
     void everyFunctionSurvivesTheCommentStripping() throws IOException {
-        String source = source();
+        String source = source(RESOURCE);
         String injected = StringUtil.removeComments(source, true);
 
         for (String function : FUNCTIONS) {
@@ -77,14 +86,18 @@ class ClientResourceIntegrityTest {
         }
     }
 
-    @Test
-    void bracketsStillBalanceAfterTheCommentStripping() throws IOException {
-        String injected = StringUtil.removeComments(source(), true);
+    @ParameterizedTest
+    @ValueSource(strings = { RESOURCE, PANEL_RESOURCE })
+    void bracketsStillBalanceAfterTheCommentStripping(String resource)
+            throws IOException {
+        String injected = StringUtil.removeComments(source(resource), true);
 
         // A crude parser, and enough: what a swallowed line does is leave an
         // opening bracket without its partner. Counting is safe here because
-        // the collector holds no bracket characters inside string literals --
-        // which the next assertion is what keeps true.
+        // neither script holds an unbalanced bracket character inside a string
+        // literal -- the panel's inline styles and markup fragments are
+        // balanced as written, which is a rule this assertion enforces as much
+        // as it relies on.
         for (char[] pair : new char[][] { { '{', '}' }, { '(', ')' },
                 { '[', ']' } }) {
             long open = injected.chars().filter(c -> c == pair[0]).count();
@@ -95,14 +108,16 @@ class ClientResourceIntegrityTest {
         }
     }
 
-    @Test
-    void theSourceHoldsNoDoubleSlashOutsideAComment() throws IOException {
+    @ParameterizedTest
+    @ValueSource(strings = { RESOURCE, PANEL_RESOURCE })
+    void theSourceHoldsNoDoubleSlashOutsideAComment(String resource)
+            throws IOException {
         // The rule that keeps the above true, stated where it can be checked:
         // a double slash anywhere but at the start of a comment is a line the
         // stripper will truncate. This is why hasScheme is a character scan
-        // and not a pattern.
+        // and not a pattern, and why neither script writes a URL out in full.
         int line = 0;
-        for (String text : source().split("\n")) {
+        for (String text : source(resource).split("\n")) {
             line++;
             String trimmed = text.strip();
             if (trimmed.startsWith("//")) {

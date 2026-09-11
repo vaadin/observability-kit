@@ -28,29 +28,41 @@ import tools.jackson.databind.JsonNode;
 import com.vaadin.base.devserver.DevToolsInterface;
 import com.vaadin.base.devserver.DevToolsMessageHandler;
 import com.vaadin.observability.micrometer.ObservabilityKit;
+import com.vaadin.observability.micrometer.insights.InsightsService;
 
 /**
  * Dev-mode bridge between the live Micrometer {@link MeterRegistry} and the
  * Vaadin Copilot metrics panel.
  * <p>
  * Discovered via the Java {@link java.util.ServiceLoader} by Flow's dev-tools
- * server (see {@code META-INF/services}). On request from the panel it
- * snapshots every {@code vaadin.*} meter and sends it to the browser over the
- * shared dev-tools websocket. This is a developer-only convenience view; it has
- * no effect in production where the dev-tools connection does not exist.
+ * server (see {@code META-INF/services}). It answers two requests from the
+ * browser over the shared dev-tools websocket: a meter snapshot of every
+ * {@code vaadin.*} meter, and the insights payload
+ * {@code /actuator/vaadin/observability} publishes. This is a developer-only
+ * convenience view; it has no effect in production where the dev-tools
+ * connection does not exist.
+ * <p>
+ * The two are separate commands because they are wanted at different times. The
+ * meter table is only worth polling while the panel is open, whereas the panel
+ * watches for new insights whether or not anyone is looking at it, and that
+ * background poll should not snapshot the whole registry every time.
  */
 public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
 
     static final String COMMAND_REFRESH = "observability-kit-refresh";
     static final String COMMAND_METRICS = "observability-kit-metrics";
 
+    static final String COMMAND_INSIGHTS = "observability-kit-insights";
+    static final String COMMAND_INSIGHTS_DATA = "observability-kit-insights-data";
+
     /** Only meters under this prefix are exposed to the panel. */
     private static final String METER_PREFIX = "vaadin.";
 
     @Override
     public void handleConnect(DevToolsInterface devToolsInterface) {
-        // Push an initial snapshot; the panel also pulls on demand.
+        // Push an initial pair; the panel also pulls on demand.
         sendSnapshot(devToolsInterface);
+        sendInsights(devToolsInterface);
     }
 
     @Override
@@ -58,6 +70,10 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
             DevToolsInterface devToolsInterface) {
         if (COMMAND_REFRESH.equals(command)) {
             sendSnapshot(devToolsInterface);
+            return true;
+        }
+        if (COMMAND_INSIGHTS.equals(command)) {
+            sendInsights(devToolsInterface);
             return true;
         }
         return false;
@@ -68,6 +84,27 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
         payload.put("timestamp", System.currentTimeMillis());
         payload.put("meters", snapshot());
         devToolsInterface.send(COMMAND_METRICS, payload);
+    }
+
+    /**
+     * Sends the payload {@code /actuator/vaadin/observability} publishes,
+     * unaltered: same service, same buffers, same grouping and the same
+     * withholding of detail — so a finding read in the panel and one served to
+     * an agent cannot drift apart, and {@code schemaVersion} means the same
+     * thing in both places.
+     * <p>
+     * The buffers are looked up per request rather than held, for the reason
+     * the registry is: they are bound at {@code serviceInit}, long after the
+     * dev-tools server loads this handler. A {@code null} one is not an error
+     * here — {@link InsightsService} renders "nothing was watching" as
+     * {@code instrumentation: inactive}, which the panel says out loud instead
+     * of showing an empty list that reads like "nothing is wrong".
+     */
+    private void sendInsights(DevToolsInterface devToolsInterface) {
+        devToolsInterface.send(COMMAND_INSIGHTS_DATA,
+                new InsightsService(ObservabilityKit.getRecentInteractions(),
+                        ObservabilityKit.getRecentQueries(),
+                        ObservabilityKit.getRecentClientErrors()).payload());
     }
 
     private List<Map<String, Object>> snapshot() {
