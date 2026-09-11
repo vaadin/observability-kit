@@ -433,11 +433,14 @@ function err(message, stack) {
   //    environment above has no PerformanceObserver, which is the case the
   //    rest of the collector must survive; this one has a working observer,
   //    a Flow client publishing profiling data, and a connection store, all
-  //    driven by hand.
+  //    driven by hand. The $server stub answers a flush only when the test
+  //    says so, as Flow does: from inside the response that carries the
+  //    answer.
   {
     let observer = null;
     let batches = [];
-    const flow = { total: 0, last: 0, active: false };
+    let answers = [];
+    const flow = { total: 0, last: 0 };
     const cs = {
       state: 'connected',
       cbs: [],
@@ -451,13 +454,13 @@ function err(message, stack) {
       sessionStorage: { store: {}, getItem(k) { return this.store[k] === undefined ? null : this.store[k]; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } },
       Vaadin: {
         connectionState: cs,
-        Flow: { clients: { app: { isActive: () => flow.active, getProfilingData: () => [flow.last, flow.total, -1, -1, 0] } } }
+        Flow: { clients: { app: { getProfilingData: () => [flow.last, flow.total, -1, -1, 0] } } }
       },
       __vaadinMicrometerDetails: false
     };
     const doc = {
       querySelector: (sel) => (sel === 'vaadin-metrics-collector'
-        ? { $server: { recordSamples: (batch) => { batches.push(batch); return Promise.resolve(); } } }
+        ? { $server: { recordSamples: (batch) => { batches.push(batch); return new Promise((r) => answers.push(r)); } } }
         : null),
       addEventListener() {},
       visibilityState: 'visible'
@@ -471,15 +474,16 @@ function err(message, stack) {
     );
     const collectorApi = win.__vaadinMicrometer;
 
-    // The two halves of a round trip, separately, because the order between
-    // them is what several of the checks below are about: `wire` delivers the
-    // request's Resource Timing entry, `apply` has Flow apply the response and
-    // end the loading round trip.
+    // The pieces of a round trip, separately, because the order between them
+    // is what several checks are about. `wire` delivers the request's
+    // Resource Timing entry; `apply` has Flow apply the response and end the
+    // loading round trip; `answer` settles the $server promise of the oldest
+    // unanswered flush, as the response carrying the answer would.
     const settle = () => new Promise((r) => setTimeout(r, 5));
-    function wire(duration, entryName) {
-      const startTime = now;
+    function wire(duration, entryName, startTime) {
+      const start = startTime === undefined ? now : startTime;
       now += duration;
-      observer.cb({ getEntries: () => [{ name: entryName || '/?v-r=uidl&v-uiId=0', duration: duration, startTime: startTime }] });
+      observer.cb({ getEntries: () => [{ name: entryName || '/?v-r=uidl&v-uiId=0', duration: duration, startTime: start }] });
     }
     function apply(processingMs) {
       flow.last = processingMs;
@@ -487,9 +491,18 @@ function err(message, stack) {
       cs.go('loading');
       cs.go('connected');
     }
+    function answer() { answers.shift()(); }
     async function roundTrip(processingMs) {
       apply(processingMs);
       wire(180);
+      await settle();
+    }
+    // The flush's own request comes back: response applied, entry delivered,
+    // promise answered.
+    async function ownRoundTrip(processingMs) {
+      apply(processingMs);
+      wire(40);
+      answer();
       await settle();
     }
     async function drain() {
@@ -499,6 +512,9 @@ function err(message, stack) {
       const all = batches.flat();
       batches = [];
       return all;
+    }
+    function nudge() {
+      win.handlers.error.forEach((cb) => cb({ message: 'x', filename: '/app.js', lineno: 1, error: err('x') }));
     }
     // Which trigger reports the render first is a detail of the environment,
     // so the samples are compared as a set: request before render.
@@ -518,16 +534,15 @@ function err(message, stack) {
     // 8b. The flush that just delivered those samples is itself a UIDL
     //     request. It is neither timed nor does its render count, and the
     //     next real interaction is timed as usual.
-    await roundTrip(1);
-    let leftover = collectorApi.bufferSize();
-    check("the collector's own flush request produces no samples", leftover, 0);
+    await ownRoundTrip(1);
+    check("the collector's own flush request produces no samples", collectorApi.bufferSize(), 0);
     await roundTrip(30);
     all = await drain();
     check('the interaction after a flush is timed normally',
       timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
 
     // 8c. Heartbeat and push requests are not interactions.
-    await roundTrip(1);
+    await ownRoundTrip(1);
     observer.cb({ getEntries: () => [
       { name: '/?v-r=heartbeat&v-uiId=0', duration: 20, startTime: now },
       { name: '/?v-r=push&v-uiId=0&X-Atmosphere-Transport=websocket', duration: 20, startTime: now },
@@ -537,17 +552,11 @@ function err(message, stack) {
     check('heartbeat, push and static resources are not timed', collectorApi.bufferSize(), 0);
 
     // 8d. A response Flow has not applied by the time its entry is delivered
-    //     is still reported once, by the trigger that sees it applied. Nothing
-    //     was flushed since 8c, so there is no own request to consume first.
+    //     is still reported once, by the trigger that sees it applied.
     {
-      const startTime = now;
-      now += 90;
-      observer.cb({ getEntries: () => [{ name: '/?v-r=uidl&v-uiId=0', duration: 90, startTime: startTime }] });
+      wire(90);
       await settle();
-      flow.last = 7;
-      flow.total += 7;
-      cs.go('loading');
-      cs.go('connected');
+      apply(7);
       await settle();
       all = await drain();
       check('a response applied after its entry is still reported once',
@@ -562,6 +571,7 @@ function err(message, stack) {
       wire(180);
       await settle();
       apply(3);
+      answer();
       await settle();
       check("a flush response applied after its entry is still the collector's own", collectorApi.bufferSize(), 0);
       await roundTrip(30);
@@ -574,6 +584,7 @@ function err(message, stack) {
     //     observer never installed. The render check must not wait for one.
     {
       apply(2);
+      answer();
       await settle();
       check('without entries the flush response is still recognised as the collector\'s own', collectorApi.bufferSize(), 0);
       apply(45);
@@ -584,12 +595,10 @@ function err(message, stack) {
     }
 
     // 8h. A flush response that cost nothing does not move the total. The
-    //     request ending is what says it is over, so the next interaction is
-    //     not taken for it.
+    //     answer still says it is over, so the next interaction is not taken
+    //     for it.
     {
-      apply(0);
-      wire(180);
-      await settle();
+      await ownRoundTrip(0);
       check('a free flush response leaves nothing behind', collectorApi.bufferSize(), 0);
       await roundTrip(25);
       all = await drain();
@@ -600,6 +609,13 @@ function err(message, stack) {
     // 8i. A flush whose request or answer was lost must not hold either check
     //     for the life of the tab.
     {
+      await ownRoundTrip(1);
+      nudge();
+      collectorApi.flush();
+      await settle();
+      // Lost for good: no entry, no response, no answer.
+      batches = [];
+      answers = [];
       now += 31000;
       await roundTrip(9);
       all = await drain();
@@ -612,37 +628,61 @@ function err(message, stack) {
     //     be reported; the flush's own is the second and must not be, or the
     //     meter would trade a real sample for a near-zero one.
     {
-      await roundTrip(1);
+      await ownRoundTrip(1);
       const userStart = now;
       now += 100;
-      flow.active = true;
       cs.go('loading');
-      // Something to flush, then the timer fires mid-request.
-      win.handlers.error.forEach((cb) => cb({ message: 'x', filename: '/app.js', lineno: 1, error: err('x') }));
+      nudge();
       collectorApi.flush();
-      flow.active = false;
-      // The user's response is applied and its entry delivered, the request
-      // having started before the flush was called.
       flow.last = 60;
       flow.total += 60;
       cs.go('connected');
-      observer.cb({ getEntries: () => [{ name: '/?v-r=uidl&v-uiId=0', duration: 180, startTime: userStart }] });
+      wire(180, undefined, userStart);
       await settle();
-      // Then the flush's own request goes out and comes back.
-      cs.go('loading');
-      flow.last = 1;
-      flow.total += 1;
-      cs.go('connected');
-      wire(40);
-      await settle();
+      await ownRoundTrip(1);
       all = await drain();
       check("a flush during a request keeps the user's render and drops its own",
         timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 60]]);
     }
 
+    // 8k. The same, when the flush's own response then costs nothing: the
+    //     held sample is still the user's and must not be dropped with it.
+    {
+      await ownRoundTrip(1);
+      const userStart = now;
+      now += 100;
+      cs.go('loading');
+      nudge();
+      collectorApi.flush();
+      flow.last = 33;
+      flow.total += 33;
+      cs.go('connected');
+      wire(180, undefined, userStart);
+      await settle();
+      await ownRoundTrip(0);
+      all = await drain();
+      check("a free flush response after the user's does not take the user's sample with it",
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 33]]);
+    }
+
+    // 8l. Nothing at flush time says whether a request is in flight; the
+    //     answer is what attributes. So a flush with no request in flight,
+    //     whatever else the client is busy with, still reports the next real
+    //     interaction and not its own.
+    {
+      await ownRoundTrip(1);
+      nudge();
+      collectorApi.flush();
+      await ownRoundTrip(3);
+      await roundTrip(35);
+      all = await drain();
+      check('a flush with no request in flight drops only its own response',
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 35]]);
+    }
+
     // 8e. Without profiling data -- production mode with requestTiming off --
     //     the wire is still timed and the browser is simply not.
-    await roundTrip(1);
+    await ownRoundTrip(1);
     delete win.Vaadin.Flow.clients.app.getProfilingData;
     await roundTrip(40);
     all = await drain();

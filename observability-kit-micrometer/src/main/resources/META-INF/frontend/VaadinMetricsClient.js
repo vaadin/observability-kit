@@ -351,10 +351,8 @@
       // The samples ride on a UIDL request of their own, which the interaction
       // timing below would otherwise time as an interaction -- and then
       // report, and then flush, forever. Mark it so the request observer skips
-      // the request and the render check skips the response. If a request is
-      // in flight right now, ours goes out after it, so the response to let
-      // through first is the user's; asked before the call, which queues ours.
-      ownRenderSkip = anyFlowClientActive() ? 1 : 0;
+      // the request and the render check holds what is applied until the
+      // answer below says which response was ours.
       ownRequestAt = monotonicNow();
       ownRenderAt = ownRequestAt;
       var sent = el.$server.recordSamples(batch);
@@ -364,6 +362,7 @@
         // did record. A message Flow never delivered does not answer here at
         // all: Flow re-sends those itself, and the persisted copy covers the
         // tab that does not live to see it.
+        ownResponseAnswered();
         settle(batch, false);
       };
       if (sent && typeof sent.then === 'function') {
@@ -377,7 +376,7 @@
       // requeueing cannot double-count -- and no request of ours is coming.
       ownRequestAt = null;
       ownRenderAt = null;
-      ownRenderSkip = 0;
+      releaseHeldRender();
       settle(batch, true);
     }
   }
@@ -938,7 +937,7 @@
         }
         if (isLoading(previous)) {
           // A request just ended and its response has been applied.
-          requestEnded();
+          sampleRender(false);
         }
         var to = normalizeState(current);
         if (to === lastState) {
@@ -994,23 +993,22 @@
 
   // The collector's own flush rides on a UIDL request, and would otherwise be
   // timed as an interaction: the request by the observer, the response by the
-  // render check. Two marks, both set by flush() and each consumed by the
-  // check it is for -- the request mark by the first UIDL entry to start after
-  // it, the render mark by the first applied response after it -- so neither
-  // depends on the other having fired. In particular the render mark does not
-  // wait for a resource entry: with @Push(transport = WEBSOCKET) the UIDL
-  // rides the websocket and leaves none, and the observer may not install at
-  // all. Both marks expire, so a flush whose request or answer was lost does
-  // not hold either check for the life of the tab.
+  // render check. Two marks, both set by flush(). The request mark is consumed
+  // by the first UIDL entry to start after it. The render mark says a flush is
+  // outstanding: while it is, a response that is applied is held rather than
+  // reported, and the flush's answer decides whose it was. Neither depends on
+  // the other having fired -- with @Push(transport = WEBSOCKET) the UIDL rides
+  // the websocket and leaves no resource entry, and the observer may not
+  // install at all -- and both expire, so a flush whose request or answer was
+  // lost does not hold either check for the life of the tab.
   var ownRequestAt = null;
   var ownRenderAt = null;
-  // How many applied responses belong to the user before the flush's own
-  // arrives: one when a request was in flight as flush() was called, since
-  // Flow sends one request at a time and ours waits behind it. Without this
-  // the user's response would consume the render mark, dropping their real
-  // render sample, and the flush's near-zero one would then be reported in
-  // its place under their route -- a bias towards zero, not just a gap.
-  var ownRenderSkip = 0;
+  // A response applied while a flush was outstanding, with the client it came
+  // from and the processing total it brought that client to. Whether it was
+  // the user's or the flush's own is not knowable until the flush is answered,
+  // so it waits here. Only ever one: a second applied response means the
+  // first was not the flush's, since the answer would have claimed it.
+  var heldRender = null;
   // Per Flow client, the processing total at the last check.
   var processingTotals = {};
 
@@ -1023,47 +1021,36 @@
     return (flow && flow.clients) || null;
   }
 
-  // Whether any Flow client has a request in flight. isActive() is published
-  // in every mode, and is what TestBench waits on for the same question.
-  function anyFlowClientActive() {
-    var clients = flowClients();
-    if (!clients) {
-      return false;
+  function profilingOf(client) {
+    if (!client || typeof client.getProfilingData !== 'function') {
+      return null;
     }
-    for (var id in clients) {
-      var client = clients[id];
-      try {
-        if (client && typeof client.isActive === 'function' && client.isActive()) {
-          return true;
-        }
-      } catch (e) {
-        /* not a client */
-      }
+    var data;
+    try {
+      data = client.getProfilingData();
+    } catch (e) {
+      return null;
     }
-    return false;
+    if (!data || typeof data[0] !== 'number' || typeof data[1] !== 'number') {
+      return null;
+    }
+    return data;
   }
 
-  // An applied response while a flush is outstanding: the user's if one was
-  // still owed, otherwise the flush's own. Returns whether to report it.
-  function claimApplied() {
-    if (!pending(ownRenderAt)) {
-      return true;
+  // The held response was the user's after all: report it.
+  function releaseHeldRender() {
+    if (heldRender !== null) {
+      pushSample(RENDER_DURATION, { route: heldRender.route }, heldRender.ms);
+      heldRender = null;
     }
-    if (ownRenderSkip > 0) {
-      ownRenderSkip--;
-      return true;
-    }
-    ownRenderAt = null;
-    return false;
   }
 
   // Reports the processing time of every response applied since the last
   // check, and returns whether one was. With discard set it only takes note,
-  // which is how the baseline is taken. The flush's own response -- the first
-  // applied after the flush, or the second when a request was in flight as it
-  // was called -- is dropped. What remains is a user RPC queued in the same
-  // tick as the flush, which shares its request: that response is dropped
-  // with it, one missing sample and nothing reported in its place.
+  // which is how the baseline is taken. While a flush is outstanding the
+  // sample is held instead, for ownResponseAnswered() to attribute; a held
+  // sample that a further response overtakes was the user's, as was one
+  // whose flush expired unanswered.
   function sampleRender(discard) {
     var clients = flowClients();
     if (!clients) {
@@ -1071,17 +1058,8 @@
     }
     var applied = false;
     for (var id in clients) {
-      var client = clients[id];
-      if (!client || typeof client.getProfilingData !== 'function') {
-        continue;
-      }
-      var data;
-      try {
-        data = client.getProfilingData();
-      } catch (e) {
-        continue;
-      }
-      if (!data || typeof data[0] !== 'number' || typeof data[1] !== 'number') {
+      var data = profilingOf(clients[id]);
+      if (data === null) {
         continue;
       }
       var total = data[1];
@@ -1093,7 +1071,12 @@
         continue;
       }
       applied = true;
-      if (discard || !claimApplied()) {
+      if (discard) {
+        continue;
+      }
+      releaseHeldRender();
+      if (pending(ownRenderAt)) {
+        heldRender = { id: id, route: currentRoute(), ms: data[0], total: total };
         continue;
       }
       pushSample(RENDER_DURATION, { route: currentRoute() }, data[0]);
@@ -1103,13 +1086,36 @@
   // Baseline now, so the bootstrap does not count as the first interaction.
   sampleRender(true);
 
-  // A request ended, so its response has been applied. A flush response that
-  // cost the browser nothing does not move the total, which is the one case
-  // the render check cannot see; the request ending is what says it is over.
-  function requestEnded() {
-    if (!sampleRender(false)) {
-      claimApplied();
+  // The flush has been answered, which Flow does from inside the response
+  // that carried the answer -- so by the time this runs, as a microtask after
+  // that task, the response has been applied and the store listener has seen
+  // it. If it cost the browser anything it is the most recent applied
+  // response and the one held; if it cost nothing, whatever is held predates
+  // it and was the user's. What this cannot separate is a user RPC queued in
+  // the same tick as the flush, which shares its request: that response is
+  // dropped with it, one missing sample and nothing reported in its place.
+  function ownResponseAnswered() {
+    ownRenderAt = null;
+    if (heldRender === null) {
+      // Nothing was held, so the response either cost nothing or has not been
+      // seen yet; either way it is ours and not to be reported.
+      sampleRender(true);
+      return;
     }
+    var clients = flowClients();
+    var data = clients ? profilingOf(clients[heldRender.id]) : null;
+    if (data === null || data[1] !== heldRender.total) {
+      // A response was applied after the held one, so the held one was the
+      // user's; the newer one is ours.
+      releaseHeldRender();
+      sampleRender(true);
+      return;
+    }
+    if (data[0] > 0) {
+      heldRender = null;
+      return;
+    }
+    releaseHeldRender();
   }
 
   // The first UIDL request to start after the mark is the one carrying the
