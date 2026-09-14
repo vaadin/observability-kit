@@ -29,12 +29,8 @@ public final class ObservationNames {
     public static final String NAVIGATION = "vaadin.navigation";
 
     /**
-     * Observation/span name for one task run by the Vaadin service executor,
-     * including the signal-driven {@code UI.access} notifications Vaadin
-     * dispatches through it. An ordinary {@code UI.access(...)} call from a
-     * background thread does not reach the executor — it queues a command that
-     * whichever thread unlocks the session drains — so it is deliberately not
-     * named after {@code UI.access}.
+     * Observation/span name for one task run by the Vaadin service executor;
+     * see {@link TracingExecutor} for what that covers.
      */
     public static final String EXECUTOR_TASK = "vaadin.executor.task";
 

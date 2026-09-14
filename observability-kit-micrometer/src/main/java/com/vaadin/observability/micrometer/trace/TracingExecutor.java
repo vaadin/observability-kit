@@ -30,12 +30,16 @@ import io.micrometer.observation.ObservationRegistry;
  * up with a continuous trace tree across the thread hop.</li>
  * </ol>
  * <p>
- * The scope is tasks submitted to the Vaadin service executor, including the
- * signal-driven {@code UI.access} notifications Vaadin dispatches through it,
- * and the background tasks applications are expected to hand to it. It is not
- * every {@code UI.access(...)}: a plain call from a background thread queues a
- * command that whichever thread unlocks the session drains, so it never passes
- * through this executor and gets no span of its own.
+ * The scope is tasks submitted to the Vaadin service executor: the signal
+ * effects Vaadin re-evaluates on it directly, the signal result notifications
+ * it dispatches through it, and the background tasks applications are expected
+ * to hand to it. It is not every {@code UI.access(...)}: a plain call from a
+ * background thread queues a command that whichever thread unlocks the session
+ * drains, so it never passes through this executor and gets no span of its own.
+ * A notification task is itself a {@code UI.access} call, so its span always
+ * covers the dispatch, but covers the notification body only when the session
+ * lock happens to be free; otherwise the task returns as soon as the command is
+ * enqueued and the body runs later on the unlocking thread, outside the span.
  * <p>
  * Use {@link #wrap(Executor, ObservationRegistry)} rather than the constructors
  * so that an {@link ExecutorService} delegate keeps its lifecycle methods:
