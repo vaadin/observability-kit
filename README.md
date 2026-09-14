@@ -162,6 +162,43 @@ The built-in server-side request timer is `vaadin.request.duration`, and
 server-side RPC invocations are timed as `vaadin.rpc.duration`. See
 [Metrics](#metrics) for the full list.
 
+### In development: the Copilot panel
+
+In development mode the kit adds an **Observability** panel to Vaadin Copilot
+(the toolbar icon in edit, inspect and test modes). It opens on the findings,
+not on the numbers: the same insights `/actuator/vaadin/observability`
+publishes — failed and over-budget interactions, failed and slow data queries,
+browser errors — ranked with errors first, then by how many users hit them,
+then by how recently. Expanding one shows its evidence, the replay steps and
+the suggestion, and **Copy** puts the whole finding on the clipboard as JSON,
+which is the shortest path from noticing a problem to handing it to an AI agent
+with access to the codebase.
+
+The `vaadin.*` meters are below the findings, folded away while there is
+something to look at, and **grouped by the route they were recorded on** — the
+route the browser is currently on first, then the rest alphabetically (the root
+view as *Root*), the unresolved ones after them, and the application-wide
+meters that carry no route under *General*. Route groups are matched against
+the browser's location by route template, so `orders/:orderId` is the current
+group while you are on `/orders/17`; an application served under a context path
+matches nothing and the groups stay alphabetical.
+
+**New findings announce themselves.** The panel keeps watching with its window
+closed, and a finding the payload did not have before is written to the Copilot
+log, deduplicated on the same grouping key the endpoint uses, so one problem
+notifies once however often it recurs. Announced are the findings this page
+raised — anything first seen since it loaded, including during the load itself,
+so a slow query on the landing view is reported; the older records in the
+buffers, which outlive a reload, are not. Copilot's plugin API has no
+notification of its own, so the line is written by asking the dev-tools handler
+to send Copilot's own `log` command: a server message no open panel claims is
+queued and replayed once one opens, which an event dispatched in the browser
+would not be.
+
+Findings need `vaadin.observability.insights` (on by default); with it off the
+panel says so rather than showing an empty list. Nothing here exists in
+production — Copilot and the dev-tools connection do not.
+
 ## Other setups
 
 ### Plain Spring (without Spring Boot)

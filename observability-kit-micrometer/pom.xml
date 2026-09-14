@@ -101,16 +101,16 @@
         </resources>
         <plugins>
             <!--
-                The in-browser collector's test suite, run by node with no
-                dependencies and no runner. It is here because the location
-                grammar exists in two languages: about 290 lines of
-                StackFrames.java are hand-ported into VaadinMetricsClient.js,
-                the two caps (MAX_LENGTH and DETAIL_MAX) have to stay equal,
-                and this suite is the only thing that checks the browser copy,
-                against the same corpus file the server's tests read. Run by
-                hand, a one-sided change to either copy lands green, and the
-                failure mode is silent: every client-error insight loses
-                `frame` and `source`, which has shipped once already.
+                The browser-side test suites, run by node with no dependencies
+                and no runner. They are here because both scripts hold rules
+                that nothing else checks: about 290 lines of StackFrames.java
+                are hand-ported into VaadinMetricsClient.js and the two caps
+                (MAX_LENGTH and DETAIL_MAX) have to stay equal, while
+                VaadinObservabilityDevTools.js decides on its own how findings
+                are ranked and escapes the page-authored text it renders. Run
+                by hand, a one-sided change lands green, and the failure mode
+                is silent: every client-error insight loses `frame` and
+                `source`, which has shipped once already.
             -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -126,6 +126,21 @@
                             <executable>node</executable>
                             <arguments>
                                 <argument>${project.basedir}/src/test/js/VaadinMetricsClient.test.js</argument>
+                            </arguments>
+                            <!-- The suite exits non-zero on a failed check. -->
+                            <skip>${skip.js.tests}</skip>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>devtools-panel-js-tests</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>node</executable>
+                            <arguments>
+                                <argument>${project.basedir}/src/test/js/VaadinObservabilityDevTools.test.js</argument>
                             </arguments>
                             <!-- The suite exits non-zero on a failed check. -->
                             <skip>${skip.js.tests}</skip>
