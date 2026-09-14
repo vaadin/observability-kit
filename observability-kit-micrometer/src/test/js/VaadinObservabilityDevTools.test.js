@@ -5,8 +5,8 @@
 // messages ObservabilityDevToolsHandler sends. Covers what the panel decides
 // on its own, none of which the server-side tests can see: the order findings
 // are shown in, that page-authored text reaches innerHTML escaped, which
-// meters belong to the route the browser is on, when a finding is announced,
-// and what is polled while the panel is closed.
+// meters belong to the route the browser is on, which findings are worth
+// announcing, and what is polled while the panel is closed.
 //
 //   node observability-kit-micrometer/src/test/js/VaadinObservabilityDevTools.test.js
 //
@@ -20,6 +20,13 @@ const src = fs.readFileSync(
   path.join(__dirname, '../../main/resources/META-INF/frontend/VaadinObservabilityDevTools.js'),
   'utf8'
 );
+
+let failures = 0;
+function check(label, actual, expected) {
+  const ok = JSON.stringify(actual) === JSON.stringify(expected);
+  if (!ok) failures++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : `\n        got ${JSON.stringify(actual)} want ${JSON.stringify(expected)}`}`);
+}
 
 // Enough of an element for the panel: it sets innerHTML on itself once, then
 // only on the two region children it looked up. Nothing here parses HTML --
@@ -43,118 +50,190 @@ class FakeElement {
   }
 }
 
-let defined = null;
-const customElements = {
-  get: () => undefined,
-  define: (tag, type) => {
-    defined = type;
-  }
-};
+// Clicks are resolved out of the markup the panel actually rendered, not out
+// of what a test would like to have happened: find the text, walk out to the
+// innermost element carrying data-action, and hand the panel exactly the
+// attributes that element has. A Copy button wired to the wrong action fails
+// here instead of passing on a stub's say-so.
+const VOID_TAGS = ['polyline', 'br', 'img', 'input'];
 
-// Copilot as the script meets it: an event bus that server messages arrive on,
-// a plugins array to register through, and send() as the only way out.
-const sent = [];
-const logged = [];
-const busListeners = {};
-const copilotStub = {
-  _uiState: {},
-  plugins: [],
-  eventbus: {
-    on: (name, cb) => {
-      (busListeners[name] = busListeners[name] || []).push(cb);
-    },
-    emit: (name, detail) => {
-      logged.push({ name, detail });
+function closestActionAt(html, offset) {
+  const tags = /<(\/?)([a-zA-Z][\w-]*)((?:"[^"]*"|[^>"])*?)(\/?)>/g;
+  const stack = [];
+  let tag;
+  while ((tag = tags.exec(html)) !== null) {
+    if (tag.index > offset) {
+      break;
     }
-  },
-  send: (command) => {
-    sent.push(command);
-  },
-  addPanel: (configuration) => {
-    panels.push(configuration);
+    const [, closing, name, attributes, selfClosing] = tag;
+    if (closing) {
+      stack.pop();
+      continue;
+    }
+    if (selfClosing || VOID_TAGS.indexOf(name) >= 0) {
+      continue;
+    }
+    const action = /data-action="([^"]*)"/.exec(attributes);
+    const index = /data-index="([^"]*)"/.exec(attributes);
+    stack.push(action ? { action: action[1], index: index ? index[1] : null } : null);
   }
-};
-const panels = [];
-
-// The browser is on /orders/17, which is what makes 'orders/:orderId' the
-// current route below.
-const win = {
-  location: { pathname: '/orders/17' },
-  Vaadin: { copilot: copilotStub }
-};
-
-// Intervals are captured, never run on their own: every tick in this suite is
-// one the test asked for.
-const intervals = [];
-const navigatorStub = {};
-
-new Function(
-  'window',
-  'customElements',
-  'HTMLElement',
-  'setInterval',
-  'clearInterval',
-  'navigator',
-  src
-)(
-  win,
-  customElements,
-  FakeElement,
-  (fn, ms) => intervals.push({ fn, ms }) && 0,
-  () => {},
-  navigatorStub
-);
-
-let failures = 0;
-function check(label, actual, expected) {
-  const ok = JSON.stringify(actual) === JSON.stringify(expected);
-  if (!ok) failures++;
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : `\n        got ${JSON.stringify(actual)} want ${JSON.stringify(expected)}`}`);
+  for (let i = stack.length - 1; i >= 0; i--) {
+    if (stack[i]) {
+      return stack[i];
+    }
+  }
+  return null;
 }
 
-// The bootstrap poll: it waits for Copilot, then registers the plugin. Copilot
-// itself overrides push() to init immediately; here the test does the init.
-intervals[0].fn();
-check('the plugin registers once Copilot is up', copilotStub.plugins.length, 1);
-const plugin = copilotStub.plugins[0];
-plugin.init(copilotStub);
+/**
+ * The script in an environment of its own: its own Copilot, its own browser
+ * location, its own module state. A second one is the only way to ask what a
+ * panel does before anything has been clicked in it.
+ */
+function harness(pathname) {
+  const sent = [];
+  const announced = [];
+  const busListeners = {};
+  const intervals = [];
+  const navigatorStub = {};
+  let defined = null;
 
-const pollTick = intervals[intervals.length - 1].fn;
-
-// A server message as Copilot delivers it: on the event bus, ahead of any
-// panel, with preventDefault() the way a listener claims it.
-let unclaimed = 0;
-function deliver(command, data) {
-  const listeners = busListeners[command] || [];
-  if (listeners.length === 0) {
-    unclaimed++;
-    return;
-  }
-  let claimed = false;
-  listeners.forEach((cb) => cb({ detail: data, preventDefault: () => (claimed = true) }));
-  if (!claimed) unclaimed++;
-}
-
-const insight = (type, severity, summary, evidence, extra) =>
-  Object.assign(
-    {
-      type: type,
-      severity: severity,
-      category: 'reliability',
-      summary: summary,
-      evidence: evidence,
-      replay: ['Open route ' + evidence.route],
-      suggestion: 'Inspect ' + (evidence.frame || evidence.component)
+  const copilot = {
+    _uiState: {},
+    plugins: [],
+    eventbus: {
+      on: (name, cb) => {
+        (busListeners[name] = busListeners[name] || []).push(cb);
+      },
+      emit: () => {}
     },
-    extra || {}
+    send: (command, data) => {
+      sent.push({ command, data });
+      if (command === 'observability-kit-announce') {
+        announced.push(data);
+      }
+    },
+    addPanel: () => {}
+  };
+  const win = { location: { pathname: pathname }, Vaadin: { copilot } };
+
+  new Function(
+    'window',
+    'customElements',
+    'HTMLElement',
+    'setInterval',
+    'clearInterval',
+    'navigator',
+    src
+  )(
+    win,
+    { get: () => undefined, define: (tag, type) => (defined = type) },
+    FakeElement,
+    (fn, ms) => intervals.push({ fn, ms }) && 0,
+    () => {},
+    navigatorStub
   );
+
+  // The bootstrap poll waits for Copilot, then registers the plugin. Copilot
+  // itself overrides push() to init immediately; here the harness does it.
+  intervals[0].fn();
+  const plugin = copilot.plugins[0];
+  plugin.init(copilot);
+
+  const panel = new defined();
+  let unclaimed = 0;
+
+  // A server message as Copilot delivers it: on the event bus, ahead of any
+  // panel, with preventDefault() the way a listener claims it.
+  function deliver(command, data) {
+    const listeners = busListeners[command] || [];
+    let claimed = false;
+    listeners.forEach((cb) =>
+      cb({ detail: data, preventDefault: () => (claimed = true) })
+    );
+    if (!claimed) unclaimed++;
+  }
+
+  const insightsHtml = () => panel.regions['[data-region="insights"]'].innerHTML;
+  const metricsHtml = () => panel.regions['[data-region="metrics"]'].innerHTML;
+
+  function clickIn(html, needle) {
+    const found = html.indexOf(needle);
+    if (found < 0) {
+      failures++;
+      console.log(`FAIL  nothing rendered matching ${JSON.stringify(needle)}`);
+      return {};
+    }
+    const target = closestActionAt(html, found);
+    if (!target) {
+      failures++;
+      console.log(`FAIL  ${JSON.stringify(needle)} is in no element carrying data-action`);
+      return {};
+    }
+    panel.handleClick({
+      target: {
+        closest: () => ({
+          getAttribute: (name) => (name === 'data-action' ? target.action : target.index),
+          setAttribute() {},
+          set textContent(value) {}
+        })
+      }
+    });
+    return target;
+  }
+
+  return {
+    panel,
+    win,
+    sent,
+    announced,
+    navigator: navigatorStub,
+    open: () => panel.connectedCallback(),
+    close: () => panel.disconnectedCallback(),
+    pollTick: () => intervals[intervals.length - 1].fn(),
+    insights: (data) => deliver('observability-kit-insights-data', data),
+    meters: (data) => deliver('observability-kit-metrics', data),
+    insightsHtml,
+    metricsHtml,
+    clickIn,
+    commands: () => sent.map((message) => message.command),
+    unclaimed: () => unclaimed
+  };
+}
+
+// Findings are placed against the moment the script loaded, which is what it
+// stamped as the page start: older than that predates the page, younger is
+// something this page is responsible for.
+const loaded = Date.now();
+const at = (offset) => new Date(loaded + offset).toISOString();
+const BEFORE_THE_PAGE = at(-60000);
+const SINCE_THE_PAGE = at(5000);
+
+const insight = (type, severity, summary, evidence) => ({
+  type: type,
+  severity: severity,
+  category: 'reliability',
+  summary: summary,
+  evidence: evidence,
+  replay: ['Open route ' + evidence.route],
+  suggestion: 'Inspect ' + (evidence.frame || evidence.component)
+});
 
 const SLOW = insight('slow-user-interaction', 'warning', 'slow save', {
   route: 'orders/:orderId',
   component: 'com.example.SaveButton',
   event: 'click',
   occurrences: 9,
-  lastSeen: '2026-09-08T10:00:09Z'
+  firstSeen: BEFORE_THE_PAGE,
+  lastSeen: at(9000)
+});
+const LOAD_TIME = insight('slow-data-query', 'warning', 'slow grid query on load', {
+  route: 'orders/:orderId',
+  component: 'com.example.OrderGrid',
+  queryKind: 'fetch',
+  occurrences: 1,
+  firstSeen: SINCE_THE_PAGE,
+  lastSeen: SINCE_THE_PAGE
 });
 const FAILING_SAVE = insight('user-interaction-error', 'error', 'failing save', {
   route: 'orders/:orderId',
@@ -162,7 +241,19 @@ const FAILING_SAVE = insight('user-interaction-error', 'error', 'failing save', 
   event: 'click',
   exception: 'java.lang.NullPointerException',
   occurrences: 2,
-  lastSeen: '2026-09-08T10:00:02Z'
+  firstSeen: SINCE_THE_PAGE,
+  lastSeen: at(6000)
+});
+// Same route, component and event as the one above, a different exception --
+// which is what the server groups on too.
+const FAILING_SAVE_OTHER = insight('user-interaction-error', 'error', 'failing save, other cause', {
+  route: 'orders/:orderId',
+  component: 'com.example.SaveButton',
+  event: 'click',
+  exception: 'java.lang.IllegalStateException',
+  occurrences: 1,
+  firstSeen: SINCE_THE_PAGE,
+  lastSeen: at(7000)
 });
 const CHART_ERROR = insight('client-error', 'error', 'browser error in chart', {
   route: 'dashboard',
@@ -170,85 +261,9 @@ const CHART_ERROR = insight('client-error', 'error', 'browser error in chart', {
   source: '/VAADIN/chart.js',
   frame: '/VAADIN/chart.js:12:9',
   occurrences: 7,
-  lastSeen: '2026-09-08T10:00:07Z'
+  firstSeen: BEFORE_THE_PAGE,
+  lastSeen: at(7000)
 });
-const payload = (insights, instrumentation) => ({
-  schemaVersion: 1,
-  generated: '2026-09-08T10:00:00Z',
-  instrumentation: instrumentation || 'active',
-  insights: insights
-});
-
-// 1. The watch runs with no panel open: this is the whole point of holding the
-// state at module scope. Nothing from the first payload is announced -- the
-// buffers outlive a reload, so everything in it predates this page.
-deliver('observability-kit-insights-data', payload([SLOW]));
-check('the first payload announces nothing', logged, []);
-
-// A finding the payload did not have before is announced once, by severity,
-// and never again however many polls repeat it.
-deliver('observability-kit-insights-data', payload([SLOW, FAILING_SAVE]));
-check('a new finding is announced in the Copilot log', logged.map((e) => e.name), ['log']);
-check('as an error, so the log flags it', logged[0].detail.type, 'error');
-check('with the summary the server wrote', logged[0].detail.message, 'Observability: failing save');
-deliver('observability-kit-insights-data', payload([SLOW, FAILING_SAVE]));
-check('the same finding does not announce twice', logged.length, 1);
-deliver('observability-kit-insights-data', payload([SLOW, FAILING_SAVE, CHART_ERROR]));
-check('a second new finding announces once', logged.length, 2);
-check('and it is the new one', logged[1].detail.message, 'Observability: browser error in chart');
-
-// 2. Polling: with the panel closed the meters are not asked for at all, and
-// the insights only every fifth tick.
-sent.length = 0;
-for (let i = 0; i < 5; i++) pollTick();
-check('a closed panel polls insights only, once per five ticks', sent, ['observability-kit-insights']);
-
-const panel = new defined();
-panel.connectedCallback();
-sent.length = 0;
-pollTick();
-check('an open panel asks for both', sent, ['observability-kit-refresh', 'observability-kit-insights']);
-
-const insightsHtml = () => panel.regions['[data-region="insights"]'].innerHTML;
-const metricsHtml = () => panel.regions['[data-region="metrics"]'].innerHTML;
-
-// 3. Ranking: warnings below errors however recent, and the most-reported
-// error first. The server sends them in the endpoint's order, worst last here.
-deliver('observability-kit-insights-data', payload([SLOW, FAILING_SAVE, CHART_ERROR]));
-const order = ['browser error in chart', 'failing save', 'slow save'].map((summary) =>
-  insightsHtml().indexOf(summary)
-);
-check('errors rank above warnings, most-reported error first', order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1])), true);
-check('the header counts the findings', insightsHtml().includes('3 findings need attention'), true);
-
-// 4. Meters, grouped by the route they were recorded on. The browser is on
-// /orders/17, so the group for 'orders/:orderId' comes first and says so;
-// then the other routes alphabetically, the unresolved sentinel after them,
-// and the meters carrying no route at all in a general section.
-const meter = (name, tags, count) => ({ name, type: 'COUNTER', tags: tags, count: count });
-deliver('observability-kit-metrics', {
-  timestamp: Date.parse('2026-09-08T10:00:11Z'),
-  meters: [
-    meter('vaadin.errors', { route: 'dashboard', exception: 'IllegalState' }, 1),
-    meter('vaadin.sessions', {}, 4),
-    meter('vaadin.rpc.duration', { route: 'orders/:orderId', outcome: 'success' }, 12),
-    meter('vaadin.navigation', { route: '_unknown' }, 2)
-  ]
-});
-check('the meters are collapsed while findings are showing', metricsHtml().includes('vaadin.rpc.duration'), false);
-click('toggle-metrics');
-const groupOrder = ['orders/:orderId', 'dashboard', 'Route not resolved', 'General'].map((name) =>
-  metricsHtml().indexOf(name)
-);
-check('groups run current route, other routes, sentinel, general', groupOrder.every((at, i) => at >= 0 && (i === 0 || at > groupOrder[i - 1])), true);
-check('the current route says which one it is', metricsHtml().includes('current page'), true);
-check('a route group does not repeat the route on every row', metricsHtml().includes('route=orders'), false);
-check('the other tags of a grouped meter are still shown', metricsHtml().includes('outcome=success'), true);
-check('a meter with no route is in the general group', metricsHtml().indexOf('vaadin.sessions') > metricsHtml().indexOf('General'), true);
-
-// 5. Escaping. `frame`, `source`, a client-error `message` and the summary
-// built from them are page-authored text, and this panel runs inside the
-// developer's dev-tools window.
 const HOSTILE = insight('client-error', 'error', 'A browser error at <script>alert(1)</script>', {
   route: 'dashboard',
   kind: 'uncaught',
@@ -256,83 +271,218 @@ const HOSTILE = insight('client-error', 'error', 'A browser error at <script>ale
   frame: '<script>alert(3)</script>',
   message: '<b>boom</b>',
   occurrences: 1,
-  lastSeen: '2026-09-08T10:00:01Z'
+  firstSeen: BEFORE_THE_PAGE,
+  lastSeen: at(1000)
 });
-deliver('observability-kit-insights-data', payload([HOSTILE]));
-check('the summary is escaped', insightsHtml().includes('<script>'), false);
-check('the meta line is escaped', insightsHtml().includes('<img src=x'), false);
-check('the escaped text is still shown', insightsHtml().includes('&lt;script&gt;alert(1)&lt;/script&gt;'), true);
 
-// 6. Expanding a row shows the evidence, the replay steps and the suggestion --
+let generation = 0;
+const payload = (insights, instrumentation) => ({
+  schemaVersion: 1,
+  // Each payload is newer than the last, the way the server's are.
+  generated: new Date(loaded + ++generation).toISOString(),
+  instrumentation: instrumentation || 'active',
+  insights: insights
+});
+const meter = (name, tags) => ({ name, type: 'COUNTER', tags: tags, count: 1 });
+
+const app = harness('/orders/17');
+app.open();
+
+// 1. Before anything has arrived the panel has no answer, and "no problems
+// detected" would be one.
+check('an unanswered panel does not claim there is nothing wrong', app.insightsHtml().includes('No problems detected'), false);
+check('it says it is waiting instead', app.insightsHtml().includes('Waiting for the first'), true);
+
+// 2. Announcements. A finding raised before this page started is not news --
+// the server's buffers outlive a reload -- but one raised since is, including
+// on the very first payload, which is where a slow query on the landing view
+// shows up.
+app.insights(payload([SLOW, LOAD_TIME]));
+check('the first payload announces what this page raised', app.announced.map((a) => a.message), ['Observability: slow grid query on load']);
+
+app.insights(payload([SLOW, LOAD_TIME, FAILING_SAVE]));
+check('a new finding is announced', app.announced.length, 2);
+check('as an error, so the Copilot log flags it', app.announced[1].type, 'error');
+check('with the summary the server wrote', app.announced[1].message, 'Observability: failing save');
+app.insights(payload([SLOW, LOAD_TIME, FAILING_SAVE]));
+check('the same finding does not announce twice', app.announced.length, 2);
+
+// The same handler failing for a different reason is a different finding: the
+// server groups by exception type, so the key here has to as well.
+app.insights(payload([SLOW, LOAD_TIME, FAILING_SAVE, FAILING_SAVE_OTHER]));
+check('a second exception on the same handler is its own finding', app.announced.length, 3);
+check('and it is the new one', app.announced[2].message, 'Observability: failing save, other cause');
+check('an announcement asks the server to write it, since only a server message survives a closed log panel', app.commands().includes('observability-kit-announce'), true);
+
+// 3. The meters folded themselves away when the first payload turned out to
+// have findings in it, which is the panel opening on what is wrong.
+check('findings fold the meter section', app.metricsHtml().includes('▸'), true);
+
+// 4. Copilot replays a message no panel claimed, so the snapshot pushed at
+// connect time arrives after the first polls have been answered. Taking it
+// would undo them.
+const shown = app.insightsHtml();
+app.insights({
+  schemaVersion: 1,
+  generated: new Date(loaded - 10000).toISOString(),
+  instrumentation: 'active',
+  insights: []
+});
+check('a payload older than the one in hand is ignored', app.insightsHtml(), shown);
+app.meters({ timestamp: loaded + 100, meters: [meter('vaadin.sessions', {})] });
+app.meters({ timestamp: loaded - 100, meters: [] });
+// The header counts the meters whether or not the table is unfolded, so this
+// reads the state without disturbing it.
+check('a meter snapshot older than the one in hand is ignored', app.metricsHtml().includes('1 meter'), true);
+
+// 5. Polling: with the panel closed the meters are not asked for at all, and
+// the insights only every fifth tick.
+app.close();
+app.sent.length = 0;
+for (let i = 0; i < 5; i++) app.pollTick();
+check('a closed panel polls insights only, once per five ticks', app.commands(), ['observability-kit-insights']);
+
+app.open();
+app.sent.length = 0;
+app.pollTick();
+check('an open panel asks for both', app.commands(), ['observability-kit-refresh', 'observability-kit-insights']);
+
+// 6. Ranking: warnings below errors however recent, and the most-reported
+// error first. The server sends them in the endpoint's order, worst last here.
+app.insights(payload([SLOW, FAILING_SAVE, CHART_ERROR]));
+const order = ['browser error in chart', 'failing save', 'slow save'].map((summary) =>
+  app.insightsHtml().indexOf(summary)
+);
+check('errors rank above warnings, most-reported error first', order.every((found, i) => found >= 0 && (i === 0 || found > order[i - 1])), true);
+check('the header counts the findings', app.insightsHtml().includes('3 findings need attention'), true);
+
+// 7. Meters, grouped by the route they were recorded on. The browser is on
+// /orders/17, so the group for 'orders/:orderId' comes first and says so;
+// then the other routes alphabetically, the unresolved sentinel after them,
+// and the meters carrying no route at all in a general section.
+app.meters({
+  timestamp: loaded + 11000,
+  meters: [
+    meter('vaadin.errors', { route: 'dashboard', exception: 'IllegalState' }),
+    meter('vaadin.sessions', {}),
+    meter('vaadin.rpc.duration', { route: 'orders/:orderId', outcome: 'success' }),
+    meter('vaadin.navigation', { route: '_unknown' }),
+    meter('vaadin.request.duration', { route: '' })
+  ]
+});
+check('the meters are collapsed while findings are showing', app.metricsHtml().includes('vaadin.rpc.duration'), false);
+check('the metrics header is what unfolds them', app.clickIn(app.metricsHtml(), '<span>Metrics</span>').action, 'toggle-metrics');
+const groupOrder = ['orders/:orderId', 'Root', 'dashboard', 'Route not resolved', 'General'].map((name) =>
+  app.metricsHtml().indexOf(name)
+);
+check('groups run current route, other routes, sentinel, general', groupOrder.every((found, i) => found >= 0 && (i === 0 || found > groupOrder[i - 1])), true);
+check('the current route says which one it is', app.metricsHtml().includes('current page'), true);
+check('the root view is named rather than left blank', app.metricsHtml().includes('>Root<'), true);
+check('a route group does not repeat the route on every row', app.metricsHtml().includes('route=orders'), false);
+check('the other tags of a grouped meter are still shown', app.metricsHtml().includes('outcome=success'), true);
+check('a meter with no route is in the general group', app.metricsHtml().indexOf('vaadin.sessions') > app.metricsHtml().indexOf('General'), true);
+
+// 8. Escaping. `frame`, `source`, a client-error `message` and the summary
+// built from them are page-authored text, and this panel runs inside the
+// developer's dev-tools window.
+app.insights(payload([HOSTILE]));
+check('the summary is escaped', app.insightsHtml().includes('<script>'), false);
+check('the meta line is escaped', app.insightsHtml().includes('<img src=x'), false);
+check('the escaped text is still shown', app.insightsHtml().includes('&lt;script&gt;alert(1)&lt;/script&gt;'), true);
+
+// 9. Expanding a row shows the evidence, the replay steps and the suggestion --
 // escaped as well, since the evidence is where the reported message lands.
-check('the detail is folded away until asked for', insightsHtml().includes('Suggestion'), false);
-click('toggle-insight', 0);
-check('expanding shows the replay steps', insightsHtml().includes('Replay'), true);
-check('expanding shows the suggestion', insightsHtml().includes('Suggestion'), true);
-check('the evidence message is escaped', insightsHtml().includes('<b>boom</b>'), false);
-check('the evidence message is shown', insightsHtml().includes('&lt;b&gt;boom&lt;/b&gt;'), true);
+check('the detail is folded away until asked for', app.insightsHtml().includes('Suggestion'), false);
+check('the summary row is what expands it', app.clickIn(app.insightsHtml(), 'A browser error at').action, 'toggle-insight');
+check('expanding shows the replay steps', app.insightsHtml().includes('Replay'), true);
+check('expanding shows the suggestion', app.insightsHtml().includes('Suggestion'), true);
+check('the evidence message is escaped', app.insightsHtml().includes('<b>boom</b>'), false);
+check('the evidence message is shown', app.insightsHtml().includes('&lt;b&gt;boom&lt;/b&gt;'), true);
 
-// 7. A poll that changes nothing must not rebuild the section: it would close
+// 10. A poll that changes nothing must not rebuild the section: it would close
 // the row opened above and drop a selection mid-copy. The timestamp moves on
 // every poll, which is why it lives on the metrics header and not here.
-const before = insightsHtml();
-panel.regions['[data-region="insights"]'].innerHTML = 'untouched';
-deliver('observability-kit-insights-data', payload([HOSTILE]));
-check('an unchanged poll leaves the insights alone', insightsHtml(), 'untouched');
+const before = app.insightsHtml();
+const announcedSoFar = app.announced.length;
+app.panel.regions['[data-region="insights"]'].innerHTML = 'untouched';
+app.insights(payload([HOSTILE]));
+check('an unchanged poll leaves the insights alone', app.insightsHtml(), 'untouched');
 
-const HOSTILE_AGAIN = insight('client-error', 'error', 'A browser error at <script>alert(1)</script>', {
-  route: 'dashboard',
-  kind: 'uncaught',
-  source: '<img src=x onerror=alert(2)>',
-  frame: '<script>alert(3)</script>',
-  message: '<b>boom</b>',
-  occurrences: 2,
-  lastSeen: '2026-09-08T10:00:11Z'
-});
-deliver('observability-kit-insights-data', payload([HOSTILE_AGAIN]));
-check('a changed poll rebuilds them', insightsHtml() !== 'untouched', true);
-check('the row that was open stays open', insightsHtml().includes('Suggestion'), true);
-check('the new occurrence count is shown', insightsHtml().includes('2 occurrences'), true);
-check('the rebuild is not the old html', insightsHtml() === before, false);
-check('a recurrence does not announce again', logged.length, 3);
+const HOSTILE_AGAIN = JSON.parse(JSON.stringify(HOSTILE));
+HOSTILE_AGAIN.evidence.occurrences = 2;
+HOSTILE_AGAIN.evidence.lastSeen = at(11000);
+app.insights(payload([HOSTILE_AGAIN]));
+check('a changed poll rebuilds them', app.insightsHtml() !== 'untouched', true);
+check('the row that was open stays open', app.insightsHtml().includes('Suggestion'), true);
+check('the new occurrence count is shown', app.insightsHtml().includes('2 occurrences'), true);
+check('the rebuild is not the old html', app.insightsHtml() === before, false);
+check('a recurrence does not announce again', app.announced.length, announcedSoFar);
 
-// 8. Copy hands over the whole finding, not the summary line: the payload is
+// 11. Copy hands over the whole finding, not the summary line: the payload is
 // built to travel into an issue or an agent with codebase access.
 let copied = null;
-navigatorStub.clipboard = {
+app.navigator.clipboard = {
   writeText: (text) => {
     copied = text;
     return Promise.resolve();
   }
 };
-click('copy-insight', 0);
+// The button sits inside the row, which is itself a toggle, so this is also
+// the check that the innermost data-action a click resolves to is the button.
+check('the Copy button carries the copy action', app.clickIn(app.insightsHtml(), '>Copy<').action, 'copy-insight');
 check('copy puts the whole insight on the clipboard', JSON.parse(copied).type, 'client-error');
 check('copy carries the evidence with it', JSON.parse(copied).evidence.occurrences, 2);
-check('copying does not toggle the row it sits in', insightsHtml().includes('Suggestion'), true);
+check('copying does not toggle the row it sits in', app.insightsHtml().includes('Suggestion'), true);
 
-// 9. Nothing retained is not the same answer as nothing collected.
-deliver('observability-kit-insights-data', payload([], 'inactive'));
-check('inactive instrumentation names the setting', insightsHtml().includes('vaadin.observability.insights'), true);
-deliver('observability-kit-insights-data', payload([]));
-check('active instrumentation with nothing to report says so', insightsHtml().includes('No problems detected yet'), true);
+// 12. Nothing retained is not the same answer as nothing collected -- and the
+// hint has to hold for either way of getting there, since `insights` being on
+// is not enough on its own.
+app.insights(payload([], 'inactive'));
+check('inactive instrumentation names the insights setting', app.insightsHtml().includes('vaadin.observability.insights'), true);
+check('and the ones it needs alongside it', app.insightsHtml().includes('errors or requests'), true);
+app.insights(payload([]));
+check('active instrumentation with nothing to report says so', app.insightsHtml().includes('No problems detected yet'), true);
 
-// 10. Every message this suite delivered was claimed. An unclaimed one is
+// 13. Every message this suite delivered was claimed. An unclaimed one is
 // queued by Copilot for a panel that may never open, and these arrive every
 // few seconds.
-check('every server message was claimed on the event bus', unclaimed, 0);
+check('every server message was claimed on the event bus', app.unclaimed(), 0);
 
-// A click as the delegated listener sees one: the panel resolves the innermost
-// element carrying data-action, so a stub of that element is the whole event.
-function click(action, index) {
-  panel.handleClick({
-    target: {
-      closest: () => ({
-        getAttribute: (name) => (name === 'data-action' ? action : String(index)),
-        setAttribute() {},
-        set textContent(value) {}
-      })
-    }
+// 14. A panel opened before anything has arrived renders the meter section
+// unfolded, so the first click on its header has to fold it rather than agree
+// with what is already on screen.
+{
+  const waiting = harness('/orders/17');
+  waiting.open();
+  check('the meters start unfolded', waiting.metricsHtml().includes('▾'), true);
+  waiting.clickIn(waiting.metricsHtml(), '<span>Metrics</span>');
+  check('the first click folds them', waiting.metricsHtml().includes('▸'), true);
+  // And that decision is the developer's: a payload arriving afterwards does
+  // not re-fold or re-open on their behalf.
+  waiting.insights(payload([]));
+  check('a later payload leaves the fold alone', waiting.metricsHtml().includes('▸'), true);
+}
+
+// 15. A typed parameter carries its regex after the modifier, which is where
+// Flow writes it. Reading the modifier off the last character instead makes
+// this a required single segment, and no group is current.
+{
+  const deep = harness('/files/reports/2026/q3.pdf');
+  deep.open();
+  deep.meters({
+    timestamp: loaded,
+    meters: [meter('vaadin.navigation', { route: 'files/:path*([\\s\\S]*)' })]
   });
+  check('a typed varargs route matches the page it describes', deep.metricsHtml().includes('current page'), true);
+}
+{
+  const one = harness('/orders');
+  one.open();
+  one.meters({
+    timestamp: loaded,
+    meters: [meter('vaadin.navigation', { route: 'orders/:orderId?([0-9]+)' })]
+  });
+  check('a typed optional route matches the page without the parameter', one.metricsHtml().includes('current page'), true);
 }
 
 process.exit(failures === 0 ? 0 : 1);

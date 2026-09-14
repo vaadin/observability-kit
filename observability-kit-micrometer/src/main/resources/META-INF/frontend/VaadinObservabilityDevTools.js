@@ -18,7 +18,10 @@
 // element, because a finding is worth knowing about before anyone thinks to
 // open the panel: a new one is announced in Copilot's log, which is the only
 // notification surface its plugin API reaches. A panel element exists only
-// while its panel is open, and so cannot be what watches.
+// while its panel is open, and so cannot be what watches - which is also why
+// the announcement is relayed through the server rather than emitted here:
+// Copilot queues a server message no open panel claimed and replays it when
+// one opens, and the log panel is usually not open either.
 //
 // The IIFE is idempotent so repeated injection does not re-register the plugin.
 //
@@ -38,6 +41,11 @@
   var COMMAND_METRICS = 'observability-kit-metrics';
   var COMMAND_INSIGHTS = 'observability-kit-insights';
   var COMMAND_INSIGHTS_DATA = 'observability-kit-insights-data';
+  // Asks the server to write a line to the Copilot log. It has to come from
+  // the server: Copilot's log panel claims a 'log' command, and a message
+  // nothing claims is queued and replayed when a panel opens, which is what
+  // makes an announcement survive a closed log panel.
+  var COMMAND_ANNOUNCE = 'observability-kit-announce';
   var REFRESH_INTERVAL_MS = 3000;
   // While the panel is closed the meters are not worth asking for at all and
   // the insights are not worth asking for every three seconds. One in five
@@ -301,6 +309,10 @@
       evidence.route,
       evidence.component,
       evidence.event,
+      // The server groups a failure by its exception type as well, so without
+      // this two different failures of the same handler are one key here: the
+      // second would never be announced, and opening one row would open both.
+      evidence.exception,
       evidence.queryKind,
       evidence.kind,
       evidence.source,
@@ -438,9 +450,12 @@
   function emptyInsights(instrumentation) {
     var message =
       instrumentation === 'inactive'
-        ? 'Insights are not being collected. Enable ' +
-          'vaadin.observability.insights to have failed and over-budget ' +
-          'interactions, data queries and browser errors retained here.'
+        ? // Not necessarily the insights flag: no buffer is bound either when
+          // it is off, or when it is on and both errors and requests are off,
+          // and the panel cannot tell those apart from here.
+          'Insights are not being collected. They need ' +
+          'vaadin.observability.insights together with errors or requests ' +
+          '(and client, for browser errors); check that none of those is off.'
         : 'No problems detected yet. Failed and over-budget interactions, ' +
           'data queries and browser errors show up here as they happen.';
     return (
@@ -467,13 +482,41 @@
     });
   }
 
+  function isParameter(part) {
+    return part.charAt(0) === ':';
+  }
+
+  // Flow's own rule for reading a modifier off a parameter segment, from
+  // RouteFormat: a template may carry a regex, and when it does the modifier
+  // sits in front of it - ':id?(\\d+)' as much as ':id?'. Testing the last
+  // character alone would read every typed parameter as a required segment.
+  function isOptional(part) {
+    return (
+      isParameter(part) &&
+      (part.charAt(part.length - 1) === '?' || part.indexOf('?(') > 0)
+    );
+  }
+
+  function isVarargs(part) {
+    return (
+      isParameter(part) &&
+      (part.charAt(part.length - 1) === '*' || part.indexOf('*(') > 0)
+    );
+  }
+
+  function segmentsOf(route) {
+    return route.split('/').filter(function (part) {
+      return part !== '';
+    });
+  }
+
   /**
    * Whether a Flow route template describes the path the browser is on.
    *
    * The tag is a template ('orders/:orderId'), the browser has a location
    * ('/orders/17'), and matching them is what lets the panel put the route
    * being worked on first. A parameter segment matches one segment, an
-   * optional one ('?') at most one, and a wildcard ('*') the rest.
+   * optional one at most one, and a varargs one the rest.
    *
    * An application served under a context path has that path in front of every
    * location and in none of the templates, so nothing matches and the groups
@@ -483,18 +526,15 @@
     if (route === null || route === ROUTE_UNKNOWN || route === ROUTE_OTHER) {
       return false;
     }
-    var parts = route.split('/').filter(function (part) {
-      return part !== '';
-    });
+    var parts = segmentsOf(route);
     var at = 0;
     for (var i = 0; i < parts.length; i++) {
       var part = parts[i];
-      if (part.charAt(0) === ':') {
-        var last = part.charAt(part.length - 1);
-        if (last === '*') {
+      if (isParameter(part)) {
+        if (isVarargs(part)) {
           return true;
         }
-        if (last === '?') {
+        if (isOptional(part)) {
           if (at < segments.length) {
             at++;
           }
@@ -528,9 +568,7 @@
       if (!routeMatchesPath(route, segments)) {
         return;
       }
-      var params = route.split('/').filter(function (part) {
-        return part.charAt(0) === ':';
-      }).length;
+      var params = segmentsOf(route).filter(isParameter).length;
       if (best === null || params < bestParams) {
         best = route;
         bestParams = params;
@@ -596,7 +634,11 @@
           ? 'Route not resolved'
           : group.route === ROUTE_OTHER
             ? 'Other routes'
-            : group.route;
+            : // The root view's template is the empty string, and the rows no
+              // longer carry the route tag to say so.
+              group.route === ''
+              ? 'Root'
+              : group.route;
     return (
       '<div style="display:flex;align-items:baseline;gap:6px;margin-top:10px;' +
       'padding-bottom:2px;font-weight:600;border-bottom:1px solid rgba(128,128,128,.3)">' +
@@ -656,52 +698,73 @@
   // the rows are identified by, so one problem notifies once however many times
   // it recurs or however often the payload is polled.
   var announced = {};
-  // Nothing is announced from the first payload. Every finding in it predates
-  // this page - the buffers outlive a reload, and the point of a notification
-  // is that something has just started happening.
-  var announcing = false;
+  // When this page started, on the browser's clock. A finding older than this
+  // is not news: the server's buffers outlive a reload, so the first payload
+  // after one describes what was already there. Younger ones are announced,
+  // including the ones raised while the page was loading - a slow query on the
+  // landing view is exactly the kind of finding worth hearing about.
+  var pageStart = Date.now();
 
-  function eventbus() {
-    var cp = window.Vaadin && window.Vaadin.copilot;
-    return (cp && cp.eventbus) || null;
+  /**
+   * Whether a finding is new enough to be worth announcing, measured against
+   * the moment this page started.
+   *
+   * Both timestamps come from different clocks - `firstSeen` from the server,
+   * `pageStart` from this browser - so the payload's own `generated` is used to
+   * translate between them. Without it a browser a minute behind its server
+   * would announce the whole buffer, and one a minute ahead would announce
+   * nothing for a minute.
+   */
+  function raisedAfterPageStart(insight, payload) {
+    var firstSeen = Date.parse(
+      ((insight && insight.evidence) || {}).firstSeen || ''
+    );
+    if (isNaN(firstSeen)) {
+      // Nothing to place it by. Treat it as pre-existing rather than announce
+      // a finding that may be hours old.
+      return false;
+    }
+    var generated = Date.parse((payload && payload.generated) || '');
+    var skew = isNaN(generated) ? 0 : generated - Date.now();
+    return firstSeen >= pageStart + skew;
   }
 
   /**
-   * Announces findings the payload did not have before.
+   * Announces findings the payload did not have before, and that this page is
+   * old enough to be responsible for.
    *
-   * Copilot's plugin API (send + addPanel) exposes no notification of its own,
-   * so this goes through the event bus its own panels use: a 'log' event is an
-   * entry in the Copilot log, and an error there raises the unread marker on
-   * its toolbar icon. Best-effort by design - a Copilot without an event bus
-   * costs the developer a notification, never the panel.
+   * Copilot's plugin API (send + addPanel) exposes no notification of its own.
+   * Its log panel does claim a server message with the command 'log', so the
+   * announcement is relayed through our own handler, which sends one - the
+   * whole point being that this works with the log panel closed, when there is
+   * no element subscribed to the event bus, because Copilot queues an unclaimed
+   * message and replays it once the panel opens. Best-effort by design: a
+   * Copilot that drops it costs the developer a notification, never the panel.
    */
-  function announce(insights) {
+  function announce(payload) {
     var fresh = [];
-    (insights || []).forEach(function (insight) {
+    ((payload && payload.insights) || []).forEach(function (insight) {
       var key = insightKey(insight);
       if (announced[key]) {
         return;
       }
       announced[key] = true;
-      fresh.push(insight);
+      if (raisedAfterPageStart(insight, payload)) {
+        fresh.push(insight);
+      }
     });
-    if (!announcing) {
-      announcing = true;
-      return;
-    }
-    var bus = eventbus();
-    if (!bus || !bus.emit) {
+    if (!copilot) {
       return;
     }
     rank(fresh).forEach(function (insight) {
       try {
-        bus.emit('log', {
+        copilot.send(COMMAND_ANNOUNCE, {
           type: insight.severity === 'error' ? 'error' : 'warning',
           message: 'Observability: ' + insight.summary
         });
       } catch (e) {
-        // A Copilot that does not take this event is not a reason to stop
-        // watching, and there is nowhere better to report it to.
+        // A Copilot that does not take this is not a reason to stop watching,
+        // and there is nowhere better to report it to.
       }
     });
   }
@@ -710,11 +773,25 @@
   // land here so the state is updated once however it arrived.
   function accept(command, data) {
     if (command === COMMAND_METRICS) {
+      // Copilot queues a message nothing claimed and replays it to a panel
+      // when one opens, so the snapshot pushed at connect time - before this
+      // script had registered anything - arrives late and stale. Taking it
+      // would undo a fresher poll until the next one.
+      if (latest && data && data.timestamp < latest.timestamp) {
+        return true;
+      }
       latest = data;
       recordHistory(latest.meters);
     } else if (command === COMMAND_INSIGHTS_DATA) {
+      if (
+        latestInsights &&
+        data &&
+        Date.parse(data.generated) < Date.parse(latestInsights.generated)
+      ) {
+        return true;
+      }
       latestInsights = data;
-      announce(latestInsights.insights);
+      announce(latestInsights);
     } else {
       return false;
     }
@@ -787,7 +864,11 @@
       }
       var action = target.getAttribute('data-action');
       if (action === 'toggle-metrics') {
-        metricsOpen = !metricsOpen;
+        // Against what is on screen, not against the variable: it starts null,
+        // which renders as open, so negating it would leave the section open
+        // and swallow the first click - while still counting as a decision and
+        // disabling the fold the first payload is supposed to make.
+        metricsOpen = metricsOpen === false;
         this.renderMeters();
         return;
       }
@@ -960,7 +1041,8 @@
    * panel that may never open, and this one arrives every few seconds.
    */
   function listen() {
-    var bus = eventbus();
+    var cp = window.Vaadin && window.Vaadin.copilot;
+    var bus = cp && cp.eventbus;
     if (!bus || !bus.on) {
       return;
     }

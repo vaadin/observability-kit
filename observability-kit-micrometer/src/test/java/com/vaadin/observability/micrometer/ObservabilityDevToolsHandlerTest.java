@@ -19,8 +19,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.JsonNode;
 
 import com.vaadin.base.devserver.DevToolsInterface;
+import com.vaadin.flow.internal.JacksonUtils;
 import com.vaadin.observability.micrometer.devtools.ObservabilityDevToolsHandler;
 import com.vaadin.observability.micrometer.insights.CapturedClientError;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
@@ -39,6 +41,7 @@ class ObservabilityDevToolsHandlerTest {
     private static final String COMMAND_METRICS = "observability-kit-metrics";
     private static final String COMMAND_INSIGHTS = "observability-kit-insights";
     private static final String COMMAND_INSIGHTS_DATA = "observability-kit-insights-data";
+    private static final String COMMAND_ANNOUNCE = "observability-kit-announce";
 
     /**
      * Captures every message sent, so a test can read what reached the browser
@@ -158,6 +161,66 @@ class ObservabilityDevToolsHandlerTest {
         Assertions.assertEquals(List.of(), insights());
         Assertions.assertNotNull(
                 devTools.payloads.get(COMMAND_METRICS).get("meters"));
+    }
+
+    /**
+     * The panel asking for a log line, as it sends it.
+     *
+     * @param type
+     *            the severity it asks for
+     * @param message
+     *            the summary it wants written
+     * @return the message data
+     */
+    private static JsonNode announcement(String type, String message) {
+        return JacksonUtils.readTree("{\"type\":\"" + type + "\",\"message\":\""
+                + message + "\"}");
+    }
+
+    @Test
+    void announce_relaysTheLineAsACopilotLogCommand() {
+        Assertions.assertTrue(handler.handleMessage(COMMAND_ANNOUNCE,
+                announcement("error", "Observability: failing save"),
+                devTools));
+
+        // Copilot's own command, which its log panel claims - and which, when
+        // no panel is open to claim it, is queued and replayed rather than
+        // dropped. That is the whole reason this goes through the server.
+        Assertions.assertEquals(List.of("log"), devTools.commands);
+        Assertions.assertEquals("error", devTools.payloads.get("log").get("type"));
+        Assertions.assertEquals("Observability: failing save",
+                devTools.payloads.get("log").get("message"));
+    }
+
+    @Test
+    void announce_withAnUnknownType_saysInformation() {
+        handler.handleMessage(COMMAND_ANNOUNCE,
+                announcement("catastrophe", "something happened"), devTools);
+
+        // The text comes from a browser, and nothing on this connection proves
+        // it came from our panel.
+        Assertions.assertEquals("information",
+                devTools.payloads.get("log").get("type"));
+    }
+
+    @Test
+    void announce_withoutAMessage_sendsNothing() {
+        handler.handleMessage(COMMAND_ANNOUNCE, announcement("error", "   "),
+                devTools);
+        handler.handleMessage(COMMAND_ANNOUNCE, null, devTools);
+
+        Assertions.assertEquals(List.of(), devTools.commands);
+    }
+
+    @Test
+    void announce_cutsALongMessageDown() {
+        handler.handleMessage(COMMAND_ANNOUNCE,
+                announcement("warning", "x".repeat(500)), devTools);
+
+        String message = (String) devTools.payloads.get("log").get("message");
+        // A notification, not a report: 300 characters and an ellipsis.
+        Assertions.assertEquals(301, message.length());
+        Assertions.assertTrue(message.endsWith("…"), message);
     }
 
     @Test
