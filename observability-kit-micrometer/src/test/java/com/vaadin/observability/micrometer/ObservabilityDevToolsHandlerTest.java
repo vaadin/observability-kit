@@ -173,8 +173,8 @@ class ObservabilityDevToolsHandlerTest {
      * @return the message data
      */
     private static JsonNode announcement(String type, String message) {
-        return JacksonUtils.readTree("{\"type\":\"" + type + "\",\"message\":\""
-                + message + "\"}");
+        return JacksonUtils.readTree(
+                "{\"type\":\"" + type + "\",\"message\":\"" + message + "\"}");
     }
 
     @Test
@@ -187,7 +187,8 @@ class ObservabilityDevToolsHandlerTest {
         // no panel is open to claim it, is queued and replayed rather than
         // dropped. That is the whole reason this goes through the server.
         Assertions.assertEquals(List.of("log"), devTools.commands);
-        Assertions.assertEquals("error", devTools.payloads.get("log").get("type"));
+        Assertions.assertEquals("error",
+                devTools.payloads.get("log").get("type"));
         Assertions.assertEquals("Observability: failing save",
                 devTools.payloads.get("log").get("message"));
     }

@@ -143,11 +143,11 @@ class ClientResourceIntegrityTest {
     }
 
     /**
-     * The collector only. Counting brackets assumes none of them sits
-     * unmatched inside a string literal, which holds for the collector and
-     * does not for the panel — its route-template parsing looks for the
-     * literal {@code "?("}, and the count is off by one per such string. That
-     * is the limit of this check rather than a fault in the script, and
+     * The collector only. Counting brackets assumes none of them sits unmatched
+     * inside a string literal, which holds for the collector and does not for
+     * the panel — its route-template parsing looks for the literal
+     * {@code "?("}, and the count is off by one per such string. That is the
+     * limit of this check rather than a fault in the script, and
      * {@link #theStrippedScriptStillParses} is what covers the panel properly.
      */
     @Test
