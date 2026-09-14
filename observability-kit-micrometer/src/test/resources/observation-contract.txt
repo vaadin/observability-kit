@@ -28,6 +28,11 @@ vaadin.data.fetch.duration
   low:  filtered, outcome
   high: vaadin.data.component, vaadin.data.limit, vaadin.data.offset, vaadin.data.rows
 
+vaadin.executor.task
+  span-names: vaadin.executor.task
+  low:  (none)
+  high: (none)
+
 vaadin.navigation
   span-names: vaadin.navigation ContractView
   low:  outcome, route
@@ -42,8 +47,3 @@ vaadin.rpc.duration
   span-names: vaadin.rpc.event
   low:  outcome, type
   high: vaadin.rpc.component, vaadin.rpc.event
-
-vaadin.ui.access
-  span-names: vaadin.ui.access
-  low:  (none)
-  high: (none)
