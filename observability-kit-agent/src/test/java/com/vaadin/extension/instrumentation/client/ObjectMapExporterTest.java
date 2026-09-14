@@ -2,6 +2,7 @@ package com.vaadin.extension.instrumentation.client;
 
 import java.util.Map;
 
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -233,6 +234,86 @@ public class ObjectMapExporterTest extends AbstractInstrumentationTest {
             SpanData parentSpan = getExportedSpan(0);
             SpanData childSpan = getExportedSpan(1);
             assertEquals(parentSpan.getSpanId(), childSpan.getParentSpanId());
+        } catch (Exception e) {
+            fail(e);
+        }
+    }
+
+    @Test
+    public void handleRequest_stringEncodedInt64_createsSpan() {
+        try {
+            // The OpenTelemetry JS SDK encodes 64-bit integers as decimal
+            // strings, which the protobuf JSON mapping allows alongside
+            // plain JSON numbers.
+            String jsonString = """
+                    {
+                        "resourceSpans": [
+                            {
+                                "resource": {
+                                    "attributes": [
+                                        {
+                                            "key": "telemetry.sdk.version",
+                                            "value": {"stringValue": "2.11.0"}
+                                        }
+                                     ],
+                                    "droppedAttributesCount": 0
+                                },
+                                "scopeSpans": [
+                                    {
+                                        "scope":
+                                            {
+                                                "name": "@opentelemetry/instrumentation-document-load",
+                                                "version": "0.67.0"
+                                             },
+                                        "spans": [
+                                            {
+                                                "traceId": "b7e726b6155ac52912322123d2f31a2c",
+                                                "spanId": "67279b5c43e6874c",
+                                                "name": "documentLoad",
+                                                "kind": 1,
+                                                "startTimeUnixNano": "1674542404352000000",
+                                                "endTimeUnixNano": "1674542405301000200",
+                                                "attributes": [
+                                                    {
+                                                        "key": "intAttribute",
+                                                        "value": { "intValue": "123" }
+                                                    }
+                                                 ],
+                                                "droppedAttributesCount": 0,
+                                                "events": [
+                                                    {
+                                                        "name": "fetchStart",
+                                                        "timeUnixNano": "1674542404352000000",
+                                                        "attributes": [],
+                                                        "droppedAttributesCount": 0
+                                                    }
+                                                ],
+                                                "droppedEventsCount": 0,
+                                                "status": { "code": 0 },
+                                                "links": [],
+                                                "droppedLinksCount": 0
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }""";
+
+            Map<String, Object> objectMap =
+                    new ObjectMapper().readerForMapOf(Object.class)
+                            .readValue(jsonString);
+
+            new ObjectMapExporter().accept("foo", objectMap);
+
+            SpanData span = getExportedSpan(0);
+            assertEquals("Frontend: documentLoad", span.getName());
+            assertEquals(1674542404352000000L, span.getStartEpochNanos());
+            assertEquals(1674542405301000200L, span.getEndEpochNanos());
+            assertEquals(123L, span.getAttributes()
+                    .get(AttributeKey.longKey("intAttribute")));
+            assertEquals(1674542404352000000L,
+                    span.getEvents().get(0).getEpochNanos());
         } catch (Exception e) {
             fail(e);
         }

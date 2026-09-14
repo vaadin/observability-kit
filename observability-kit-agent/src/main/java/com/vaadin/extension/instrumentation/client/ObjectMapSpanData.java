@@ -90,8 +90,8 @@ public class ObjectMapSpanData implements SpanData {
 
         this.name = "Frontend: " + span.get("name");
         this.kind = SpanKind.CLIENT;
-        this.startEpochNanos = (long) span.get("startTimeUnixNano");
-        this.endEpochNanos = (long) span.get("endTimeUnixNano");
+        this.startEpochNanos = toLong(span.get("startTimeUnixNano"));
+        this.endEpochNanos = toLong(span.get("endTimeUnixNano"));
 
         AttributesBuilder attributesBuilder = getAttributes(span);
         this.attributes = attributesBuilder
@@ -102,7 +102,7 @@ public class ObjectMapSpanData implements SpanData {
         for (Map<String, Object> event :
                 (Collection<Map<String, Object>>) span.get("events")) {
             EventData eventData = EventData.create(
-                    (long) event.get("timeUnixNano"),
+                    toLong(event.get("timeUnixNano")),
                     (String) event.get("name"),
                     getAttributes(event).build());
             events.add(eventData);
@@ -111,8 +111,26 @@ public class ObjectMapSpanData implements SpanData {
         this.links = Collections.emptyList();
 
         Map<String, Object> status = (Map<String, Object>) span.get("status");
-        this.status = ((int) status.get("code") == 0) ? StatusData.ok() :
+        this.status = (toLong(status.get("code")) == 0) ? StatusData.ok() :
                 StatusData.error();
+    }
+
+    /**
+     * Reads a 64-bit integer field of an OTLP/JSON message. The protobuf JSON
+     * mapping allows such a field to be encoded either as a JSON number or,
+     * to avoid losing precision, as a decimal string, so both are accepted.
+     *
+     * @param value the raw value read from the object map
+     * @return the value as a long, or zero if the field was absent
+     */
+    private static long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String string) {
+            return Long.parseLong(string);
+        }
+        return 0L;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -144,9 +162,8 @@ public class ObjectMapSpanData implements SpanData {
             return new AbstractMap.SimpleImmutableEntry<>(
                     AttributeKey.stringKey(key), stringValue);
         } else if (value.containsKey("intValue")) {
-            Number numberValue = (Number) value.get("intValue");
             return new AbstractMap.SimpleImmutableEntry<>(
-                    AttributeKey.longKey(key), numberValue.longValue());
+                    AttributeKey.longKey(key), toLong(value.get("intValue")));
         } else if (value.containsKey("boolValue")) {
             Boolean boolValue = (Boolean) value.get("boolValue");
             return new AbstractMap.SimpleImmutableEntry<>(

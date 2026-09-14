@@ -7,7 +7,15 @@ import {
     InstrumentationBase,
     InstrumentationConfig,
 } from '@opentelemetry/instrumentation';
-import { SemanticAttributes } from '@opentelemetry/semantic-conventions';
+import {
+    ATTR_EXCEPTION_MESSAGE,
+    ATTR_EXCEPTION_TYPE,
+    ATTR_URL_FULL
+} from '@opentelemetry/semantic-conventions';
+import {
+    ATTR_CODE_FILEPATH,
+    ATTR_CODE_LINENO
+} from '@opentelemetry/semantic-conventions/incubating';
 import { getElementXPath } from '@opentelemetry/sdk-trace-web';
 
 export class FrontendErrorInstrumentation extends InstrumentationBase {
@@ -30,11 +38,11 @@ export class FrontendErrorInstrumentation extends InstrumentationBase {
             startTime: event.timeStamp
         });
         span.setAttribute("component", this.component)
-        span.setAttribute(SemanticAttributes.EXCEPTION_TYPE, event.type);
-        span.setAttribute(SemanticAttributes.EXCEPTION_MESSAGE, event.message);
-        span.setAttribute(SemanticAttributes.HTTP_URL, location.href);
-        span.setAttribute(SemanticAttributes.CODE_FILEPATH, event.filename);
-        span.setAttribute(SemanticAttributes.CODE_LINENO, event.lineno);
+        span.setAttribute(ATTR_EXCEPTION_TYPE, event.type);
+        span.setAttribute(ATTR_EXCEPTION_MESSAGE, event.message);
+        span.setAttribute(ATTR_URL_FULL, location.href);
+        span.setAttribute(ATTR_CODE_FILEPATH, event.filename);
+        span.setAttribute(ATTR_CODE_LINENO, event.lineno);
         this._addTargetAttributes(event, span);
         span.recordException(event.error);
         span.setStatus({ code: SpanStatusCode.ERROR });
@@ -48,8 +56,8 @@ export class FrontendErrorInstrumentation extends InstrumentationBase {
         });
 
         span.setAttribute("component", this.component)
-        span.setAttribute(SemanticAttributes.EXCEPTION_TYPE, event.type);
-        span.setAttribute(SemanticAttributes.HTTP_URL, location.href);
+        span.setAttribute(ATTR_EXCEPTION_TYPE, event.type);
+        span.setAttribute(ATTR_URL_FULL, location.href);
         this._addTargetAttributes(event, span);
         span.recordException(event.reason);
         span.setStatus({ code: SpanStatusCode.ERROR });

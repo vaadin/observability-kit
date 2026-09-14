@@ -3,9 +3,9 @@ import { DocumentLoadInstrumentation } from '@opentelemetry/instrumentation-docu
 import { LongTaskInstrumentation } from '@opentelemetry/instrumentation-long-task';
 import { type EventName, UserInteractionInstrumentation } from '@opentelemetry/instrumentation-user-interaction';
 import { XMLHttpRequestInstrumentation } from '@opentelemetry/instrumentation-xml-http-request';
-import { Resource } from '@opentelemetry/resources';
+import { defaultResource, resourceFromAttributes } from '@opentelemetry/resources';
 import { BatchSpanProcessor, StackContextManager, WebTracerProvider } from '@opentelemetry/sdk-trace-web';
-import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { FrontendErrorInstrumentation } from './FrontendErrorInstrumentation.js';
 import { HillaEndpointExporter } from './HillaEndpointExporter.js';
 
@@ -43,33 +43,32 @@ export function init(
     traceXmlHTTPRequest = true,
   }: TelemetryInitializationOptions = {},
 ): Dispose {
-  const resource = Resource.default().merge(
-    new Resource({
-      [SemanticResourceAttributes.SERVICE_NAME]: serviceName,
-      [SemanticResourceAttributes.SERVICE_VERSION]: serviceVersion,
+  const resource = defaultResource().merge(
+    resourceFromAttributes({
+      [ATTR_SERVICE_NAME]: serviceName,
+      [ATTR_SERVICE_VERSION]: serviceVersion,
     }),
   );
-
-  const provider = new WebTracerProvider({
-    resource,
-  });
 
   const exporter = new HillaEndpointExporter({
     method,
   });
 
-  provider.addSpanProcessor(
-    new BatchSpanProcessor(exporter, {
-      // How long the export can run before it is cancelled
-      exportTimeoutMillis: 30000,
-      // The maximum batch size of every export. It must be smaller or equal to maxQueueSize.
-      maxExportBatchSize: 10,
-      // The maximum queue size. After the size is reached spans are dropped.
-      maxQueueSize: 100,
-      // The interval between two consecutive exports
-      scheduledDelayMillis: 500,
-    }),
-  );
+  const provider = new WebTracerProvider({
+    resource,
+    spanProcessors: [
+      new BatchSpanProcessor(exporter, {
+        // How long the export can run before it is cancelled
+        exportTimeoutMillis: 30000,
+        // The maximum batch size of every export. It must be smaller or equal to maxQueueSize.
+        maxExportBatchSize: 10,
+        // The maximum queue size. After the size is reached spans are dropped.
+        maxQueueSize: 100,
+        // The interval between two consecutive exports
+        scheduledDelayMillis: 500,
+      }),
+    ],
+  });
 
   provider.register({
     // Changing default contextManager to use StackContextManager
