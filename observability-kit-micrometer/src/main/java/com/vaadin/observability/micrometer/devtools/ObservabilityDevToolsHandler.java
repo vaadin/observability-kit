@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.Counter;
@@ -56,31 +55,6 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
     static final String COMMAND_INSIGHTS = "observability-kit-insights";
     static final String COMMAND_INSIGHTS_DATA = "observability-kit-insights-data";
 
-    /**
-     * The panel asking for a line in the Copilot log, for a finding it has just
-     * seen appear.
-     */
-    static final String COMMAND_ANNOUNCE = "observability-kit-announce";
-
-    /**
-     * Copilot's own command for a log entry. It has to come from here rather
-     * than from the panel script: the log panel subscribes while it is open,
-     * and an announcement is worth most when nobody is looking — but a server
-     * message nothing claims is queued and replayed once a panel opens, so this
-     * one waits rather than disappearing.
-     */
-    private static final String COMMAND_LOG = "log";
-
-    /** What the panel may ask a log line to be typed as. */
-    private static final Set<String> LOG_TYPES = Set.of("information",
-            "warning", "error");
-
-    /**
-     * A log line is a notification, not a report: long enough for a summary and
-     * no longer.
-     */
-    private static final int MAX_LOG_MESSAGE = 300;
-
     /** Only meters under this prefix are exposed to the panel. */
     private static final String METER_PREFIX = "vaadin.";
 
@@ -102,44 +76,7 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
             sendInsights(devToolsInterface);
             return true;
         }
-        if (COMMAND_ANNOUNCE.equals(command)) {
-            announce(data, devToolsInterface);
-            return true;
-        }
         return false;
-    }
-
-    /**
-     * Relays an announcement from the panel into the Copilot log.
-     * <p>
-     * The text originates in the browser, so it is treated as input rather than
-     * as something this class wrote: an unknown type becomes
-     * {@code information} and the message is cut to {@link #MAX_LOG_MESSAGE}.
-     * The summaries the panel sends are the server's own, but nothing on this
-     * connection proves that, and a dev-tools channel is not a reason to relay
-     * whatever arrives.
-     *
-     * @param data
-     *            the message the panel sent, may be {@code null}
-     * @param devToolsInterface
-     *            the connection to answer on
-     */
-    private void announce(JsonNode data, DevToolsInterface devToolsInterface) {
-        if (data == null) {
-            return;
-        }
-        String message = data.path("message").asString("");
-        if (message.isBlank()) {
-            return;
-        }
-        if (message.length() > MAX_LOG_MESSAGE) {
-            message = message.substring(0, MAX_LOG_MESSAGE) + "…";
-        }
-        String type = data.path("type").asString("");
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("type", LOG_TYPES.contains(type) ? type : "information");
-        payload.put("message", message);
-        devToolsInterface.send(COMMAND_LOG, payload);
     }
 
     private void sendSnapshot(DevToolsInterface devToolsInterface) {

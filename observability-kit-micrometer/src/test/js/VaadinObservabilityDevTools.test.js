@@ -105,13 +105,16 @@ function harness(pathname) {
       on: (name, cb) => {
         (busListeners[name] = busListeners[name] || []).push(cb);
       },
-      emit: () => {}
+      // Copilot's log panel takes its entries from here, so this is where an
+      // announcement lands.
+      emit: (name, data) => {
+        if (name === 'log') {
+          announced.push(data);
+        }
+      }
     },
     send: (command, data) => {
       sent.push({ command, data });
-      if (command === 'observability-kit-announce') {
-        announced.push(data);
-      }
     },
     addPanel: () => {}
   };
@@ -312,7 +315,10 @@ check('the same finding does not announce twice', app.announced.length, 2);
 app.insights(payload([SLOW, LOAD_TIME, FAILING_SAVE, FAILING_SAVE_OTHER]));
 check('a second exception on the same handler is its own finding', app.announced.length, 3);
 check('and it is the new one', app.announced[2].message, 'Observability: failing save, other cause');
-check('an announcement asks the server to write it, since only a server message survives a closed log panel', app.commands().includes('observability-kit-announce'), true);
+// Written on the event bus, not asked of the server: Copilot offers a server
+// message to the event bus and then to every open panel, and the log panel
+// takes 'log' from both - so a relayed announcement is logged twice.
+check('an announcement is written straight to the log', app.commands().includes('observability-kit-announce'), false);
 
 // 3. The meters folded themselves away when the first payload turned out to
 // have findings in it, which is the panel opening on what is wrong.
