@@ -248,6 +248,20 @@ class ObservationContractTest {
                 null);
         driveRequest(request(r -> Mockito.when(r.getPathInfo())
                 .thenReturn("/VAADIN/build/app.js")), null);
+        // A download served by Flow's stream request handler.
+        driveRequest(request(r -> Mockito.when(r.getPathInfo()).thenReturn(
+                "/VAADIN/dynamic/resource/1/5298ee8b-9686-4a5a-ae1d-b38c62767d6a/report.pdf")),
+                null);
+        // The page load: the HTML document request, then the init request the
+        // client engine follows it with.
+        driveRequest(request(r -> {
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getPathInfo()).thenReturn("/orders");
+            Mockito.when(r.getHeader("Sec-Fetch-Dest")).thenReturn("document");
+        }), null);
+        driveRequest(request(
+                r -> Mockito.when(r.getParameter("v-r")).thenReturn("init")),
+                null);
         driveRequest(request(r -> {
         }), null);
     }

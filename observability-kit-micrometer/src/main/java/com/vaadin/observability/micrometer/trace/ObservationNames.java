@@ -99,6 +99,24 @@ public final class ObservationNames {
     public static final String REQUEST_TYPE_HEARTBEAT = "heartbeat";
     public static final String REQUEST_TYPE_PUSH = "push";
     public static final String REQUEST_TYPE_STATIC = "static";
+
+    /**
+     * A download or an upload, served by Flow's stream request handler. Kept
+     * apart from {@link #REQUEST_TYPE_STATIC} and {@link #REQUEST_TYPE_OTHER}
+     * because a transfer is the one request whose duration is expected to be
+     * long: averaged in with page loads it both hides its own outliers and
+     * inflates theirs.
+     */
+    public static final String REQUEST_TYPE_STREAM = "stream";
+
+    /**
+     * The initial page load: the HTML document request, and the {@code init}
+     * request the client engine follows it with to have the UI created. The
+     * server-side counterpart of the {@code vaadin.client.bootstrap.duration}
+     * meter, which measures the same page load from the browser's end.
+     */
+    public static final String REQUEST_TYPE_BOOTSTRAP = "bootstrap";
+
     public static final String REQUEST_TYPE_OTHER = "other";
 
     /** Observation/span name for a server-side RPC invocation. */

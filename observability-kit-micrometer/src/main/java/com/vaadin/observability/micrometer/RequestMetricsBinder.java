@@ -8,6 +8,9 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.Locale;
+import java.util.Set;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
@@ -79,6 +82,23 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
      * and REST controllers.
      */
     static final int HTTP_URI_ROUTE_LIMIT = 50;
+
+    /**
+     * The path prefix Flow's stream request handler serves downloads and
+     * uploads under, mirroring {@code StreamRequestHandler.DYN_RES_PREFIX}.
+     */
+    private static final String STREAM_PATH = "VAADIN/dynamic/resource/";
+
+    /**
+     * {@code Sec-Fetch-Dest} values a browser sends for a request whose
+     * response it will render as a document — a page load, in other words.
+     * Everything else a browser fetches (scripts, styles, images, XHR and
+     * {@code fetch}, the service worker) reports a destination outside this
+     * set, so an application's own endpoints under the Vaadin servlet stay in
+     * the {@code other} bucket instead of being counted as page loads.
+     */
+    private static final Set<String> PAGE_FETCH_DESTINATIONS = Set
+            .of("document", "iframe", "frame", "embed", "object");
 
     private final HttpObservationHooks hooks;
     private final RouteTagResolver routes;
@@ -405,6 +425,14 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         }
     }
 
+    /**
+     * Classifies a request into the {@code vaadin.request.type} vocabulary:
+     * {@code push}, {@code heartbeat}, {@code stream} (a download or an
+     * upload), {@code uidl}, {@code bootstrap} (a page load), {@code static}
+     * and {@code other} for everything left. The order matters — a stream
+     * request lives under {@code /VAADIN/}, and a page load is only what none
+     * of the protocol-level types claimed.
+     */
     private static String requestType(VaadinRequest request) {
         if (request == null) {
             return ObservationNames.REQUEST_TYPE_OTHER;
@@ -417,6 +445,14 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             if (path.contains("/HEARTBEAT/")) {
                 return ObservationNames.REQUEST_TYPE_HEARTBEAT;
             }
+            // Downloads and uploads: everything Flow's StreamRequestHandler
+            // serves lives under this prefix (StreamRequestHandler
+            // .DYN_RES_PREFIX), the new streams API included. Matched before
+            // the static prefixes below, which /VAADIN/dynamic/ would
+            // otherwise swallow.
+            if (path.contains(STREAM_PATH)) {
+                return ObservationNames.REQUEST_TYPE_STREAM;
+            }
         }
         String vr = request.getParameter("v-r");
         if ("uidl".equals(vr)) {
@@ -424,6 +460,12 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         }
         if ("heartbeat".equals(vr)) {
             return ObservationNames.REQUEST_TYPE_HEARTBEAT;
+        }
+        if ("init".equals(vr)) {
+            // The client engine asking the server to create the UI: the
+            // second half of a page load, and the part that runs the
+            // application's own code.
+            return ObservationNames.REQUEST_TYPE_BOOTSTRAP;
         }
         // /themes/ and /sw.js are what 4.1's agent treated as static assets
         // besides the Vaadin resource folder; without them theme resources and
@@ -433,6 +475,33 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                 || path.startsWith("/sw.js"))) {
             return ObservationNames.REQUEST_TYPE_STATIC;
         }
+        if (vr == null && isPageRequest(request)) {
+            return ObservationNames.REQUEST_TYPE_BOOTSTRAP;
+        }
         return ObservationNames.REQUEST_TYPE_OTHER;
+    }
+
+    /**
+     * Whether this looks like a request for the HTML page — the first half of a
+     * page load, which Flow answers with {@code index.html}. Deliberately
+     * conservative: a request that cannot be told apart from an application's
+     * own endpoint stays {@code other}, because over-reporting bootstrap would
+     * make the type useless for the thing it exists to answer ("how long does
+     * opening the application take"), while under-reporting only leaves the odd
+     * non-browser page load out of an average.
+     */
+    private static boolean isPageRequest(VaadinRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) {
+            return false;
+        }
+        String dest = request.getHeader("Sec-Fetch-Dest");
+        if (dest != null) {
+            return PAGE_FETCH_DESTINATIONS
+                    .contains(dest.toLowerCase(Locale.ROOT));
+        }
+        // Browsers too old to send Sec-Fetch-Dest: a document request asks for
+        // HTML explicitly, an XHR asks for */* or a specific media type.
+        String accept = request.getHeader("Accept");
+        return accept != null && accept.contains("text/html");
     }
 }

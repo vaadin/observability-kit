@@ -327,7 +327,7 @@ ObservabilitySettings.builder()
 | `vaadin.session.state.nodes.max` | Gauge | State-tree nodes held by the largest single session (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.session.uis.max` | Gauge | Most UIs (browser tabs) held open by one session (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). See [Navigation outcomes](#navigation-outcomes) for what a navigation that never completes is recorded as. |
-| `vaadin.request.duration` | Timer | Server-side request handling time. |
+| `vaadin.request.duration` | Timer | Server-side request handling time, tagged by `vaadin.request.type`. See [Request types](#request-types). |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
 | `vaadin.data.count.duration` | Timer | Duration of a data provider count query, i.e. how many items a level holds (tagged by `outcome`, `filtered`). One count per expanded parent, so many counts within few requests is the signature of an expensive hierarchy. Disable with `vaadin.observability.data=false`. |
 | `vaadin.data.fetch.duration` | Timer | Duration of a data provider fetch query, i.e. loading one page of items. Measured around consumption of the items, so it covers the backend round-trip of a lazily evaluated stream (tagged by `outcome`, `filtered`). |
@@ -348,6 +348,31 @@ ObservabilitySettings.builder()
 | `vaadin.client.throttled` | Counter | Client samples rejected by the per-session rate limit. |
 | `vaadin.db.fetch.rows` | DistributionSummary | Rows read from a JDBC result set, tagged by `route` (opt-in, see `vaadin.observability.database`). |
 | `vaadin.db.query` | Timer | Duration of a JDBC query, tagged by `route`. Produced alongside the query span when database monitoring and tracing are both on. |
+
+### Request types
+
+Every request Vaadin handles is classified before it is timed, and the class
+becomes the `vaadin.request.type` tag on `vaadin.request.duration` — and, when
+tracing is on, the `vaadin.request.<type>` span name and the request type
+lifted into the framework's own HTTP observation. The types differ so much in
+what they do that one average across all of them means nothing:
+
+| `vaadin.request.type` | What it covers |
+| --- | --- |
+| `uidl` | A UI interaction: the request the client sends for a click, a poll, a navigation. The one type that is broken down further, by the `vaadin.interaction` tag. |
+| `bootstrap` | A page load: the HTML document request, and the `init` request the client engine follows it with to have the UI created. The server's side of `vaadin.client.bootstrap.duration`. |
+| `stream` | A download or an upload, served by Flow's stream request handler. Expected to be long-running, which is exactly why it is kept out of the other buckets. |
+| `push` | A push channel request (any transport). |
+| `heartbeat` | The keep-alive the browser sends for an open UI. |
+| `static` | A static resource: `/VAADIN/`, `/static/`, `/themes/`, `/sw.js`. |
+| `other` | Everything left — an application's own endpoints under the Vaadin servlet, among them. |
+
+A page load is recognised from the browser's `Sec-Fetch-Dest` header (falling
+back to an explicit `text/html` in `Accept` for browsers old enough not to send
+it), so a `fetch()` to an application endpoint that happens to sit under the
+Vaadin servlet is not counted as one. The classification is deliberately
+conservative in that direction: a page load that cannot be told apart from
+application traffic stays `other` rather than diluting `bootstrap`.
 
 ### Navigation outcomes
 
@@ -853,8 +878,12 @@ UIDL request additionally gets the active view's route template set as the path
 pattern. The `uri` tag on `http.server.requests` and the HTTP span name then
 read `/orders/:id` instead of bucketing all UI traffic into a single
 `/vaadin/uidl` entry, so per-view HTTP latency stays answerable directly from
-the standard Spring metrics. The templates pass the same
-`route-cardinality-limit` cap as the kit's own `route` tags. At most 50
+the standard Spring metrics. Every other [request type](#request-types) keeps
+the type itself as its path pattern (`/vaadin/bootstrap`, `/vaadin/stream`, …),
+which along the way keeps the per-transfer URLs of downloads and uploads — each
+carrying a UI id and a one-time security key — out of the `uri` tag. The
+templates pass the same `route-cardinality-limit` cap as the kit's own `route`
+tags. At most 50
 distinct view templates ever reach the `uri` tag, regardless of configuration —
 `route-cardinality-limit` can lower that budget but never raise it — and the
 rest collapse into `/_other`. The fixed budget is deliberately half of Spring
