@@ -344,7 +344,14 @@
       parts.push(evidence.route);
     }
     if (evidence.component) {
-      parts.push(simpleName(evidence.component));
+      // The caption when the server collected one: '"Process return" Button'
+      // is the component the reader is looking at, where 'Button' is a guess
+      // among the five on the view.
+      parts.push(
+        evidence.componentCaption
+          ? '"' + evidence.componentCaption + '" ' + simpleName(evidence.component)
+          : simpleName(evidence.component)
+      );
     }
     if (evidence.frame) {
       parts.push(evidence.frame);

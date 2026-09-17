@@ -9,23 +9,31 @@
 package com.vaadin.observability.micrometer.insights;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.Timeout.ThreadMode;
 import org.mockito.Mockito;
 
+import com.vaadin.flow.component.AbstractSinglePropertyField;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasText;
+import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
 import com.vaadin.flow.router.Location;
+import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+import com.vaadin.observability.micrometer.client.ClientMetricsBinder;
+import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 class InteractionCollectorTest {
 
@@ -33,6 +41,10 @@ class InteractionCollectorTest {
     private static final long CAPTURE_ALL = 0;
     /** Budget beyond any real elapsed time, so nothing qualifies as slow. */
     private static final long CAPTURE_NONE = Long.MAX_VALUE;
+    /** Production mode: neither captions nor an interaction trail. */
+    private static final boolean PRODUCTION = false;
+    /** Development mode, where the screen detail is read. */
+    private static final boolean DEVELOPMENT = true;
 
     private final RecentInteractions buffer = new RecentInteractions(100);
 
@@ -103,7 +115,7 @@ class InteractionCollectorTest {
     @Test
     void capturesFailedInteractionWithComponentAndApplicationFrame() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true));
+                settings(true, true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -130,7 +142,7 @@ class InteractionCollectorTest {
     @Test
     void capturesSuccessfulInteractionOverBudget() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -152,7 +164,7 @@ class InteractionCollectorTest {
     @Test
     void doesNotCaptureSuccessfulInteractionWithinBudget() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_NONE);
+                settings(true, true), PRODUCTION, CAPTURE_NONE);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -168,7 +180,7 @@ class InteractionCollectorTest {
         // invocation ends (e.g. a Grid component column refreshing its item).
         // The component must be resolved at invocationStarted.
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -185,7 +197,7 @@ class InteractionCollectorTest {
     @Test
     void doesNotCaptureFailureWhenErrorsDisabled() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(false, true), CAPTURE_NONE);
+                settings(false, true), PRODUCTION, CAPTURE_NONE);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -199,7 +211,7 @@ class InteractionCollectorTest {
     @Test
     void doesNotCaptureSlowInteractionWhenRequestsDisabled() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, false), CAPTURE_ALL);
+                settings(true, false), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -214,7 +226,7 @@ class InteractionCollectorTest {
         // A failure is captured once as an error; invocationEnded must not also
         // emit a slow interaction for the same invocation.
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -239,7 +251,7 @@ class InteractionCollectorTest {
         outer.initCause(inner);
 
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true));
+                settings(true, true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -270,7 +282,7 @@ class InteractionCollectorTest {
         // view class, which is still one key per view, not per parameter.)
         OrdersView view = new OrdersView();
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true));
+                settings(true, true), PRODUCTION);
 
         for (int id : new int[] { 17, 18 }) {
             UI ui = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
@@ -324,7 +336,7 @@ class InteractionCollectorTest {
         // the value this test must prove is not assumed.
         long budget = CAPTURE_ALL;
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), budget);
+                settings(true, true), PRODUCTION, budget);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -341,7 +353,7 @@ class InteractionCollectorTest {
     @Test
     void errorStateDoesNotBleedIntoNextInvocation() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -365,7 +377,7 @@ class InteractionCollectorTest {
         // are not collected unless asked for, and the session id is reduced to
         // a hash. What stays is what makes the insight actionable.
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(false));
+                withDetails(false), PRODUCTION);
         Target target = target();
         String realSessionId = target.ui().getSession() == null ? null
                 : target.ui().getSession().getSession().getId();
@@ -396,7 +408,7 @@ class InteractionCollectorTest {
     @Test
     void collectsSensitiveDetailWhenOptedIn() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(true));
+                withDetails(true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -419,7 +431,7 @@ class InteractionCollectorTest {
         RuntimeException error = new RuntimeException("x".repeat(5000));
         error.setStackTrace(failure().getStackTrace());
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(true));
+                withDetails(true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -439,7 +451,7 @@ class InteractionCollectorTest {
         // The hash replaces the identifier but must still group the examples of
         // one insight together.
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(false));
+                withDetails(false), PRODUCTION);
         Target target = target();
 
         for (int i = 0; i < 2; i++) {
@@ -452,5 +464,243 @@ class InteractionCollectorTest {
                 .map(CapturedInteraction::sessionId).distinct().toList();
         Assertions.assertEquals(1, ids.size(),
                 "the same session should hash to the same value, got: " + ids);
+    }
+
+    // ---------- screen detail: captions and the interaction trail ----------
+
+    /** A component whose caption is its own text, the shape of a Button. */
+    private static class TextComponent extends Component implements HasText {
+        TextComponent(String text) {
+            super(ElementFactory.createButton(text));
+        }
+    }
+
+    /**
+     * A labelled field whose synchronized property is <em>not</em> its value,
+     * the shape of a {@code Select}: the client sends the item key, the
+     * component holds the item.
+     */
+    @Tag("test-select")
+    private static class KeyedField
+            extends AbstractSinglePropertyField<KeyedField, String> {
+        private final Map<String, String> items;
+
+        KeyedField(String label, Map<String, String> items) {
+            super("value", null, false);
+            this.items = items;
+            getElement().setProperty("label", label);
+        }
+
+        @Override
+        protected boolean hasValidValue() {
+            return true;
+        }
+
+        @Override
+        public String getValue() {
+            return items.get(getElement().getProperty("value", null));
+        }
+    }
+
+    /** A UI holding the given components, and events targeting each. */
+    private static Target targetOf(UI ui, Component component, String type,
+            String name) {
+        ui.getElement().appendChild(component.getElement());
+        int nodeId = component.getElement().getNode().getId();
+
+        RpcInvocationStartedEvent started = Mockito
+                .mock(RpcInvocationStartedEvent.class);
+        Mockito.when(started.getType()).thenReturn(type);
+        Mockito.when(started.getName()).thenReturn(name);
+        Mockito.when(started.getUI()).thenReturn(ui);
+        Mockito.when(started.getNodeId()).thenReturn(nodeId);
+
+        RpcInvocationEndedEvent ended = Mockito
+                .mock(RpcInvocationEndedEvent.class);
+        Mockito.when(ended.getType()).thenReturn(type);
+        Mockito.when(ended.getName()).thenReturn(name);
+        Mockito.when(ended.getUI()).thenReturn(ui);
+        Mockito.when(ended.getNodeId()).thenReturn(nodeId);
+
+        return new Target(ui, component, started, ended);
+    }
+
+    /** Runs one successful invocation end to end. */
+    private static void succeed(InteractionCollector collector, Target target) {
+        collector.invocationStarted(target.started());
+        collector.invocationEnded(target.ended());
+    }
+
+    @Test
+    void capturesComponentCaptionInDevelopmentMode() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        Target target = targetOf(new UI(), new TextComponent("Process return"),
+                "event", "click");
+
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
+
+        Assertions.assertEquals("Process return",
+                buffer.snapshot().get(0).caption(),
+                "the caption should name the button a reader looks for");
+    }
+
+    @Test
+    void withholdsComponentCaptionInProductionMode() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), PRODUCTION);
+        Target target = targetOf(new UI(), new TextComponent("Process return"),
+                "event", "click");
+
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
+
+        CapturedInteraction interaction = buffer.snapshot().get(0);
+        Assertions.assertNull(interaction.caption(),
+                "a forwarded payload should not carry application text");
+        Assertions.assertEquals(List.of(), interaction.precedingSteps(),
+                "nor the trail, whose steps carry captions and values");
+        Assertions.assertEquals(TextComponent.class.getName(),
+                interaction.component(),
+                "the component class is not screen detail and stays");
+    }
+
+    @Test
+    void failureCarriesTheStepsThatLedToIt() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        UI ui = new UI();
+        Target reason = targetOf(ui,
+                new KeyedField("Reason", Map.of("2", "Defective")), "mSync",
+                "value");
+        Target process = targetOf(ui, new TextComponent("Process return"),
+                "event", "click");
+
+        // The selection the failure needs, made in an earlier request.
+        reason.component().getElement().setProperty("value", "2");
+        succeed(collector, reason);
+
+        collector.invocationStarted(process.started());
+        collector.invocationFailed(failedEvent(process, failure()));
+        collector.invocationEnded(process.ended());
+
+        List<InteractionStep> steps = buffer.snapshot().get(0).precedingSteps();
+        Assertions.assertEquals(1, steps.size(),
+                "the selection before the click should be the one step, got: "
+                        + steps);
+        InteractionStep step = steps.get(0);
+        Assertions.assertEquals("Reason", step.caption());
+        Assertions.assertEquals("Defective", step.value(),
+                "the value should be what the component holds, not the key "
+                        + "the client sent");
+    }
+
+    @Test
+    void interactionIsNotPartOfItsOwnLeadUp() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        Target target = targetOf(new UI(), new TextComponent("Process return"),
+                "event", "click");
+
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
+        // A second failure, which the first click now precedes.
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
+
+        List<CapturedInteraction> snapshot = buffer.snapshot();
+        Assertions.assertEquals(List.of(), snapshot.get(1).precedingSteps(),
+                "the first failure had nothing before it");
+        Assertions.assertEquals(1, snapshot.get(0).precedingSteps().size(),
+                "the second should be preceded by the first click alone");
+    }
+
+    @Test
+    void aSlowInteractionIsNotPartOfItsOwnLeadUpEither() {
+        // The slow path captures at invocationEnded, which is also where the
+        // step is appended; the capture has to come first.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT, CAPTURE_ALL);
+        Target target = targetOf(new UI(), new TextComponent("Process return"),
+                "event", "click");
+
+        succeed(collector, target);
+
+        Assertions.assertEquals(List.of(),
+                buffer.snapshot().get(0).precedingSteps(),
+                "the click that was slow is not a step leading to itself");
+    }
+
+    @Test
+    void trailIsPerUiSoOneUserDoesNotExplainAnother() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        UI first = new UI();
+        UI second = new UI();
+        succeed(collector, targetOf(first, new TextComponent("Elsewhere"),
+                "event", "click"));
+
+        Target other = targetOf(second, new TextComponent("Process return"),
+                "event", "click");
+        collector.invocationStarted(other.started());
+        collector.invocationFailed(failedEvent(other, failure()));
+        collector.invocationEnded(other.ended());
+
+        Assertions.assertEquals(List.of(),
+                buffer.snapshot().get(0).precedingSteps(),
+                "what another tab did is not a replay step of this one");
+    }
+
+    @Test
+    void invocationsNoUserIsBehindAreNotSteps() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        UI ui = new UI();
+        // A return channel message, e.g. the kit's own client reporting in.
+        succeed(collector,
+                targetOf(ui, new TextComponent("Collector"), "channel", "0"));
+
+        Target process = targetOf(ui, new TextComponent("Process return"),
+                "event", "click");
+        collector.invocationStarted(process.started());
+        collector.invocationFailed(failedEvent(process, failure()));
+        collector.invocationEnded(process.ended());
+
+        Assertions.assertEquals(List.of(),
+                buffer.snapshot().get(0).precedingSteps(),
+                "only what a user did belongs in a replay");
+    }
+
+    @Test
+    void theKitsOwnClientReportingIsNotAStep() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        UI ui = new UI();
+        // The collector element loads its script on attach, which needs a
+        // session to hold the invocation.
+        ui.getInternals().setSession(
+                Mockito.mock(VaadinSession.class, Mockito.RETURNS_DEEP_STUBS));
+        ObservabilitySettings settings = settings(true, true);
+        // The in-browser collector shipping a batch: a @ClientCallable like
+        // any other, and one no user performed.
+        succeed(collector, targetOf(ui,
+                new MetricsCollectorElement(new ClientMetricsBinder(
+                        new SimpleMeterRegistry(), settings), settings),
+                "publishedEventHandler", "reportMetrics"));
+
+        Target process = targetOf(ui, new TextComponent("Process return"),
+                "event", "click");
+        collector.invocationStarted(process.started());
+        collector.invocationFailed(failedEvent(process, failure()));
+        collector.invocationEnded(process.ended());
+
+        Assertions.assertEquals(List.of(),
+                buffer.snapshot().get(0).precedingSteps(),
+                "the kit must not write itself into the user's trail");
     }
 }

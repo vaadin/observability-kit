@@ -77,6 +77,12 @@ public class InsightsService {
      */
     private static final int MAX_CLIENT_ERROR_INSIGHTS = 20;
 
+    /** Flow's invocation type for a synchronized property update. */
+    private static final String RPC_TYPE_PROPERTY_SYNC = "mSync";
+
+    /** The one DOM event common enough to be worth its own phrasing. */
+    private static final String EVENT_CLICK = "click";
+
     /**
      * Every string in the payload is built through here rather than through
      * {@link String#formatted(Object...)}, so that the numbers in it do not
@@ -510,7 +516,7 @@ public class InsightsService {
         insight.put("category", "reliability");
         insight.put("summary", text(
                 "User interaction '%s' on %s failed with %s (%d occurrence%s)",
-                nullSafe(latest.event()), simpleName(latest.component()),
+                nullSafe(latest.event()), named(latest),
                 simpleName(latest.exceptionType()), group.size(),
                 group.size() == 1 ? "" : "s"));
 
@@ -527,11 +533,8 @@ public class InsightsService {
         evidence.put("applicationFrame", latest.applicationFrame());
         insight.put("evidence", evidence);
 
-        insight.put("replay", List.of(
-                text("Open route '/%s'", nullSafe(latest.location())),
-                text("Locate component %s", simpleName(latest.component())),
-                text("Trigger a '%s' event on it", nullSafe(latest.event())),
-                latest.exceptionMessage() == null
+        insight.put("replay",
+                interactionReplay(latest, latest.exceptionMessage() == null
                         ? text("Expect %s", simpleName(latest.exceptionType()))
                         : text("Expect %s: %s",
                                 simpleName(latest.exceptionType()),
@@ -543,7 +546,7 @@ public class InsightsService {
                         + "root cause and propose a fix.",
                 latest.applicationFrame() != null ? latest.applicationFrame()
                         : "the component's event listener",
-                nullSafe(latest.event()), simpleName(latest.component()),
+                nullSafe(latest.event()), named(latest),
                 simpleName(latest.exceptionType())));
 
         insight.put("examples", examplesJson(group));
@@ -567,13 +570,12 @@ public class InsightsService {
         insight.put("type", "slow-user-interaction");
         insight.put("severity", "warning");
         insight.put("category", "performance");
-        insight.put("summary", text(
-                "Server handling of user interaction '%s' on %s took %d "
+        insight.put("summary",
+                text("Server handling of user interaction '%s' on %s took %d "
                         + "ms at the median (worst %d ms), over the %d ms UX "
-                        + "budget (%d occurrence%s)",
-                nullSafe(latest.event()), simpleName(latest.component()),
-                medianMs, maxMs, thresholdMs, group.size(),
-                group.size() == 1 ? "" : "s"));
+                        + "budget (%d occurrence%s)", nullSafe(latest.event()),
+                        named(latest), medianMs, maxMs, thresholdMs,
+                        group.size(), group.size() == 1 ? "" : "s"));
 
         Map<String, Object> evidence = commonEvidence(group);
         evidence.put("medianDurationMs", medianMs);
@@ -586,11 +588,9 @@ public class InsightsService {
                         + "network transfer and client-side rendering");
         insight.put("evidence", evidence);
 
-        insight.put("replay", List.of(
-                text("Open route '/%s'", nullSafe(latest.location())),
-                text("Locate component %s", simpleName(latest.component())),
-                text("Trigger a '%s' event on it", nullSafe(latest.event())),
-                text("Expect the server to spend roughly %d ms handling it",
+        insight.put("replay",
+                interactionReplay(latest, text(
+                        "Expect the server to spend roughly %d ms handling it",
                         medianMs)));
 
         insight.put("suggestion", text(
@@ -602,8 +602,8 @@ public class InsightsService {
                         + "inspect the handler and make the slow work faster, "
                         + "paginated, or move it off the request thread and "
                         + "push the result via ui.access().",
-                nullSafe(latest.event()), simpleName(latest.component()),
-                medianMs, maxMs, thresholdMs));
+                nullSafe(latest.event()), named(latest), medianMs, maxMs,
+                thresholdMs));
 
         insight.put("examples", examplesJson(group));
         return insight;
@@ -632,12 +632,104 @@ public class InsightsService {
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("route", latest.route());
         evidence.put("component", latest.component());
+        if (latest.caption() != null) {
+            // Only present in development mode, and only when the component
+            // has a caption at all — an absent key says "not collected", which
+            // is the truth in production and nothing a reader can act on.
+            evidence.put("componentCaption", latest.caption());
+        }
         evidence.put("event", latest.event());
         evidence.put("rpcType", latest.rpcType());
         evidence.put("occurrences", group.size());
         evidence.put("firstSeen", firstSeen.toString());
         evidence.put("lastSeen", latest.timestamp().toString());
         return evidence;
+    }
+
+    /**
+     * How an interaction's component is named in prose: by its caption and kind
+     * when the caption was collected — {@code "Process return" Button} — and by
+     * its kind alone otherwise.
+     * <p>
+     * The caption is what a reader can actually find on the screen. The kind
+     * stays because it is what a developer greps the source for, and because
+     * the two together survive a caption that turns out to be a duplicate.
+     */
+    private static String named(CapturedInteraction interaction) {
+        return named(interaction.component(), interaction.caption());
+    }
+
+    private static String named(@Nullable String component,
+            @Nullable String caption) {
+        return caption == null ? simpleName(component)
+                : text("\"%s\" %s", caption, simpleName(component));
+    }
+
+    /**
+     * The replay steps of an interaction insight: open the location, redo what
+     * led up to the interaction, do the interaction, expect the outcome.
+     * <p>
+     * The lead-up is the point. A handler that fails only for a particular
+     * selection is not reproduced by "click the button", and until the trail
+     * was collected that is all an insight could say. Where there is no trail —
+     * production, where it is not collected, and the first interaction of a UI,
+     * where there is nothing yet — the steps are the two-line form this always
+     * had, so a payload nobody enriched reads as it always did.
+     * <p>
+     * The trail reported is the latest occurrence's, like every other
+     * per-occurrence field of a group: occurrences are grouped by route,
+     * component, event and exception, and users reaching the same failure by
+     * different paths are one finding with the most recent path shown.
+     *
+     * @param latest
+     *            the latest occurrence of the group being described
+     * @param expectation
+     *            the closing step, saying what the reader should see
+     * @return the replay steps, in order
+     */
+    private static List<String> interactionReplay(CapturedInteraction latest,
+            String expectation) {
+        List<String> steps = new ArrayList<>();
+        steps.add(text("Open route '/%s'", nullSafe(latest.location())));
+        latest.precedingSteps().stream().map(InsightsService::stepText)
+                .forEach(steps::add);
+        if (latest.caption() == null) {
+            steps.add(text("Locate component %s",
+                    simpleName(latest.component())));
+            steps.add(text("Trigger a '%s' event on it",
+                    nullSafe(latest.event())));
+        } else {
+            steps.add(actionText(latest.component(), latest.caption(),
+                    latest.event(), latest.rpcType(), null));
+        }
+        steps.add(expectation);
+        return List.copyOf(steps);
+    }
+
+    /** One step of the lead-up, as an instruction to follow. */
+    private static String stepText(InteractionStep step) {
+        return actionText(step.component(), step.caption(), step.event(),
+                step.rpcType(), step.value());
+    }
+
+    /**
+     * One thing to do to one component, phrased the way the reader would do it:
+     * a property synchronization is the field they leave a value in, a click is
+     * a click, and anything else is named by its event so the step stays true
+     * even when the kit has no better word for it.
+     */
+    private static String actionText(@Nullable String component,
+            @Nullable String caption, @Nullable String event,
+            @Nullable String rpcType, @Nullable String value) {
+        String named = named(component, caption);
+        if (RPC_TYPE_PROPERTY_SYNC.equals(rpcType)) {
+            return value == null ? text("Change the %s", named)
+                    : text("Set the %s to '%s'", named, value);
+        }
+        if (EVENT_CLICK.equals(event)) {
+            return text("Click the %s", named);
+        }
+        return text("Trigger a '%s' event on the %s", nullSafe(event), named);
     }
 
     private static List<Map<String, Object>> examplesJson(

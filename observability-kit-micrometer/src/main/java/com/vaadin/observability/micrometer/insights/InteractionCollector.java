@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
@@ -24,6 +25,7 @@ import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
+import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 /**
  * Captures interesting client-to-server invocations as
@@ -38,6 +40,14 @@ import com.vaadin.observability.micrometer.RouteTagResolver;
  * {@link RpcInvocationEndedEvent} gives the handling duration, and the events
  * carry the target state node from which the interacted component is resolved.
  * Works in production mode.
+ * <p>
+ * In development mode it additionally reads what is on the screen: the caption
+ * of the interacted component, and a short {@link InteractionTrail trail} of
+ * the steps that led to it, so that the {@code replay} of an insight names the
+ * button the reader is looking for and includes the state the failure needed.
+ * Neither is collected in production, where the payload is meant to be
+ * forwarded and both would carry application text — see
+ * {@link ComponentCaptions}.
  */
 public class InteractionCollector {
 
@@ -71,11 +81,28 @@ public class InteractionCollector {
 
     private static final int STACK_TOP_FRAMES = 5;
 
+    /**
+     * Invocation types a user is behind, and so the only ones worth a trail
+     * step: a DOM event, a synchronized property update, and a call into a
+     * {@code @ClientCallable} or template handler. The rest — return channel
+     * messages, navigation, the kit's own client reporting back — are traffic
+     * rather than steps anyone could be told to repeat.
+     */
+    private static final List<String> USER_DRIVEN_TYPES = List.of("event",
+            "mSync", "publishedEventHandler");
+
     private final RecentInteractions buffer;
     private final boolean captureErrors;
     private final boolean captureSlow;
     private final long uxBudgetMs;
     private final boolean details;
+    /**
+     * Whether the captions and values on the screen may be read. Development
+     * mode only: they are application text that a forwarded payload should not
+     * carry, and the reader who benefits is the developer running the
+     * application.
+     */
+    private final boolean screenDetail;
     private final RouteTagResolver routes;
 
     private final ThreadLocal<Long> startNanos = new ThreadLocal<>();
@@ -85,12 +112,28 @@ public class InteractionCollector {
      * Resolved at {@code invocationStarted}: the handler may detach the target
      * node (e.g. a Grid component column refreshing its item), so resolving at
      * {@code invocationEnded} would come up empty.
+     * <p>
+     * The component itself is held, not just its class name, because the value
+     * a field ends up with can only be read once the invocation has run. It is
+     * cleared at {@code invocationEnded} along with the rest, so no UI is
+     * pinned by a thread between requests.
      */
-    private final ThreadLocal<String> componentType = new ThreadLocal<>();
+    private final ThreadLocal<Component> target = new ThreadLocal<>();
 
+    /**
+     * @param buffer
+     *            where captured interactions are retained
+     * @param settings
+     *            the kit's settings, for which interactions to capture and how
+     *            much detail they may carry
+     * @param developmentMode
+     *            whether the application runs in development mode, which is
+     *            where component captions and the interaction trail are
+     *            collected
+     */
     public InteractionCollector(RecentInteractions buffer,
-            ObservabilitySettings settings) {
-        this(buffer, settings, UX_BUDGET_MS);
+            ObservabilitySettings settings, boolean developmentMode) {
+        this(buffer, settings, developmentMode, UX_BUDGET_MS);
     }
 
     /**
@@ -98,12 +141,14 @@ public class InteractionCollector {
      * timing behaviour can be exercised without real delays.
      */
     InteractionCollector(RecentInteractions buffer,
-            ObservabilitySettings settings, long uxBudgetMs) {
+            ObservabilitySettings settings, boolean developmentMode,
+            long uxBudgetMs) {
         this.buffer = buffer;
         this.captureErrors = settings.isErrors();
         this.captureSlow = settings.isRequests();
         this.uxBudgetMs = uxBudgetMs;
         this.details = settings.isInsightsDetails();
+        this.screenDetail = developmentMode;
         this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
     }
 
@@ -128,8 +173,7 @@ public class InteractionCollector {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
-        componentType.set(
-                ComponentResolver.resolveComponentType(event).orElse(null));
+        target.set(ComponentResolver.resolveComponent(event).orElse(null));
         startNanos.set(System.nanoTime());
     }
 
@@ -140,8 +184,8 @@ public class InteractionCollector {
             return;
         }
         try {
-            buffer.add(errorInteraction(event, error, elapsedMs(),
-                    componentType.get()));
+            buffer.add(
+                    errorInteraction(event, error, elapsedMs(), target.get()));
         } catch (RuntimeException e) {
             // Collection is best-effort enrichment; never interfere with the
             // framework's own error handling.
@@ -150,21 +194,74 @@ public class InteractionCollector {
 
     void invocationEnded(RpcInvocationEndedEvent event) {
         long durationMs = elapsedMs();
-        String component = componentType.get();
+        Component component = target.get();
         startNanos.remove();
-        componentType.remove();
+        target.remove();
         boolean failed = errored.get();
         errored.remove();
         // Failed invocations are already captured with their duration; only
         // successful-but-slow ones are captured here.
-        if (failed || !captureSlow || durationMs < uxBudgetMs) {
-            return;
+        if (!failed && captureSlow && durationMs >= uxBudgetMs) {
+            try {
+                buffer.add(slowInteraction(event, durationMs, component));
+            } catch (RuntimeException e) {
+                // Best-effort, as below.
+            }
         }
         try {
-            buffer.add(slowInteraction(event, durationMs, component));
+            // Last, after every capture this invocation produces: a step
+            // describes what led up to the *next* captured interaction, and
+            // an interaction is not part of its own lead-up.
+            recordStep(event, component);
         } catch (RuntimeException e) {
             // Best-effort, as above.
         }
+    }
+
+    /**
+     * Appends what just happened to the trail of its UI, so the next captured
+     * interaction can say what led to it. Skips the invocations no user is
+     * behind and the ones whose component could not be resolved, since a step
+     * nobody can be told to repeat is noise in a replay.
+     */
+    private void recordStep(AbstractRpcInvocationEvent event,
+            Component component) {
+        if (!screenDetail || component == null
+                || !USER_DRIVEN_TYPES.contains(event.getType())
+                || isOwnPlumbing(component)) {
+            return;
+        }
+        InteractionTrail trail = InteractionTrail.of(event.getUI());
+        if (trail == null) {
+            return;
+        }
+        trail.add(new InteractionStep(component.getClass().getName(),
+                ComponentCaptions.captionOf(component), event.getName(),
+                event.getType(), ComponentCaptions.valueOf(component)));
+    }
+
+    /**
+     * Whether the component is the kit's own in-browser collector. It ships its
+     * batches through a {@code @ClientCallable}, which is an invocation like
+     * any other and would otherwise put a step nobody performed between every
+     * two the user did.
+     */
+    private static boolean isOwnPlumbing(Component component) {
+        return component instanceof MetricsCollectorElement;
+    }
+
+    /** The trail of the UI an interaction happened in, oldest step first. */
+    private List<InteractionStep> precedingSteps(UI ui) {
+        if (!screenDetail) {
+            return List.of();
+        }
+        InteractionTrail trail = InteractionTrail.of(ui);
+        return trail == null ? List.of() : trail.snapshot();
+    }
+
+    /** The component's caption, in the modes where captions are read. */
+    private String caption(Component component) {
+        return screenDetail ? ComponentCaptions.captionOf(component) : null;
     }
 
     private long elapsedMs() {
@@ -177,7 +274,7 @@ public class InteractionCollector {
 
     private CapturedInteraction errorInteraction(
             AbstractRpcInvocationEvent event, Throwable error, long durationMs,
-            String component) {
+            Component component) {
         UI ui = event.getUI();
         Throwable rootCause = Throwables.rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
@@ -186,7 +283,8 @@ public class InteractionCollector {
         // user data. The message and the remaining frames are withheld unless
         // the application opted in.
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
-                component, event.getName(), event.getType(),
+                typeOf(component), caption(component), event.getName(),
+                event.getType(), precedingSteps(ui),
                 CapturedInteraction.OUTCOME_ERROR, durationMs, -1, details,
                 rootCause.getClass().getName(),
                 details ? InsightDetails
@@ -200,16 +298,21 @@ public class InteractionCollector {
 
     private CapturedInteraction slowInteraction(
             AbstractRpcInvocationEvent event, long durationMs,
-            String component) {
+            Component component) {
         UI ui = event.getUI();
         // The budget this interaction was actually measured against travels
         // with it, so a report never has to assume the default.
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
-                component, event.getName(), event.getType(),
+                typeOf(component), caption(component), event.getName(),
+                event.getType(), precedingSteps(ui),
                 CapturedInteraction.OUTCOME_SUCCESS, durationMs, uxBudgetMs,
                 details, null, null, null, null,
                 InsightDetails.sessionId(ui, details),
                 ui != null ? ui.getUIId() : -1);
+    }
+
+    private static String typeOf(Component component) {
+        return component == null ? null : component.getClass().getName();
     }
 
     /**

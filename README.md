@@ -199,6 +199,59 @@ Findings need `vaadin.observability.insights` (on by default); with it off the
 panel says so rather than showing an empty list. Nothing here exists in
 production — Copilot and the dev-tools connection do not.
 
+### Replay steps that replay
+
+Every finding carries `replay`, the steps to reproduce it. In production those
+steps identify the interaction and no more, because that is all a payload meant
+to be forwarded may say:
+
+```
+Open route '/returns'
+Locate component Button
+Trigger a 'click' event on it
+Expect IllegalStateException: Inspection template 'defective' not found
+```
+
+Which is not a reproduction. There are four Buttons on that view, and the
+failure needs a selection made before the click. **In development mode** the
+kit therefore reads two more things off the screen and the steps become what a
+person would actually do:
+
+```
+Open route '/returns'
+Set the "Order number" TextField to 'AC-10482'
+Set the "Reason" Select to 'Defective'
+Click the "Process return" Button
+Expect IllegalStateException: Inspection template 'defective' not found
+```
+
+- **The caption** of the interacted component — its label, accessible name, own
+  text, or failing all of those its id — so a step names the one control the
+  reader is looking for. It is also in `evidence.componentCaption` and in the
+  panel's context line, `returns · "Process return" Button · 3 occurrences`,
+  and the component class stays alongside it because that is what you grep for.
+- **The lead-up**: the last five things the user did in that tab, kept per UI
+  and attached to whatever interaction is captured next. A value is read from
+  the component rather than from the property the client sent, so a `Select`
+  step says `'Defective'` and not the item key `'2'`. Consecutive edits of one
+  field collapse into one step with the value it ended up with, so typing does
+  not push the rest of the trail out. Invocations no user is behind — return
+  channel traffic, the kit's own in-browser collector reporting in — are not
+  steps.
+
+Both are withheld in production and the steps fall back to the two-line form
+above, unchanged. Captions and values are application text that can be
+data-bound (a caption may be "Delete Jane Doe", and a field's value is user
+input by definition), and the insights payload is built to be forwarded into
+issue trackers and AI agents. The reader who benefits from the detail is the
+developer with the application in front of them, so that is the only mode that
+collects it — no setting turns it on in production. Lengths are capped
+regardless: 60 characters for a caption, 40 for a value.
+
+Grouping is unaffected: occurrences still group by route, component, event and
+exception, so the same failure reached by different paths stays one finding,
+reporting the most recent path.
+
 ## Other setups
 
 ### Plain Spring (without Spring Boot)
@@ -287,7 +340,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the session id as a span attribute. |
-| `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. |
+| `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. In development mode a retained interaction also carries the caption of its component and the steps that led to it — see [Replay steps that replay](#replay-steps-that-replay). |
 | `vaadin.observability.insights-details` | `false` | Allow retained interactions to carry the raw session id, exception message and top stack frames, and retained browser errors their message and the function name from their stack frame. Off by default since the insights payload is meant to be forwarded. For a browser error this governs collection, not just retention: unless it is on and something is there to retain a message, the browser never gathers one, so nothing to withhold is buffered or sent — see [Connection and client-side problems](#connection-and-client-side-problems). Read by a page when it loads, so a change reaches already-open tabs only after a reload. |
 | `vaadin.observability.insights-capacity` | `100` | Maximum number of retained records per buffer — interactions, data provider queries and browser errors are capped separately; the oldest is evicted once the cap is reached. |
 | `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. Also caps the `component` and `exception` tag values of `vaadin.errors`. |

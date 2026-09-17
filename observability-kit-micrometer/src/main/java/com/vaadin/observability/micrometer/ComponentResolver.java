@@ -10,6 +10,7 @@ package com.vaadin.observability.micrometer;
 
 import java.util.Optional;
 
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
@@ -41,6 +42,27 @@ public final class ComponentResolver {
      */
     public static Optional<String> resolveComponentType(
             AbstractRpcInvocationEvent event) {
+        return resolveComponent(event)
+                .map(component -> component.getClass().getName());
+    }
+
+    /**
+     * Resolves the component the invocation targets, by looking up the target
+     * {@code StateNode} in the UI's state tree and walking up to the nearest
+     * enclosing component. Returns {@link Optional#empty()} if the invocation
+     * does not target a node, the node is no longer attached, or no component
+     * can be resolved. Resolution is best-effort enrichment and never throws.
+     * <p>
+     * Callers that keep the returned instance must not keep it beyond the
+     * invocation being handled: it is a live component of a live UI, and
+     * holding it would pin the whole UI.
+     *
+     * @param event
+     *            the RPC invocation to resolve the target component for
+     * @return the component, or empty
+     */
+    public static Optional<Component> resolveComponent(
+            AbstractRpcInvocationEvent event) {
         int nodeId = event.getNodeId();
         UI ui = event.getUI();
         if (nodeId < 0 || ui == null) {
@@ -52,8 +74,7 @@ public final class ComponentResolver {
             if (node == null) {
                 return Optional.empty();
             }
-            return ComponentUtil.findParentComponent(Element.get(node))
-                    .map(component -> component.getClass().getName());
+            return ComponentUtil.findParentComponent(Element.get(node));
         } catch (RuntimeException e) {
             // Resolution is best-effort enrichment; never let it break the
             // invocation or the surrounding span.

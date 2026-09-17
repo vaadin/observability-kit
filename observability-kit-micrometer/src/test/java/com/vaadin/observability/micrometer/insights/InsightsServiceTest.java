@@ -368,4 +368,106 @@ class InsightsServiceTest {
                 evidence(insightWithType("slow-user-interaction"))
                         .get("medianDurationMs"));
     }
+
+    // ---------- captions and the lead-up, as a replay reads them ----------
+
+    /** A failure on the returns desk of the use case this was built for. */
+    private static CapturedInteraction returnsDeskFailure(
+            List<InteractionStep> precedingSteps) {
+        return new CapturedInteraction(Instant.now(), "returns", "returns",
+                "com.vaadin.flow.component.button.Button", "Process return",
+                "click", "event", precedingSteps,
+                CapturedInteraction.OUTCOME_ERROR, 5, -1, true,
+                "java.lang.IllegalStateException",
+                "Inspection template 'defective' not found",
+                "com.example.uc6.FailureInsightsView.lambda$new$0"
+                        + "(FailureInsightsView.java:198)",
+                null, "session", 0);
+    }
+
+    private static List<?> replayOf(Map<String, Object> insight) {
+        return (List<?>) insight.get("replay");
+    }
+
+    @Test
+    void replayNamesTheComponentByItsCaption() {
+        buffer.add(returnsDeskFailure(List.of()));
+
+        Map<String, Object> insight = insightWithType("user-interaction-error");
+        Assertions.assertEquals("Click the \"Process return\" Button",
+                replayOf(insight).get(1),
+                "a caption should replace 'Locate component Button'");
+        Assertions.assertTrue(
+                insight.get("summary").toString()
+                        .contains("\"Process return\" Button"),
+                "the summary too: " + insight.get("summary"));
+        Assertions.assertEquals("Process return",
+                evidence(insight).get("componentCaption"));
+    }
+
+    @Test
+    void replayRedoesTheStepsThatLedToTheFailure() {
+        buffer.add(returnsDeskFailure(List.of(
+                new InteractionStep(
+                        "com.vaadin.flow.component.textfield." + "TextField",
+                        "Order number", "value", "mSync", "AC-10482"),
+                new InteractionStep("com.vaadin.flow.component.select.Select",
+                        "Reason", "value", "mSync", "Defective"))));
+
+        Assertions.assertEquals(
+                List.of("Open route '/returns'",
+                        "Set the \"Order number\" TextField to 'AC-10482'",
+                        "Set the \"Reason\" Select to 'Defective'",
+                        "Click the \"Process return\" Button",
+                        "Expect IllegalStateException: Inspection template "
+                                + "'defective' not found"),
+                replayOf(insightWithType("user-interaction-error")),
+                "the replay should reproduce the failure, not just reach the "
+                        + "component that reported it");
+    }
+
+    @Test
+    void replayWithoutScreenDetailReadsAsItAlwaysDid() {
+        // What a production payload carries: no caption, no trail.
+        buffer.add(error(Instant.now(), "com.example.OrdersView",
+                "java.lang.IllegalStateException", "com.example.Frame"));
+
+        Map<String, Object> insight = insightWithType("user-interaction-error");
+        Assertions.assertEquals("Locate component OrdersView",
+                replayOf(insight).get(1));
+        Assertions.assertEquals("Trigger a 'click' event on it",
+                replayOf(insight).get(2));
+        Assertions.assertFalse(
+                evidence(insight).containsKey("componentCaption"),
+                "an absent key says the caption was not collected");
+    }
+
+    @Test
+    void aStepWithoutAValueStillSaysWhatWasTouched() {
+        buffer.add(returnsDeskFailure(List.of(new InteractionStep(
+                "com.vaadin.flow.component.checkbox.Checkbox", "Inspected",
+                "checked", "mSync", null))));
+
+        Assertions.assertEquals("Change the \"Inspected\" Checkbox",
+                replayOf(insightWithType("user-interaction-error")).get(1));
+    }
+
+    @Test
+    void slowInteractionsGetTheSameTreatment() {
+        buffer.add(new CapturedInteraction(Instant.now(), "returns", "returns",
+                "com.vaadin.flow.component.button.Button", "Process return",
+                "click", "event",
+                List.of(new InteractionStep(
+                        "com.vaadin.flow.component.select.Select", "Refund",
+                        "value", "mSync", "Bank transfer")),
+                CapturedInteraction.OUTCOME_SUCCESS, 1500,
+                OVER_BUDGET_THRESHOLD, true, null, null, null, null, "session",
+                0));
+
+        List<?> replay = replayOf(insightWithType("slow-user-interaction"));
+        Assertions.assertEquals("Set the \"Refund\" Select to 'Bank transfer'",
+                replay.get(1));
+        Assertions.assertEquals("Click the \"Process return\" Button",
+                replay.get(2));
+    }
 }

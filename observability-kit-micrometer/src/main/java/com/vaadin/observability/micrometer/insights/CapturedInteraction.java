@@ -34,10 +34,20 @@ import com.vaadin.observability.micrometer.MeterNames;
  *            grouping
  * @param component
  *            fully-qualified class of the component the user interacted with
+ * @param caption
+ *            what that component is called on screen, e.g.
+ *            {@code Process return}, so a replay step names the one button the
+ *            reader is looking for rather than its widget kind; {@code null}
+ *            when it has no caption and in production, where captions are not
+ *            collected at all
  * @param event
  *            the client event that triggered the invocation, e.g. {@code click}
  * @param rpcType
  *            the Flow RPC invocation type, e.g. {@code event}
+ * @param precedingSteps
+ *            what the user did in this UI before this interaction, oldest
+ *            first, at most {@link InteractionTrail#MAX_STEPS}; empty in
+ *            production, where no trail is kept
  * @param outcome
  *            {@link #OUTCOME_SUCCESS} or {@link #OUTCOME_ERROR}
  * @param durationMs
@@ -74,14 +84,64 @@ import com.vaadin.observability.micrometer.MeterNames;
  *            UI id within the session
  */
 public record CapturedInteraction(Instant timestamp, String route,
-        String location, String component, String event, String rpcType,
-        String outcome, long durationMs, long thresholdMs,
-        boolean detailsIncluded, String exceptionType, String exceptionMessage,
-        String applicationFrame, List<String> stackTop, String sessionId,
-        int uiId) {
+        String location, String component, String caption, String event,
+        String rpcType, List<InteractionStep> precedingSteps, String outcome,
+        long durationMs, long thresholdMs, boolean detailsIncluded,
+        String exceptionType, String exceptionMessage, String applicationFrame,
+        List<String> stackTop, String sessionId, int uiId) {
 
     // Aliased from the Meter tag values rather than repeated, so an insight
     // and the meter it can be correlated with cannot drift apart.
     public static final String OUTCOME_SUCCESS = MeterNames.OUTCOME_SUCCESS;
     public static final String OUTCOME_ERROR = MeterNames.OUTCOME_ERROR;
+
+    /**
+     * An interaction captured without the screen detail development mode adds:
+     * no caption, no trail. This is what a production payload carries, and what
+     * a caller that has nothing to say about either should build.
+     *
+     * @param timestamp
+     *            when the interaction completed
+     * @param route
+     *            the route template of the active view
+     * @param location
+     *            the concrete location the interaction happened on
+     * @param component
+     *            fully-qualified class of the interacted component
+     * @param event
+     *            the client event that triggered the invocation
+     * @param rpcType
+     *            the Flow RPC invocation type
+     * @param outcome
+     *            {@link #OUTCOME_SUCCESS} or {@link #OUTCOME_ERROR}
+     * @param durationMs
+     *            server-side RPC handling time, {@code -1} if unknown
+     * @param thresholdMs
+     *            the UX budget measured against, {@code -1} if not applicable
+     * @param detailsIncluded
+     *            whether sensitive detail was collected
+     * @param exceptionType
+     *            fully-qualified class of the root cause, or {@code null}
+     * @param exceptionMessage
+     *            message of the root cause, or {@code null}
+     * @param applicationFrame
+     *            first stack frame in application code, or {@code null}
+     * @param stackTop
+     *            top frames of the root-cause stack, or {@code null}
+     * @param sessionId
+     *            the session id, raw or hashed
+     * @param uiId
+     *            UI id within the session
+     */
+    public CapturedInteraction(Instant timestamp, String route, String location,
+            String component, String event, String rpcType, String outcome,
+            long durationMs, long thresholdMs, boolean detailsIncluded,
+            String exceptionType, String exceptionMessage,
+            String applicationFrame, List<String> stackTop, String sessionId,
+            int uiId) {
+        this(timestamp, route, location, component, null, event, rpcType,
+                List.of(), outcome, durationMs, thresholdMs, detailsIncluded,
+                exceptionType, exceptionMessage, applicationFrame, stackTop,
+                sessionId, uiId);
+    }
 }

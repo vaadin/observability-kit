@@ -18,6 +18,7 @@ import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.vaadin.flow.function.DeploymentConfiguration;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinService;
@@ -367,8 +368,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             // and got an error / it was slow") to a replicable interaction.
             RecentInteractions interactions = new RecentInteractions(
                     settings.getInsightsCapacity());
-            new InteractionCollector(interactions, settings)
-                    .register(service.getEventBus());
+            new InteractionCollector(interactions, settings,
+                    isDevelopmentMode(service)).register(service.getEventBus());
             ObservabilityKit.setRecentInteractions(interactions);
         }
 
@@ -391,6 +392,26 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                 event.setExecutor(
                         TracingExecutor.wrap(executor, observationRegistry));
             }
+        }
+    }
+
+    /**
+     * Whether the service runs in development mode, which is what decides
+     * whether the insights collectors may read the captions and values on the
+     * screen. Anything it cannot determine counts as production, so the
+     * cautious answer is the one a missing or half-built configuration gets.
+     *
+     * @param service
+     *            the service being instrumented
+     * @return {@code true} only when the deployment configuration says so
+     */
+    private static boolean isDevelopmentMode(VaadinService service) {
+        try {
+            DeploymentConfiguration configuration = service
+                    .getDeploymentConfiguration();
+            return configuration != null && !configuration.isProductionMode();
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 
