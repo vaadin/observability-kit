@@ -190,10 +190,12 @@ notifies once however often it recurs. Announced are the findings this page
 raised — anything first seen since it loaded, including during the load itself,
 so a slow query on the landing view is reported; the older records in the
 buffers, which outlive a reload, are not. Copilot's plugin API has no
-notification of its own, so the line is written by asking the dev-tools handler
-to send Copilot's own `log` command: a server message no open panel claims is
-queued and replayed once one opens, which an event dispatched in the browser
-would not be.
+notification of its own, so the line is written as a `log` event on Copilot's
+event bus — the same event Copilot emits for its own log lines, buffered until
+the log panel opens if nothing is listening yet. It is not relayed through the
+server: Copilot offers a server message to the event bus and then to every open
+panel, and the log panel takes `log` from both, so a relayed announcement would
+be logged twice.
 
 Findings need `vaadin.observability.insights` (on by default); with it off the
 panel says so rather than showing an empty list. Nothing here exists in

@@ -18,10 +18,10 @@
 // element, because a finding is worth knowing about before anyone thinks to
 // open the panel: a new one is announced in Copilot's log, which is the only
 // notification surface its plugin API reaches. A panel element exists only
-// while its panel is open, and so cannot be what watches - which is also why
-// the announcement is relayed through the server rather than emitted here:
-// Copilot queues a server message no open panel claimed and replays it when
-// one opens, and the log panel is usually not open either.
+// while its panel is open, and so cannot be what watches. The announcement is
+// a 'log' event on Copilot's event bus, which buffers an event nothing is
+// listening for until the log panel opens - and the log panel is usually not
+// open either.
 //
 // The IIFE is idempotent so repeated injection does not re-register the plugin.
 //
@@ -41,11 +41,15 @@
   var COMMAND_METRICS = 'observability-kit-metrics';
   var COMMAND_INSIGHTS = 'observability-kit-insights';
   var COMMAND_INSIGHTS_DATA = 'observability-kit-insights-data';
-  // Asks the server to write a line to the Copilot log. It has to come from
-  // the server: Copilot's log panel claims a 'log' command, and a message
-  // nothing claims is queued and replayed when a panel opens, which is what
-  // makes an announcement survive a closed log panel.
-  var COMMAND_ANNOUNCE = 'observability-kit-announce';
+  // Copilot's own event for a log entry, which is how its log panel is written
+  // to from the browser. It must not be asked for over the server instead: a
+  // server message is offered to the event bus and then to every open panel,
+  // and the log panel listens on both, so a 'log' command relayed from the
+  // server is written to the log twice.
+  var EVENT_LOG = 'log';
+  // A log line is a notification, not a report. The summaries the server writes
+  // are short, but nothing here guarantees that.
+  var MAX_LOG_MESSAGE = 300;
   var REFRESH_INTERVAL_MS = 3000;
   // While the panel is closed the meters are not worth asking for at all and
   // the insights are not worth asking for every three seconds. One in five
@@ -55,6 +59,15 @@
   // CopilotInterface captured at plugin init; used by the panel to talk to the
   // server over the dev-tools websocket.
   var copilot = null;
+
+  // Copilot's event bus, looked up per call rather than held: it is created
+  // during Copilot's bootstrap, and the module is loaded whenever the UI
+  // happens to inject it. Null when there is no Copilot to talk to.
+  function eventBus() {
+    var cp = window.Vaadin && window.Vaadin.copilot;
+    return (cp && cp.eventbus) || null;
+  }
+
   // The open panel element, or null while the panel is closed. Copilot creates
   // one per opening, so this is a handle for the module to render into rather
   // than an owner of any state.
@@ -733,13 +746,20 @@
    * Announces findings the payload did not have before, and that this page is
    * old enough to be responsible for.
    *
-   * Copilot's plugin API (send + addPanel) exposes no notification of its own.
-   * Its log panel does claim a server message with the command 'log', so the
-   * announcement is relayed through our own handler, which sends one - the
-   * whole point being that this works with the log panel closed, when there is
-   * no element subscribed to the event bus, because Copilot queues an unclaimed
-   * message and replays it once the panel opens. Best-effort by design: a
-   * Copilot that drops it costs the developer a notification, never the panel.
+   * Copilot's plugin API (send + addPanel) exposes no notification of its own,
+   * so the announcement is a 'log' event on its event bus - the same event
+   * Copilot emits for its own log lines. It works with the log panel closed:
+   * the bus buffers an event of a type nothing is listening for and replays it
+   * to the first listener that subscribes, which is what the log panel does
+   * when it opens.
+   *
+   * Not relayed through the server, though a server message would be queued
+   * and replayed the same way: Copilot offers a server message to the event
+   * bus and then, if no listener claimed it, to every open panel, and the log
+   * panel takes 'log' from both - so a relayed announcement is logged twice.
+   *
+   * Best-effort by design: a Copilot that drops this costs the developer a
+   * notification, never the panel.
    */
   function announce(payload) {
     var fresh = [];
@@ -753,14 +773,19 @@
         fresh.push(insight);
       }
     });
-    if (!copilot) {
+    var bus = eventBus();
+    if (!bus || !bus.emit) {
       return;
     }
     rank(fresh).forEach(function (insight) {
+      var message = 'Observability: ' + insight.summary;
+      if (message.length > MAX_LOG_MESSAGE) {
+        message = message.substring(0, MAX_LOG_MESSAGE) + '…';
+      }
       try {
-        copilot.send(COMMAND_ANNOUNCE, {
+        bus.emit(EVENT_LOG, {
           type: insight.severity === 'error' ? 'error' : 'warning',
-          message: 'Observability: ' + insight.summary
+          message: message
         });
       } catch (e) {
         // A Copilot that does not take this is not a reason to stop watching,
@@ -1041,8 +1066,7 @@
    * panel that may never open, and this one arrives every few seconds.
    */
   function listen() {
-    var cp = window.Vaadin && window.Vaadin.copilot;
-    var bus = cp && cp.eventbus;
+    var bus = eventBus();
     if (!bus || !bus.on) {
       return;
     }
