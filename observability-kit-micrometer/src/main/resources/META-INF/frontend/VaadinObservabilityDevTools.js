@@ -79,6 +79,113 @@
   // came for them.
   var metricsOpen = null;
 
+  // ---- findings the developer is not working on right now ----------------
+  //
+  // "3 findings need attention" is only worth reading while all three are
+  // news. A developer fixing one feature knows about the slow query in
+  // another, and a finding nothing has re-triggered in half an hour is
+  // history rather than attention. Both are folded away here instead of
+  // being dropped: the count stays on screen and one click brings them back,
+  // because a panel that silently discards findings is worse than a noisy
+  // one.
+
+  // Findings hidden by hand, keyed by insightKey, valued by when. Kept in
+  // localStorage so a reload - which in development mode happens on every
+  // code change - does not ask the developer to hide them all again.
+  var DISMISSED_STORAGE_KEY = 'vaadin-observability-hidden-findings';
+  // Entries expire, so a key for a finding nobody will see again cannot sit
+  // in storage forever, and the newest survive a cap on how many are kept.
+  var DISMISSED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  var DISMISSED_MAX = 200;
+
+  /**
+   * How long a finding goes unreported before the panel stops counting it as
+   * needing attention.
+   *
+   * Measured from `lastSeen`, so anything still happening stays up however
+   * old its first occurrence is, and a finding that stops recurring fades out
+   * on its own - and comes straight back if it recurs, which is the property
+   * that makes this safe to do automatically.
+   */
+  var STALE_AFTER_MS = 30 * 60 * 1000;
+
+  var dismissed = loadDismissed();
+  // Whether the folded-away findings are on screen. Not persisted: it is a
+  // question about right now, not a preference.
+  var showHidden = false;
+
+  function loadDismissed() {
+    var stored = {};
+    try {
+      var raw = window.localStorage.getItem(DISMISSED_STORAGE_KEY);
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') {
+        var cutoff = Date.now() - DISMISSED_TTL_MS;
+        Object.keys(parsed).forEach(function (key) {
+          var when = Number(parsed[key]);
+          if (isFinite(when) && when > cutoff) {
+            stored[key] = when;
+          }
+        });
+      }
+    } catch (e) {
+      // No storage, or something else's data under our key. Hiding then lasts
+      // as long as the page does, which is worth more than failing to load.
+    }
+    return stored;
+  }
+
+  function saveDismissed() {
+    try {
+      var keys = Object.keys(dismissed).sort(function (a, b) {
+        return dismissed[b] - dismissed[a];
+      });
+      var kept = {};
+      keys.slice(0, DISMISSED_MAX).forEach(function (key) {
+        kept[key] = dismissed[key];
+      });
+      dismissed = kept;
+      window.localStorage.setItem(
+        DISMISSED_STORAGE_KEY,
+        JSON.stringify(dismissed)
+      );
+    } catch (e) {
+      // As above: the in-memory map is still correct for this page.
+    }
+  }
+
+  function isDismissed(insight) {
+    return Object.prototype.hasOwnProperty.call(
+      dismissed,
+      insightKey(insight)
+    );
+  }
+
+  // Deliberately not un-hidden by a recurrence. A developer who hid the slow
+  // query in the feature they are not working on will keep triggering it, and
+  // a dismissal that undid itself every time would be no dismissal at all.
+  function dismiss(insight) {
+    dismissed[insightKey(insight)] = Date.now();
+    saveDismissed();
+  }
+
+  function restore(insight) {
+    delete dismissed[insightKey(insight)];
+    saveDismissed();
+  }
+
+  /** Whether nothing has re-triggered this finding for a while. */
+  function isStale(insight) {
+    var seen = Date.parse(lastSeen(insight));
+    // Unparseable means the payload did not say, and a finding that cannot be
+    // placed in time is not one to fold away on a guess.
+    return !isNaN(seen) && Date.now() - seen > STALE_AFTER_MS;
+  }
+
+  function isHidden(insight) {
+    return isDismissed(insight) || isStale(insight);
+  }
+
   // Everything interpolated into innerHTML goes through here. Insight text is
   // not the server's to choose the way a meter name is: a client-error
   // message, its frame and its function name are strings the page reported,
@@ -419,11 +526,36 @@
     );
   }
 
-  function insightRow(insight, index) {
+  var ROW_BUTTON_STYLE =
+    'flex:none;font:inherit;font-size:11px;padding:2px 6px;cursor:pointer;' +
+    'background:none;border:1px solid rgba(128,128,128,.4);border-radius:4px;' +
+    'color:inherit';
+
+  function rowButton(action, index, label, title) {
+    return (
+      '<button data-action="' +
+      action +
+      '" data-index="' +
+      index +
+      '" title="' +
+      esc(title) +
+      '" style="' +
+      ROW_BUTTON_STYLE +
+      '">' +
+      esc(label) +
+      '</button>'
+    );
+  }
+
+  function insightRow(insight, index, hidden) {
     var key = insightKey(insight);
     var open = !!expanded[key];
+    // A folded-away finding is shown faded when the section is unfolded, so
+    // that what is being ignored reads differently from what is not.
     return (
-      '<div style="border-bottom:1px solid rgba(128,128,128,.15)">' +
+      '<div style="border-bottom:1px solid rgba(128,128,128,.15)' +
+      (hidden ? ';opacity:.55' : '') +
+      '">' +
       '<div data-action="toggle-insight" data-index="' +
       index +
       '" style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;cursor:pointer">' +
@@ -438,18 +570,45 @@
       esc(insightMeta(insight)) +
       '</div>' +
       '</div>' +
-      '<button data-action="copy-insight" data-index="' +
-      index +
-      '" title="Copy this finding as JSON" ' +
-      'style="flex:none;font:inherit;font-size:11px;padding:2px 6px;cursor:pointer;' +
-      'background:none;border:1px solid rgba(128,128,128,.4);border-radius:4px;color:inherit">' +
-      'Copy' +
-      '</button>' +
+      rowButton('copy-insight', index, 'Copy',
+        'Copy this finding as JSON') +
+      (isDismissed(insight)
+        ? rowButton('restore-insight', index, 'Unhide',
+            'Count this finding again')
+        : rowButton('hide-insight', index, 'Hide',
+            'Stop counting this finding; it stays under "hidden"')) +
       '<span style="flex:none;color:#888;width:12px;text-align:center">' +
       (open ? '▾' : '▸') +
       '</span>' +
       '</div>' +
       (open ? insightDetail(insight) : '') +
+      '</div>'
+    );
+  }
+
+  /**
+   * The fold that the set-aside findings live behind, and its count. It says
+   * which of the two reasons put them there, because "you hid this" and "this
+   * stopped happening" are different things to know.
+   */
+  function hiddenToggle(count, byHand) {
+    var noun = count === 1 ? 'finding' : 'findings';
+    var what =
+      byHand === count
+        ? count + ' hidden ' + noun
+        : byHand === 0
+          ? count + ' ' + noun + ' gone quiet'
+          : count + ' ' + noun + ' set aside (' + byHand + ' hidden, ' +
+            (count - byHand) + ' gone quiet)';
+    return (
+      '<div data-action="toggle-hidden" style="display:flex;align-items:center;' +
+      'gap:6px;padding:7px 12px;cursor:pointer;color:#888;font-size:11px">' +
+      '<span style="width:12px;text-align:center">' +
+      (showHidden ? '▾' : '▸') +
+      '</span>' +
+      '<span>' +
+      esc(count + ' ' + (count === 1 ? 'finding' : 'findings') + ' ' + what) +
+      '</span>' +
       '</div>'
     );
   }
@@ -756,7 +915,11 @@
         return;
       }
       announced[key] = true;
-      if (raisedAfterPageStart(insight, payload)) {
+      // Hidden by hand means "stop telling me about this", and a line in the
+      // Copilot log is telling them about it. Staleness is not checked: a
+      // finding old enough to be quiet cannot be one raised since this page
+      // loaded.
+      if (raisedAfterPageStart(insight, payload) && !isDismissed(insight)) {
         fresh.push(insight);
       }
     });
@@ -879,6 +1042,11 @@
         this.renderMeters();
         return;
       }
+      if (action === 'toggle-hidden') {
+        showHidden = !showHidden;
+        this.renderInsights(true);
+        return;
+      }
       var insight = (this._ranked || [])[Number(target.getAttribute('data-index'))];
       if (!insight) {
         return;
@@ -890,6 +1058,12 @@
         } else {
           expanded[key] = true;
         }
+        this.renderInsights(true);
+      } else if (action === 'hide-insight') {
+        dismiss(insight);
+        this.renderInsights(true);
+      } else if (action === 'restore-insight') {
+        restore(insight);
         this.renderInsights(true);
       } else if (action === 'copy-insight') {
         // The insight JSON is built to travel - into an issue, into an AI
@@ -931,53 +1105,98 @@
       var instrumentation = latestInsights && latestInsights.instrumentation;
       this._ranked = rank(insights);
 
+      // Indices into _ranked rather than the findings themselves, because
+      // that is what a row's data-index resolves against when it is clicked.
+      var live = [];
+      var quiet = [];
+      var byHand = 0;
+      this._ranked.forEach(function (insight, index) {
+        if (!isHidden(insight)) {
+          live.push(index);
+          return;
+        }
+        quiet.push(index);
+        if (isDismissed(insight)) {
+          byHand++;
+        }
+      });
+
       // Decided by the first payload that reaches the panel, and never again:
       // once the developer has folded or unfolded the meters, that is theirs.
       if (metricsOpen === null && latestInsights) {
-        metricsOpen = this._ranked.length === 0;
+        metricsOpen = live.length === 0;
       }
 
       // Rewritten only when something actually changed. The panel polls every
       // three seconds, and rebuilding this section on every poll would close
       // whatever row was open and drop the selection of anyone mid-copy.
+      //
+      // The partition is part of the signature, not just the payload: a
+      // finding going quiet changes the panel without the payload changing at
+      // all, and hiding one changes it without the server being involved.
       var signature = JSON.stringify([
         !!latestInsights,
         instrumentation,
         this._ranked,
-        Object.keys(expanded).sort()
+        Object.keys(expanded).sort(),
+        live,
+        quiet,
+        showHidden
       ]);
       if (!force && signature === this._insightsSignature) {
         return;
       }
       this._insightsSignature = signature;
 
+      var ranked = this._ranked;
+      var rows = function (indices, hidden) {
+        return indices
+          .map(function (index) {
+            return insightRow(ranked[index], index, hidden);
+          })
+          .join('');
+      };
+
       var header =
         '<div style="display:flex;align-items:center;gap:6px;padding:8px 12px 6px;' +
         'font-weight:600">' +
-        (this._ranked.length === 0
+        (live.length === 0
           ? 'Insights'
           : esc(
-              this._ranked.length +
-                (this._ranked.length === 1 ? ' finding' : ' findings') +
+              live.length +
+                (live.length === 1 ? ' finding' : ' findings') +
                 ' need attention'
             )) +
         '</div>';
 
+      var body;
+      if (live.length > 0) {
+        body = rows(live, false);
+      } else if (!latestInsights) {
+        // Before the first payload there is no answer yet, and "no problems
+        // detected" would be one.
+        body =
+          '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
+          'Waiting for the first snapshot…' +
+          '</div>';
+      } else if (quiet.length > 0) {
+        // Findings exist; none is being counted. Saying "no problems
+        // detected" here would be a claim the panel's own fold contradicts.
+        body =
+          '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
+          'Nothing needs attention right now.' +
+          '</div>';
+      } else {
+        body = emptyInsights(instrumentation);
+      }
+
       this._insightsEl.innerHTML =
         header +
-        (this._ranked.length === 0
-          ? // Before the first payload there is no answer yet, and "no
-            // problems detected" would be one.
-            latestInsights
-            ? emptyInsights(instrumentation)
-            : '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
-              'Waiting for the first snapshot…' +
-              '</div>'
-          : this._ranked
-              .map(function (insight, index) {
-                return insightRow(insight, index);
-              })
-              .join(''));
+        body +
+        (quiet.length > 0
+          ? hiddenToggle(quiet.length, byHand) +
+            (showHidden ? rows(quiet, true) : '')
+          : '');
     }
 
     renderMeters() {

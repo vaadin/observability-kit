@@ -44,10 +44,11 @@ import com.vaadin.observability.micrometer.MeterNames;
  *            the client event that triggered the invocation, e.g. {@code click}
  * @param rpcType
  *            the Flow RPC invocation type, e.g. {@code event}
- * @param precedingSteps
- *            what the user did in this UI before this interaction, oldest
- *            first, at most {@link InteractionTrail#MAX_STEPS}; empty in
- *            production, where no trail is kept
+ * @param viewState
+ *            the values the view was holding when this interaction was
+ *            captured, in the order they appear on screen and at most
+ *            {@link ViewState#MAX_VALUES}; empty in production, where the
+ *            screen is not read
  * @param outcome
  *            {@link #OUTCOME_SUCCESS} or {@link #OUTCOME_ERROR}
  * @param durationMs
@@ -85,7 +86,7 @@ import com.vaadin.observability.micrometer.MeterNames;
  */
 public record CapturedInteraction(Instant timestamp, String route,
         String location, String component, String caption, String event,
-        String rpcType, List<InteractionStep> precedingSteps, String outcome,
+        String rpcType, List<ComponentState> viewState, String outcome,
         long durationMs, long thresholdMs, boolean detailsIncluded,
         String exceptionType, String exceptionMessage, String applicationFrame,
         List<String> stackTop, String sessionId, int uiId) {
@@ -97,8 +98,8 @@ public record CapturedInteraction(Instant timestamp, String route,
 
     /**
      * An interaction captured without the screen detail development mode adds:
-     * no caption, no trail. This is what a production payload carries, and what
-     * a caller that has nothing to say about either should build.
+     * no caption, no view state. This is what a production payload carries, and
+     * what a caller that has nothing to say about either should build.
      *
      * @param timestamp
      *            when the interaction completed

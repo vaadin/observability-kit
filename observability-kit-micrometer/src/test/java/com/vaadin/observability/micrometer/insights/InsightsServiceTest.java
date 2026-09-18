@@ -369,16 +369,15 @@ class InsightsServiceTest {
                         .get("medianDurationMs"));
     }
 
-    // ---------- captions and the lead-up, as a replay reads them ----------
+    // ---------- captions and the view's state, as a replay reads them ------
 
     /** A failure on the returns desk of the use case this was built for. */
     private static CapturedInteraction returnsDeskFailure(
-            List<InteractionStep> precedingSteps) {
+            List<ComponentState> viewState) {
         return new CapturedInteraction(Instant.now(), "returns", "returns",
                 "com.vaadin.flow.component.button.Button", "Process return",
-                "click", "event", precedingSteps,
-                CapturedInteraction.OUTCOME_ERROR, 5, -1, true,
-                "java.lang.IllegalStateException",
+                "click", "event", viewState, CapturedInteraction.OUTCOME_ERROR,
+                5, -1, true, "java.lang.IllegalStateException",
                 "Inspection template 'defective' not found",
                 "com.example.uc6.FailureInsightsView.lambda$new$0"
                         + "(FailureInsightsView.java:198)",
@@ -406,13 +405,13 @@ class InsightsServiceTest {
     }
 
     @Test
-    void replayRedoesTheStepsThatLedToTheFailure() {
+    void replayRestoresTheStateTheFailureRanAgainst() {
         buffer.add(returnsDeskFailure(List.of(
-                new InteractionStep(
-                        "com.vaadin.flow.component.textfield." + "TextField",
-                        "Order number", "value", "mSync", "AC-10482"),
-                new InteractionStep("com.vaadin.flow.component.select.Select",
-                        "Reason", "value", "mSync", "Defective"))));
+                new ComponentState(
+                        "com.vaadin.flow.component.textfield.TextField",
+                        "Order number", "AC-10482"),
+                new ComponentState("com.vaadin.flow.component.select.Select",
+                        "Reason", "Defective"))));
 
         Assertions.assertEquals(
                 List.of("Open route '/returns'",
@@ -428,7 +427,7 @@ class InsightsServiceTest {
 
     @Test
     void replayWithoutScreenDetailReadsAsItAlwaysDid() {
-        // What a production payload carries: no caption, no trail.
+        // What a production payload carries: no caption, no state.
         buffer.add(error(Instant.now(), "com.example.OrdersView",
                 "java.lang.IllegalStateException", "com.example.Frame"));
 
@@ -443,13 +442,14 @@ class InsightsServiceTest {
     }
 
     @Test
-    void aStepWithoutAValueStillSaysWhatWasTouched() {
-        buffer.add(returnsDeskFailure(List.of(new InteractionStep(
-                "com.vaadin.flow.component.checkbox.Checkbox", "Inspected",
-                "checked", "mSync", null))));
+    void anEmptyFieldIsAStepBecauseItIsOftenTheWholeBug() {
+        buffer.add(returnsDeskFailure(List.of(new ComponentState(
+                "com.vaadin.flow.component.textfield.TextField", "Order number",
+                null))));
 
-        Assertions.assertEquals("Change the \"Inspected\" Checkbox",
-                replayOf(insightWithType("user-interaction-error")).get(1));
+        Assertions.assertEquals("Leave the \"Order number\" TextField empty",
+                replayOf(insightWithType("user-interaction-error")).get(1),
+                "a handler that rejects a blank value needs to be shown one");
     }
 
     @Test
@@ -457,9 +457,9 @@ class InsightsServiceTest {
         buffer.add(new CapturedInteraction(Instant.now(), "returns", "returns",
                 "com.vaadin.flow.component.button.Button", "Process return",
                 "click", "event",
-                List.of(new InteractionStep(
+                List.of(new ComponentState(
                         "com.vaadin.flow.component.select.Select", "Refund",
-                        "value", "mSync", "Bank transfer")),
+                        "Bank transfer")),
                 CapturedInteraction.OUTCOME_SUCCESS, 1500,
                 OVER_BUDGET_THRESHOLD, true, null, null, null, null, "session",
                 0));

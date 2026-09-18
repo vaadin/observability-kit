@@ -666,20 +666,21 @@ public class InsightsService {
     }
 
     /**
-     * The replay steps of an interaction insight: open the location, redo what
-     * led up to the interaction, do the interaction, expect the outcome.
+     * The replay steps of an interaction insight: open the location, put the
+     * view into the state the interaction ran against, do the interaction,
+     * expect the outcome.
      * <p>
-     * The lead-up is the point. A handler that fails only for a particular
-     * selection is not reproduced by "click the button", and until the trail
-     * was collected that is all an insight could say. Where there is no trail —
-     * production, where it is not collected, and the first interaction of a UI,
-     * where there is nothing yet — the steps are the two-line form this always
-     * had, so a payload nobody enriched reads as it always did.
+     * The state is the point. A handler that fails only for a particular
+     * selection is not reproduced by "click the button", and without the state
+     * that is all an insight could say. Where there is none — production, where
+     * the screen is not read, and a view holding no values — the steps are the
+     * two-line form this always had, so a payload nobody enriched reads as it
+     * always did.
      * <p>
-     * The trail reported is the latest occurrence's, like every other
+     * The state reported is the latest occurrence's, like every other
      * per-occurrence field of a group: occurrences are grouped by route,
-     * component, event and exception, and users reaching the same failure by
-     * different paths are one finding with the most recent path shown.
+     * component, event and exception, and users reaching the same failure with
+     * different values are one finding showing the most recent.
      *
      * @param latest
      *            the latest occurrence of the group being described
@@ -691,7 +692,7 @@ public class InsightsService {
             String expectation) {
         List<String> steps = new ArrayList<>();
         steps.add(text("Open route '/%s'", nullSafe(latest.location())));
-        latest.precedingSteps().stream().map(InsightsService::stepText)
+        latest.viewState().stream().map(InsightsService::stateText)
                 .forEach(steps::add);
         if (latest.caption() == null) {
             steps.add(text("Locate component %s",
@@ -699,37 +700,41 @@ public class InsightsService {
             steps.add(text("Trigger a '%s' event on it",
                     nullSafe(latest.event())));
         } else {
-            steps.add(actionText(latest.component(), latest.caption(),
-                    latest.event(), latest.rpcType(), null));
+            steps.add(actionText(latest));
         }
         steps.add(expectation);
         return List.copyOf(steps);
     }
 
-    /** One step of the lead-up, as an instruction to follow. */
-    private static String stepText(InteractionStep step) {
-        return actionText(step.component(), step.caption(), step.event(),
-                step.rpcType(), step.value());
+    /** One value the view was holding, as an instruction to reproduce it. */
+    private static String stateText(ComponentState state) {
+        String named = named(state.component(), state.caption());
+        // "Leave empty" rather than "clear", which would be a false
+        // instruction for a field that was empty to begin with. Either way the
+        // step is true of the state the interaction ran against — and an empty
+        // field is worth a step of its own, being exactly what a handler that
+        // rejects a blank value needs to be shown.
+        return state.value() == null ? text("Leave the %s empty", named)
+                : text("Set the %s to '%s'", named, state.value());
     }
 
     /**
-     * One thing to do to one component, phrased the way the reader would do it:
-     * a property synchronization is the field they leave a value in, a click is
-     * a click, and anything else is named by its event so the step stays true
-     * even when the kit has no better word for it.
+     * The interaction the insight is about, as the step that provokes it. Named
+     * by its event where the kit has no better word, because here the event is
+     * the subject of the finding rather than incidental traffic: it is the
+     * invocation that failed or ran long, and {@code evidence.event} reports it
+     * too.
      */
-    private static String actionText(@Nullable String component,
-            @Nullable String caption, @Nullable String event,
-            @Nullable String rpcType, @Nullable String value) {
-        String named = named(component, caption);
-        if (RPC_TYPE_PROPERTY_SYNC.equals(rpcType)) {
-            return value == null ? text("Change the %s", named)
-                    : text("Set the %s to '%s'", named, value);
+    private static String actionText(CapturedInteraction latest) {
+        String named = named(latest);
+        if (RPC_TYPE_PROPERTY_SYNC.equals(latest.rpcType())) {
+            return text("Change the %s", named);
         }
-        if (EVENT_CLICK.equals(event)) {
+        if (EVENT_CLICK.equals(latest.event())) {
             return text("Click the %s", named);
         }
-        return text("Trigger a '%s' event on the %s", nullSafe(event), named);
+        return text("Trigger a '%s' event on the %s", nullSafe(latest.event()),
+                named);
     }
 
     private static List<Map<String, Object>> examplesJson(

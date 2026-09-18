@@ -25,7 +25,6 @@ import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
-import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 /**
  * Captures interesting client-to-server invocations as
@@ -42,12 +41,11 @@ import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
  * Works in production mode.
  * <p>
  * In development mode it additionally reads what is on the screen: the caption
- * of the interacted component, and a short {@link InteractionTrail trail} of
- * the steps that led to it, so that the {@code replay} of an insight names the
- * button the reader is looking for and includes the state the failure needed.
- * Neither is collected in production, where the payload is meant to be
- * forwarded and both would carry application text — see
- * {@link ComponentCaptions}.
+ * of the interacted component, and the {@link ViewState values its view was
+ * holding}, so that the {@code replay} of an insight names the button the
+ * reader is looking for and states what the failure needed to be set. Neither
+ * is collected in production, where the payload is meant to be forwarded and
+ * both would carry application text — see {@link ComponentCaptions}.
  */
 public class InteractionCollector {
 
@@ -80,16 +78,6 @@ public class InteractionCollector {
             "net.bytebuddy.", "org.objenesis.", "javassist.", "org.javassist.");
 
     private static final int STACK_TOP_FRAMES = 5;
-
-    /**
-     * Invocation types a user is behind, and so the only ones worth a trail
-     * step: a DOM event, a synchronized property update, and a call into a
-     * {@code @ClientCallable} or template handler. The rest — return channel
-     * messages, navigation, the kit's own client reporting back — are traffic
-     * rather than steps anyone could be told to repeat.
-     */
-    private static final List<String> USER_DRIVEN_TYPES = List.of("event",
-            "mSync", "publishedEventHandler");
 
     private final RecentInteractions buffer;
     private final boolean captureErrors;
@@ -128,7 +116,7 @@ public class InteractionCollector {
      *            much detail they may carry
      * @param developmentMode
      *            whether the application runs in development mode, which is
-     *            where component captions and the interaction trail are
+     *            where component captions and the state of the view are
      *            collected
      */
     public InteractionCollector(RecentInteractions buffer,
@@ -173,8 +161,27 @@ public class InteractionCollector {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
-        target.set(ComponentResolver.resolveComponent(event).orElse(null));
+        Component component = ComponentResolver.resolveComponent(event)
+                .orElse(null);
+        target.set(component);
+        rememberIfField(event.getUI(), component);
         startNanos.set(System.nanoTime());
+    }
+
+    /**
+     * Notes that the user has worked a field, which is what later lets a replay
+     * report the values they set and leave out the ones the view came with.
+     * Only the component's identity is kept; its value is read when an
+     * interaction is captured.
+     */
+    private void rememberIfField(UI ui, Component component) {
+        if (!screenDetail || !ComponentCaptions.holdsValue(component)) {
+            return;
+        }
+        TouchedFields touched = TouchedFields.of(ui);
+        if (touched != null) {
+            touched.add(component);
+        }
     }
 
     void invocationFailed(RpcInvocationFailedEvent event) {
@@ -205,58 +212,19 @@ public class InteractionCollector {
             try {
                 buffer.add(slowInteraction(event, durationMs, component));
             } catch (RuntimeException e) {
-                // Best-effort, as below.
+                // Best-effort: collection never interferes with the request.
             }
         }
-        try {
-            // Last, after every capture this invocation produces: a step
-            // describes what led up to the *next* captured interaction, and
-            // an interaction is not part of its own lead-up.
-            recordStep(event, component);
-        } catch (RuntimeException e) {
-            // Best-effort, as above.
-        }
     }
 
     /**
-     * Appends what just happened to the trail of its UI, so the next captured
-     * interaction can say what led to it. Skips the invocations no user is
-     * behind and the ones whose component could not be resolved, since a step
-     * nobody can be told to repeat is noise in a replay.
+     * The values the view was holding, in the modes where the screen is read.
+     * Read now rather than accumulated as the user worked, so that what an
+     * insight reports is the state this interaction actually ran against.
      */
-    private void recordStep(AbstractRpcInvocationEvent event,
-            Component component) {
-        if (!screenDetail || component == null
-                || !USER_DRIVEN_TYPES.contains(event.getType())
-                || isOwnPlumbing(component)) {
-            return;
-        }
-        InteractionTrail trail = InteractionTrail.of(event.getUI());
-        if (trail == null) {
-            return;
-        }
-        trail.add(new InteractionStep(component.getClass().getName(),
-                ComponentCaptions.captionOf(component), event.getName(),
-                event.getType(), ComponentCaptions.valueOf(component)));
-    }
-
-    /**
-     * Whether the component is the kit's own in-browser collector. It ships its
-     * batches through a {@code @ClientCallable}, which is an invocation like
-     * any other and would otherwise put a step nobody performed between every
-     * two the user did.
-     */
-    private static boolean isOwnPlumbing(Component component) {
-        return component instanceof MetricsCollectorElement;
-    }
-
-    /** The trail of the UI an interaction happened in, oldest step first. */
-    private List<InteractionStep> precedingSteps(UI ui) {
-        if (!screenDetail) {
-            return List.of();
-        }
-        InteractionTrail trail = InteractionTrail.of(ui);
-        return trail == null ? List.of() : trail.snapshot();
+    private List<ComponentState> viewState(UI ui, Component component) {
+        return screenDetail ? ViewState.of(ui, component, TouchedFields.of(ui))
+                : List.of();
     }
 
     /** The component's caption, in the modes where captions are read. */
@@ -284,7 +252,7 @@ public class InteractionCollector {
         // the application opted in.
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
                 typeOf(component), caption(component), event.getName(),
-                event.getType(), precedingSteps(ui),
+                event.getType(), viewState(ui, component),
                 CapturedInteraction.OUTCOME_ERROR, durationMs, -1, details,
                 rootCause.getClass().getName(),
                 details ? InsightDetails
@@ -304,7 +272,7 @@ public class InteractionCollector {
         // with it, so a report never has to assume the default.
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
                 typeOf(component), caption(component), event.getName(),
-                event.getType(), precedingSteps(ui),
+                event.getType(), viewState(ui, component),
                 CapturedInteraction.OUTCOME_SUCCESS, durationMs, uxBudgetMs,
                 details, null, null, null, null,
                 InsightDetails.sessionId(ui, details),

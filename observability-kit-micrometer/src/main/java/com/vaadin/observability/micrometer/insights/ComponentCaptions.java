@@ -86,6 +86,18 @@ final class ComponentCaptions {
     }
 
     /**
+     * Whether the component is one a user leaves a value in, and so one whose
+     * interactions are worth a replay step whatever event carried them.
+     *
+     * @param component
+     *            the component to test, may be {@code null}
+     * @return {@code true} for a field, select, checkbox, date picker, …
+     */
+    static boolean holdsValue(@Nullable Component component) {
+        return component instanceof HasValue<?, ?>;
+    }
+
+    /**
      * The value a component currently holds, rendered for a replay step, or
      * {@code null} when it holds none.
      * <p>
