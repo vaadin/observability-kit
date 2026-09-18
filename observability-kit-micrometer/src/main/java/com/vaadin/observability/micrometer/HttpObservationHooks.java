@@ -38,8 +38,8 @@ interface HttpObservationHooks {
      *            the current Vaadin request
      * @param requestType
      *            the classified request type (e.g. {@code uidl},
-     *            {@code heartbeat}, {@code push}, {@code static},
-     *            {@code other})
+     *            {@code heartbeat}, {@code push}, {@code bootstrap},
+     *            {@code stream}, {@code static}, {@code other})
      */
     default void requestType(VaadinRequest request, String requestType) {
     }

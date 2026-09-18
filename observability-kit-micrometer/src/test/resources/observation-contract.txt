@@ -39,7 +39,7 @@ vaadin.navigation
   high: (none)
 
 vaadin.request.duration
-  span-names: vaadin.request.heartbeat, vaadin.request.navigation, vaadin.request.other, vaadin.request.poll, vaadin.request.push, vaadin.request.rpc, vaadin.request.static
+  span-names: vaadin.request.bootstrap, vaadin.request.heartbeat, vaadin.request.navigation, vaadin.request.other, vaadin.request.poll, vaadin.request.push, vaadin.request.rpc, vaadin.request.static, vaadin.request.stream
   low:  http.method, outcome, vaadin.interaction, vaadin.request.type
   high: ui.id, vaadin.client.location
 

@@ -298,6 +298,111 @@ class RequestMetricsBinderTest {
         }
     }
 
+    /**
+     * Classifies one request and returns the {@code vaadin.request.type} tag
+     * the Timer got, driving the Observation path so the type is read exactly
+     * as the span carries it.
+     */
+    private static String classify(RequestCustomizer customizer) {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservationRegistry observations = ObservationRegistry.create();
+        observations.observationConfig().observationHandler(
+                new DefaultMeterObservationHandler(registry));
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry,
+                observations, ObservabilitySettings.builder().build());
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        customizer.accept(req);
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+        binder.requestStart(req, res);
+        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+
+        Timer timer = registry.find(MeterNames.REQUEST_DURATION).timer();
+        Assertions.assertNotNull(timer, "the request must be timed");
+        return timer.getId().getTag("vaadin.request.type");
+    }
+
+    private interface RequestCustomizer {
+        void accept(VaadinRequest request);
+    }
+
+    @Test
+    void streamClassifierCoversDownloadsAndUploads() {
+        // Both go through Flow's StreamRequestHandler, under a path that
+        // starts with /VAADIN/ — so without the stream check they would be
+        // counted as cheap static assets.
+        Assertions.assertEquals("stream",
+                classify(r -> Mockito.when(r.getPathInfo()).thenReturn(
+                        "/VAADIN/dynamic/resource/1/5298ee8b-9686-4a5a-ae1d-b38c62767d6a/report.pdf")),
+                "a download must classify as a stream request");
+        Assertions.assertEquals("stream",
+                classify(r -> Mockito.when(r.getPathInfo()).thenReturn(
+                        "/VAADIN/dynamic/resource/1/5298ee8b-9686-4a5a-ae1d-b38c62767d6a/upload")),
+                "an upload must classify as a stream request");
+    }
+
+    @Test
+    void bootstrapClassifierCoversThePageLoad() {
+        Assertions.assertEquals("bootstrap", classify(r -> {
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getPathInfo()).thenReturn("/orders");
+            Mockito.when(r.getHeader("Sec-Fetch-Dest")).thenReturn("document");
+        }), "the HTML document request is the page load");
+        Assertions.assertEquals("bootstrap", classify(
+                r -> Mockito.when(r.getParameter("v-r")).thenReturn("init")),
+                "the init request creates the UI for the page just loaded");
+        Assertions.assertEquals("bootstrap", classify(r -> {
+            // A browser too old to send Sec-Fetch-Dest still asks for HTML.
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getHeader("Accept")).thenReturn(
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        }), "an explicit HTML Accept is a page load too");
+        Assertions.assertEquals("bootstrap", classify(r -> {
+            // An embedded route: served the same index.html, and it builds a
+            // UI of its own, so the browser-side bootstrap meter counts it too.
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getPathInfo()).thenReturn("/orders");
+            Mockito.when(r.getHeader("Sec-Fetch-Dest")).thenReturn("iframe");
+        }), "an embedded application start is a page load");
+    }
+
+    @Test
+    void anAcceptHeaderThatOnlyMentionsHtmlIsNotAPageLoad() {
+        // The Accept fallback runs for every request without a Sec-Fetch-Dest,
+        // scripted traffic included: only a header that asks for HTML first —
+        // as a navigating browser does — may be read as a page load.
+        Assertions.assertEquals("other", classify(r -> {
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getPathInfo()).thenReturn("/api/orders");
+            Mockito.when(r.getHeader("Accept"))
+                    .thenReturn("application/json, text/html;q=0.1");
+        }), "an API client listing text/html last is not navigating");
+        Assertions.assertEquals("bootstrap", classify(r -> {
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getHeader("Accept"))
+                    .thenReturn("text/html; charset=utf-8, */*");
+        }), "parameters on the first media range must not hide it");
+    }
+
+    @Test
+    void applicationTrafficIsNotMistakenForAPageLoad() {
+        Assertions.assertEquals("other", classify(r -> {
+            // fetch() from application code: same servlet, same method, but
+            // the browser reports it as a non-document destination.
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getPathInfo()).thenReturn("/api/orders");
+            Mockito.when(r.getHeader("Sec-Fetch-Dest")).thenReturn("empty");
+            Mockito.when(r.getHeader("Accept")).thenReturn("*/*");
+        }), "an XHR must not be counted as a page load");
+        Assertions.assertEquals("other", classify(r -> {
+            Mockito.when(r.getMethod()).thenReturn("POST");
+            Mockito.when(r.getPathInfo()).thenReturn("/api/orders");
+        }), "a POST to an application endpoint is not a page load");
+        Assertions.assertEquals("other",
+                classify(r -> Mockito.when(r.getMethod()).thenReturn("GET")),
+                "a request saying nothing about what it wants stays other");
+    }
+
     @com.vaadin.flow.component.Tag("routed-view")
     private static final class RoutedView
             extends com.vaadin.flow.component.Component {
