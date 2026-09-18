@@ -77,6 +77,12 @@ public class InsightsService {
      */
     private static final int MAX_CLIENT_ERROR_INSIGHTS = 20;
 
+    /** Flow's invocation type for a synchronized property update. */
+    private static final String RPC_TYPE_PROPERTY_SYNC = "mSync";
+
+    /** The one DOM event common enough to be worth its own phrasing. */
+    private static final String EVENT_CLICK = "click";
+
     /**
      * Every string in the payload is built through here rather than through
      * {@link String#formatted(Object...)}, so that the numbers in it do not
@@ -510,7 +516,7 @@ public class InsightsService {
         insight.put("category", "reliability");
         insight.put("summary", text(
                 "User interaction '%s' on %s failed with %s (%d occurrence%s)",
-                nullSafe(latest.event()), simpleName(latest.component()),
+                nullSafe(latest.event()), named(latest),
                 simpleName(latest.exceptionType()), group.size(),
                 group.size() == 1 ? "" : "s"));
 
@@ -527,11 +533,8 @@ public class InsightsService {
         evidence.put("applicationFrame", latest.applicationFrame());
         insight.put("evidence", evidence);
 
-        insight.put("replay", List.of(
-                text("Open route '/%s'", nullSafe(latest.location())),
-                text("Locate component %s", simpleName(latest.component())),
-                text("Trigger a '%s' event on it", nullSafe(latest.event())),
-                latest.exceptionMessage() == null
+        insight.put("replay",
+                interactionReplay(latest, latest.exceptionMessage() == null
                         ? text("Expect %s", simpleName(latest.exceptionType()))
                         : text("Expect %s: %s",
                                 simpleName(latest.exceptionType()),
@@ -543,7 +546,7 @@ public class InsightsService {
                         + "root cause and propose a fix.",
                 latest.applicationFrame() != null ? latest.applicationFrame()
                         : "the component's event listener",
-                nullSafe(latest.event()), simpleName(latest.component()),
+                nullSafe(latest.event()), named(latest),
                 simpleName(latest.exceptionType())));
 
         insight.put("examples", examplesJson(group));
@@ -567,13 +570,12 @@ public class InsightsService {
         insight.put("type", "slow-user-interaction");
         insight.put("severity", "warning");
         insight.put("category", "performance");
-        insight.put("summary", text(
-                "Server handling of user interaction '%s' on %s took %d "
+        insight.put("summary",
+                text("Server handling of user interaction '%s' on %s took %d "
                         + "ms at the median (worst %d ms), over the %d ms UX "
-                        + "budget (%d occurrence%s)",
-                nullSafe(latest.event()), simpleName(latest.component()),
-                medianMs, maxMs, thresholdMs, group.size(),
-                group.size() == 1 ? "" : "s"));
+                        + "budget (%d occurrence%s)", nullSafe(latest.event()),
+                        named(latest), medianMs, maxMs, thresholdMs,
+                        group.size(), group.size() == 1 ? "" : "s"));
 
         Map<String, Object> evidence = commonEvidence(group);
         evidence.put("medianDurationMs", medianMs);
@@ -586,11 +588,9 @@ public class InsightsService {
                         + "network transfer and client-side rendering");
         insight.put("evidence", evidence);
 
-        insight.put("replay", List.of(
-                text("Open route '/%s'", nullSafe(latest.location())),
-                text("Locate component %s", simpleName(latest.component())),
-                text("Trigger a '%s' event on it", nullSafe(latest.event())),
-                text("Expect the server to spend roughly %d ms handling it",
+        insight.put("replay",
+                interactionReplay(latest, text(
+                        "Expect the server to spend roughly %d ms handling it",
                         medianMs)));
 
         insight.put("suggestion", text(
@@ -602,8 +602,8 @@ public class InsightsService {
                         + "inspect the handler and make the slow work faster, "
                         + "paginated, or move it off the request thread and "
                         + "push the result via ui.access().",
-                nullSafe(latest.event()), simpleName(latest.component()),
-                medianMs, maxMs, thresholdMs));
+                nullSafe(latest.event()), named(latest), medianMs, maxMs,
+                thresholdMs));
 
         insight.put("examples", examplesJson(group));
         return insight;
@@ -632,12 +632,115 @@ public class InsightsService {
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("route", latest.route());
         evidence.put("component", latest.component());
+        if (latest.caption() != null) {
+            // Only present in development mode, and only when the component
+            // has a caption at all — an absent key says "not collected", which
+            // is the truth in production and nothing a reader can act on.
+            evidence.put("componentCaption", latest.caption());
+        }
         evidence.put("event", latest.event());
         evidence.put("rpcType", latest.rpcType());
         evidence.put("occurrences", group.size());
         evidence.put("firstSeen", firstSeen.toString());
         evidence.put("lastSeen", latest.timestamp().toString());
         return evidence;
+    }
+
+    /**
+     * How an interaction's component is named in prose: by its caption and kind
+     * when the caption was collected — {@code "Process return" Button} — and by
+     * its kind alone otherwise.
+     * <p>
+     * The caption is what a reader can actually find on the screen. The kind
+     * stays because it is what a developer greps the source for, and because
+     * the two together survive a caption that turns out to be a duplicate.
+     */
+    private static String named(CapturedInteraction interaction) {
+        return named(interaction.component(), interaction.caption());
+    }
+
+    /**
+     * Single quotes, like every other quoted thing in the payload — the route a
+     * step opens, the event it triggers, the value it sets. Double quotes would
+     * be the odd one out, and would have to be escaped in the JSON this travels
+     * as besides.
+     */
+    private static String named(@Nullable String component,
+            @Nullable String caption) {
+        return caption == null ? simpleName(component)
+                : text("'%s' %s", caption, simpleName(component));
+    }
+
+    /**
+     * The replay steps of an interaction insight: open the location, put the
+     * view into the state the interaction ran against, do the interaction,
+     * expect the outcome.
+     * <p>
+     * The state is the point. A handler that fails only for a particular
+     * selection is not reproduced by "click the button", and without the state
+     * that is all an insight could say. Where there is none — production, where
+     * the screen is not read, and a view holding no values — the steps are the
+     * two-line form this always had, so a payload nobody enriched reads as it
+     * always did.
+     * <p>
+     * The state reported is the latest occurrence's, like every other
+     * per-occurrence field of a group: occurrences are grouped by route,
+     * component, event and exception, and users reaching the same failure with
+     * different values are one finding showing the most recent.
+     *
+     * @param latest
+     *            the latest occurrence of the group being described
+     * @param expectation
+     *            the closing step, saying what the reader should see
+     * @return the replay steps, in order
+     */
+    private static List<String> interactionReplay(CapturedInteraction latest,
+            String expectation) {
+        List<String> steps = new ArrayList<>();
+        steps.add(text("Open route '/%s'", nullSafe(latest.location())));
+        latest.viewState().stream().map(InsightsService::stateText)
+                .forEach(steps::add);
+        if (latest.caption() == null) {
+            steps.add(text("Locate component %s",
+                    simpleName(latest.component())));
+            steps.add(text("Trigger a '%s' event on it",
+                    nullSafe(latest.event())));
+        } else {
+            steps.add(actionText(latest));
+        }
+        steps.add(expectation);
+        return List.copyOf(steps);
+    }
+
+    /** One value the view was holding, as an instruction to reproduce it. */
+    private static String stateText(ComponentState state) {
+        String named = named(state.component(), state.caption());
+        // "Leave empty" rather than "clear", which would be a false
+        // instruction for a field that was empty to begin with. Either way the
+        // step is true of the state the interaction ran against — and an empty
+        // field is worth a step of its own, being exactly what a handler that
+        // rejects a blank value needs to be shown.
+        return state.value() == null ? text("Leave the %s empty", named)
+                : text("Set the %s to '%s'", named, state.value());
+    }
+
+    /**
+     * The interaction the insight is about, as the step that provokes it. Named
+     * by its event where the kit has no better word, because here the event is
+     * the subject of the finding rather than incidental traffic: it is the
+     * invocation that failed or ran long, and {@code evidence.event} reports it
+     * too.
+     */
+    private static String actionText(CapturedInteraction latest) {
+        String named = named(latest);
+        if (RPC_TYPE_PROPERTY_SYNC.equals(latest.rpcType())) {
+            return text("Change the %s", named);
+        }
+        if (EVENT_CLICK.equals(latest.event())) {
+            return text("Click the %s", named);
+        }
+        return text("Trigger a '%s' event on the %s", nullSafe(latest.event()),
+                named);
     }
 
     private static List<Map<String, Object>> examplesJson(

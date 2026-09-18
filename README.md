@@ -183,6 +183,25 @@ the browser's location by route template, so `orders/:orderId` is the current
 group while you are on `/orders/17`; an application served under a context path
 matches nothing and the groups stay alphabetical.
 
+**Findings you are not working on get out of the way.** "3 findings need
+attention" is only worth reading while all three are news, so two kinds fold
+away into a `… hidden` line under the list:
+
+- **Hidden by hand.** Every row has a **Hide** button, for the known slow query
+  in the feature you are not touching today. It stays hidden even as the
+  finding keeps recurring — a dismissal that undid itself on the next
+  occurrence would be no dismissal at all — and is remembered in the browser's
+  `localStorage`, so the reload that follows every code change does not ask you
+  to hide everything again. **Unhide** puts it back.
+- **Gone quiet.** A finding nothing has re-triggered for 30 minutes is history
+  rather than attention. This one is automatic and reverses itself: the moment
+  it recurs, `lastSeen` moves and it is back in the count.
+
+Nothing is discarded. The fold always shows how many are behind it and which
+of the two reasons put them there, and one click renders them, faded, with
+their detail and replay intact. A finding you hid is also not announced in the
+Copilot log.
+
 **New findings announce themselves.** The panel keeps watching with its window
 closed, and a finding the payload did not have before is written to the Copilot
 log, deduplicated on the same grouping key the endpoint uses, so one problem
@@ -200,6 +219,97 @@ be logged twice.
 Findings need `vaadin.observability.insights` (on by default); with it off the
 panel says so rather than showing an empty list. Nothing here exists in
 production — Copilot and the dev-tools connection do not.
+
+### Replay steps that replay
+
+Every finding carries `replay`, the steps to reproduce it. In production those
+steps identify the interaction and no more, because that is all a payload meant
+to be forwarded may say:
+
+```
+Open route '/returns'
+Locate component Button
+Trigger a 'click' event on it
+Expect IllegalStateException: Inspection template 'defective' not found
+```
+
+Which is not a reproduction. There are four Buttons on that view, and the
+failure needs a selection made before the click. **In development mode** the
+kit therefore reads two more things off the screen, and the steps become what a
+person would actually do:
+
+```
+Open route '/returns'
+Set the 'Reason' Select to 'Defective'
+Click the 'Process return' Button
+Expect IllegalStateException: Inspection template 'defective' not found
+```
+
+- **The caption** of the interacted component — its label, accessible name, own
+  text, or failing all of those its id — so a step names the one control the
+  reader is looking for. It is also in `evidence.componentCaption` and in the
+  panel's context line, `returns · 'Process return' Button · 3 occurrences`,
+  and the component class stays alongside it because that is what you grep for.
+- **The state of the view**, read at the moment the interaction was captured.
+
+The state is a **snapshot, not a history**. Accumulating what the user did as
+they did it sounds equivalent and is not: picking one item out of a `Select`
+arrives as three RPC invocations (`opened-changed`, `value-changed`,
+`opened-changed`), none of them an instruction anyone can carry out, and a user
+who changes their mind leaves the same field in the list twice with the stale
+value first. Reading the values once, when the failure is captured, gives each
+field once, as it actually stood, in the order the user last changed them.
+
+What goes in it: every component in the view that **holds a value**, **has a
+caption**, and **the user actually changed**. The last of those is what keeps
+the list short. A replay starts from a freshly opened view, so a field nobody
+changed is already at the value the reader will find there, and telling them to
+set it is a line that says nothing — the returns desk has four fields and one
+of them is the bug. Only identity is remembered as the user works, never
+values; the values are read once, at capture.
+
+"Changed" is decided by comparing the field's value across the invocation, not
+by the event that carried it: one selection sends `opened-changed`,
+`value-changed` and `opened-changed` again, and merely opening a dropdown sends
+the first and the last, so counting any invocation that reaches a field would
+report every dropdown the user ever looked at. The exception is a synchronized
+property update, where Flow applies the new value to the whole request's state
+before it reports any invocation — there is nothing left to compare by then, so
+an `mSync` reaching something that holds a value is taken as a user edit.
+
+The value is read from the component rather than from the property the client
+sent, so a `Select` says `'Defective'` and not the item key `'2'`. A field the
+user emptied is `Leave the 'Order number' TextField empty`, which is worth a
+line because a blank value is frequently the whole bug. A value whose only text
+is a default `toString` (`com.example.Order@6f2b958e`) is left out — nobody can
+type that into a field. At most ten values per finding.
+
+**Scoped to the view, not the page.** The scope is the innermost route target
+holding the interacted component, so an application's shell — its navigation,
+its app switcher — stays out; it is on screen throughout, has nothing to do
+with the failure, and would otherwise put the same lines in every finding the
+application ever produces. For a component the route target does not hold — a
+dialog or overlay the UI owns directly — the scope is that component's own
+top-level ancestor, which is the screen the user was actually looking at.
+
+Two things this does not capture. A failure that needs a *sequence* rather than
+a state, such as clicking "Add line" twice: the state says what the view held,
+not how it got there. And a value the *application* set as a side effect of
+something the user did — picking a customer auto-filling their address — since
+what is reported is what the user worked.
+
+Both are withheld in production and the steps fall back to the two-line form
+above, unchanged. Captions and values are application text that can be
+data-bound (a caption may be "Delete Jane Doe", and a field's value is user
+input by definition), and the insights payload is built to be forwarded into
+issue trackers and AI agents. The reader who benefits from the detail is the
+developer with the application in front of them, so that is the only mode that
+collects it — no setting turns it on in production. Lengths are capped
+regardless: 60 characters for a caption, 40 for a value.
+
+Grouping is unaffected: occurrences still group by route, component, event and
+exception, so the same failure hit with different values stays one finding,
+reporting the values of the most recent occurrence.
 
 ## Other setups
 
@@ -289,7 +399,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the session id as a span attribute. |
-| `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. |
+| `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. In development mode a retained interaction also carries the caption of its component and the state its view was in — see [Replay steps that replay](#replay-steps-that-replay). |
 | `vaadin.observability.insights-details` | `false` | Allow retained interactions to carry the raw session id, exception message and top stack frames, and retained browser errors their message and the function name from their stack frame. Off by default since the insights payload is meant to be forwarded. For a browser error this governs collection, not just retention: unless it is on and something is there to retain a message, the browser never gathers one, so nothing to withhold is buffered or sent — see [Connection and client-side problems](#connection-and-client-side-problems). Read by a page when it loads, so a change reaches already-open tabs only after a reload. |
 | `vaadin.observability.insights-capacity` | `100` | Maximum number of retained records per buffer — interactions, data provider queries and browser errors are capped separately; the oldest is evicted once the cap is reached. |
 | `vaadin.observability.route-cardinality-limit` | `200` | Maximum number of distinct `route` tag values before they collapse to `_other`. Also caps the `component` and `exception` tag values of `vaadin.errors`. |

@@ -9,6 +9,7 @@
 package com.vaadin.observability.micrometer.insights;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Assertions;
@@ -17,7 +18,10 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.Timeout.ThreadMode;
 import org.mockito.Mockito;
 
+import com.vaadin.flow.component.AbstractSinglePropertyField;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasText;
+import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
@@ -33,6 +37,10 @@ class InteractionCollectorTest {
     private static final long CAPTURE_ALL = 0;
     /** Budget beyond any real elapsed time, so nothing qualifies as slow. */
     private static final long CAPTURE_NONE = Long.MAX_VALUE;
+    /** Production mode: neither captions nor the state of the view. */
+    private static final boolean PRODUCTION = false;
+    /** Development mode, where the screen detail is read. */
+    private static final boolean DEVELOPMENT = true;
 
     private final RecentInteractions buffer = new RecentInteractions(100);
 
@@ -103,7 +111,7 @@ class InteractionCollectorTest {
     @Test
     void capturesFailedInteractionWithComponentAndApplicationFrame() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true));
+                settings(true, true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -130,7 +138,7 @@ class InteractionCollectorTest {
     @Test
     void capturesSuccessfulInteractionOverBudget() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -152,7 +160,7 @@ class InteractionCollectorTest {
     @Test
     void doesNotCaptureSuccessfulInteractionWithinBudget() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_NONE);
+                settings(true, true), PRODUCTION, CAPTURE_NONE);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -168,7 +176,7 @@ class InteractionCollectorTest {
         // invocation ends (e.g. a Grid component column refreshing its item).
         // The component must be resolved at invocationStarted.
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -185,7 +193,7 @@ class InteractionCollectorTest {
     @Test
     void doesNotCaptureFailureWhenErrorsDisabled() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(false, true), CAPTURE_NONE);
+                settings(false, true), PRODUCTION, CAPTURE_NONE);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -199,7 +207,7 @@ class InteractionCollectorTest {
     @Test
     void doesNotCaptureSlowInteractionWhenRequestsDisabled() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, false), CAPTURE_ALL);
+                settings(true, false), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -214,7 +222,7 @@ class InteractionCollectorTest {
         // A failure is captured once as an error; invocationEnded must not also
         // emit a slow interaction for the same invocation.
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -239,7 +247,7 @@ class InteractionCollectorTest {
         outer.initCause(inner);
 
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true));
+                settings(true, true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -270,7 +278,7 @@ class InteractionCollectorTest {
         // view class, which is still one key per view, not per parameter.)
         OrdersView view = new OrdersView();
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true));
+                settings(true, true), PRODUCTION);
 
         for (int id : new int[] { 17, 18 }) {
             UI ui = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
@@ -324,7 +332,7 @@ class InteractionCollectorTest {
         // the value this test must prove is not assumed.
         long budget = CAPTURE_ALL;
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), budget);
+                settings(true, true), PRODUCTION, budget);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -341,7 +349,7 @@ class InteractionCollectorTest {
     @Test
     void errorStateDoesNotBleedIntoNextInvocation() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                settings(true, true), CAPTURE_ALL);
+                settings(true, true), PRODUCTION, CAPTURE_ALL);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -365,7 +373,7 @@ class InteractionCollectorTest {
         // are not collected unless asked for, and the session id is reduced to
         // a hash. What stays is what makes the insight actionable.
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(false));
+                withDetails(false), PRODUCTION);
         Target target = target();
         String realSessionId = target.ui().getSession() == null ? null
                 : target.ui().getSession().getSession().getId();
@@ -396,7 +404,7 @@ class InteractionCollectorTest {
     @Test
     void collectsSensitiveDetailWhenOptedIn() {
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(true));
+                withDetails(true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -419,7 +427,7 @@ class InteractionCollectorTest {
         RuntimeException error = new RuntimeException("x".repeat(5000));
         error.setStackTrace(failure().getStackTrace());
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(true));
+                withDetails(true), PRODUCTION);
         Target target = target();
 
         collector.invocationStarted(target.started());
@@ -439,7 +447,7 @@ class InteractionCollectorTest {
         // The hash replaces the identifier but must still group the examples of
         // one insight together.
         InteractionCollector collector = new InteractionCollector(buffer,
-                withDetails(false));
+                withDetails(false), PRODUCTION);
         Target target = target();
 
         for (int i = 0; i < 2; i++) {
@@ -452,5 +460,276 @@ class InteractionCollectorTest {
                 .map(CapturedInteraction::sessionId).distinct().toList();
         Assertions.assertEquals(1, ids.size(),
                 "the same session should hash to the same value, got: " + ids);
+    }
+
+    // ---------- screen detail: the caption and the state of the view -------
+
+    /** A component whose caption is its own text, the shape of a Button. */
+    private static class TextComponent extends Component implements HasText {
+        TextComponent(String text) {
+            super(ElementFactory.createButton(text));
+        }
+    }
+
+    /**
+     * A labelled field whose synchronized property is <em>not</em> its value,
+     * the shape of a {@code Select}: the client sends the item key, the
+     * component holds the item.
+     */
+    @Tag("test-select")
+    private static class KeyedField
+            extends AbstractSinglePropertyField<KeyedField, String> {
+        private final Map<String, String> items;
+
+        KeyedField(String label, Map<String, String> items) {
+            super("value", null, false);
+            this.items = items;
+            getElement().setProperty("label", label);
+        }
+
+        @Override
+        protected boolean hasValidValue() {
+            return true;
+        }
+
+        @Override
+        public String getValue() {
+            return items.get(getElement().getProperty("value", null));
+        }
+
+        void select(String key) {
+            getElement().setProperty("value", key);
+        }
+    }
+
+    /** A plain container, the shape of a view or a layout. */
+    @Tag("test-view")
+    private static class Container extends Component {
+        Container(Component... children) {
+            for (Component child : children) {
+                getElement().appendChild(child.getElement());
+            }
+        }
+    }
+
+    /** An event of the given shape targeting the given attached component. */
+    private static Target targetOf(UI ui, Component component, String type,
+            String name) {
+        if (component.getElement().getParent() == null) {
+            ui.getElement().appendChild(component.getElement());
+        }
+        int nodeId = component.getElement().getNode().getId();
+
+        RpcInvocationStartedEvent started = Mockito
+                .mock(RpcInvocationStartedEvent.class);
+        Mockito.when(started.getType()).thenReturn(type);
+        Mockito.when(started.getName()).thenReturn(name);
+        Mockito.when(started.getUI()).thenReturn(ui);
+        Mockito.when(started.getNodeId()).thenReturn(nodeId);
+
+        RpcInvocationEndedEvent ended = Mockito
+                .mock(RpcInvocationEndedEvent.class);
+        Mockito.when(ended.getType()).thenReturn(type);
+        Mockito.when(ended.getName()).thenReturn(name);
+        Mockito.when(ended.getUI()).thenReturn(ui);
+        Mockito.when(ended.getNodeId()).thenReturn(nodeId);
+
+        return new Target(ui, component, started, ended);
+    }
+
+    /** Runs one failing invocation end to end. */
+    private static void fail(InteractionCollector collector, Target target) {
+        collector.invocationStarted(target.started());
+        collector.invocationFailed(failedEvent(target, failure()));
+        collector.invocationEnded(target.ended());
+    }
+
+    @Test
+    void capturesComponentCaptionInDevelopmentMode() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        Target target = targetOf(new UI(), new TextComponent("Process return"),
+                "event", "click");
+
+        fail(collector, target);
+
+        Assertions.assertEquals("Process return",
+                buffer.snapshot().get(0).caption(),
+                "the caption should name the button a reader looks for");
+    }
+
+    /** A successful invocation under a budget nothing reaches. */
+    private static void succeedQuietly(InteractionCollector collector,
+            Target target) {
+        collector.invocationStarted(target.started());
+        collector.invocationEnded(target.ended());
+    }
+
+    /**
+     * A selection, the way an event-carried value change really arrives: the
+     * component still holds the old value when the invocation starts, and the
+     * new one by the time it ends.
+     */
+    private static void select(InteractionCollector collector, UI ui,
+            KeyedField field, String key) {
+        Target target = targetOf(ui, field, "event", "value-changed");
+        collector.invocationStarted(target.started());
+        field.select(key);
+        collector.invocationEnded(target.ended());
+    }
+
+    /** The returns desk: a defaulted order number, a reason, and a button. */
+    private record ReturnsDesk(UI ui, KeyedField orderNumber, KeyedField reason,
+            TextComponent process) {
+    }
+
+    private static ReturnsDesk returnsDesk() {
+        UI ui = new UI();
+        KeyedField orderNumber = new KeyedField("Order number",
+                Map.of("k", "AC-10482"));
+        orderNumber.select("k");
+        KeyedField reason = new KeyedField("Reason",
+                Map.of("1", "Damaged in transit", "2", "Defective"));
+        reason.select("1");
+        TextComponent process = new TextComponent("Process return");
+        ui.add(new Container(orderNumber, reason, process));
+        return new ReturnsDesk(ui, orderNumber, reason, process);
+    }
+
+    @Test
+    void withholdsScreenDetailInProductionMode() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), PRODUCTION);
+        ReturnsDesk desk = returnsDesk();
+        select(collector, desk.ui(), desk.reason(), "2");
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        CapturedInteraction interaction = buffer.snapshot().get(0);
+        Assertions.assertNull(interaction.caption(),
+                "a forwarded payload should not carry application text");
+        Assertions.assertEquals(List.of(), interaction.viewState(),
+                "nor the values the view was holding");
+        Assertions.assertEquals(TextComponent.class.getName(),
+                interaction.component(),
+                "the component class is not screen detail and stays");
+    }
+
+    @Test
+    void failureCarriesTheValuesTheUserSet() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+        select(collector, desk.ui(), desk.reason(), "2");
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        List<ComponentState> state = buffer.snapshot().get(0).viewState();
+        Assertions.assertEquals(1, state.size(),
+                "the order number was never touched, so a replay finds it "
+                        + "where it is; got: " + state);
+        Assertions.assertEquals("Reason", state.get(0).caption());
+        Assertions.assertEquals("Defective", state.get(0).value(),
+                "the value should be what the component holds, not the key "
+                        + "the client sent");
+    }
+
+    @Test
+    void stateIsReadAtCaptureSoNoEarlierValueIsReported() {
+        // The difference between a snapshot and a history: a user who changes
+        // their mind leaves one value behind, not two.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+
+        select(collector, desk.ui(), desk.reason(), "2");
+        select(collector, desk.ui(), desk.reason(), "1");
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        List<ComponentState> state = buffer.snapshot().get(0).viewState();
+        Assertions.assertEquals(1, state.size(),
+                "one field, one value, however often it changed; got: "
+                        + state);
+        Assertions.assertEquals("Damaged in transit", state.get(0).value());
+    }
+
+    @Test
+    void eventsAComponentFiresAtItselfChangeNothing() {
+        // One selection sends opened-changed, value-changed and
+        // opened-changed again. Only the middle one leaves anything behind.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
+        select(collector, desk.ui(), desk.reason(), "2");
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        List<ComponentState> state = buffer.snapshot().get(0).viewState();
+        Assertions.assertEquals(1, state.size(),
+                "one selection, one line, whatever it sent; got: " + state);
+        Assertions.assertEquals("Defective", state.get(0).value());
+    }
+
+    @Test
+    void lookingAtAFieldIsNotSettingIt() {
+        // Opening a dropdown and closing it again, focusing a field and
+        // leaving: the user touched it, but a replay that says to set it to
+        // what it already says is a line that reads as noise.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.orderNumber(), "event", "focus"));
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.orderNumber(), "event", "blur"));
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        Assertions.assertEquals(List.of(), buffer.snapshot().get(0).viewState(),
+                "nothing was changed, so there is nothing to restore");
+    }
+
+    @Test
+    void aSynchronizedPropertyIsTakenAtItsWord() {
+        // Flow applies every synchronized property of a request before it
+        // reports any of its invocations, so the new value is already on both
+        // sides of this one and there is nothing to compare. An mSync
+        // arriving at something that holds a value is a user edit.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+
+        desk.orderNumber().select("other");
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.orderNumber(), "mSync", "value"));
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        List<ComponentState> state = buffer.snapshot().get(0).viewState();
+        Assertions.assertEquals(1, state.size(), "got: " + state);
+        Assertions.assertEquals("Order number", state.get(0).caption());
+    }
+
+    @Test
+    void aViewNobodyTouchedNeedsNoInstructions() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        Assertions.assertEquals(List.of(), buffer.snapshot().get(0).viewState(),
+                "opening the view and clicking is the whole reproduction");
     }
 }

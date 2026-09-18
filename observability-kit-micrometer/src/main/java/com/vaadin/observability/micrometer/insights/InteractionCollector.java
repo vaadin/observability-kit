@@ -11,9 +11,11 @@ package com.vaadin.observability.micrometer.insights;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
@@ -38,6 +40,13 @@ import com.vaadin.observability.micrometer.RouteTagResolver;
  * {@link RpcInvocationEndedEvent} gives the handling duration, and the events
  * carry the target state node from which the interacted component is resolved.
  * Works in production mode.
+ * <p>
+ * In development mode it additionally reads what is on the screen: the caption
+ * of the interacted component, and the {@link ViewState values its view was
+ * holding}, so that the {@code replay} of an insight names the button the
+ * reader is looking for and states what the failure needed to be set. Neither
+ * is collected in production, where the payload is meant to be forwarded and
+ * both would carry application text — see {@link ComponentCaptions}.
  */
 public class InteractionCollector {
 
@@ -71,11 +80,21 @@ public class InteractionCollector {
 
     private static final int STACK_TOP_FRAMES = 5;
 
+    /** Flow's invocation type for a synchronized property update. */
+    private static final String RPC_TYPE_PROPERTY_SYNC = "mSync";
+
     private final RecentInteractions buffer;
     private final boolean captureErrors;
     private final boolean captureSlow;
     private final long uxBudgetMs;
     private final boolean details;
+    /**
+     * Whether the captions and values on the screen may be read. Development
+     * mode only: they are application text that a forwarded payload should not
+     * carry, and the reader who benefits is the developer running the
+     * application.
+     */
+    private final boolean screenDetail;
     private final RouteTagResolver routes;
 
     private final ThreadLocal<Long> startNanos = new ThreadLocal<>();
@@ -85,12 +104,35 @@ public class InteractionCollector {
      * Resolved at {@code invocationStarted}: the handler may detach the target
      * node (e.g. a Grid component column refreshing its item), so resolving at
      * {@code invocationEnded} would come up empty.
+     * <p>
+     * The component itself is held, not just its class name, because the value
+     * a field ends up with can only be read once the invocation has run. It is
+     * cleared at {@code invocationEnded} along with the rest, so no UI is
+     * pinned by a thread between requests.
      */
-    private final ThreadLocal<String> componentType = new ThreadLocal<>();
+    private final ThreadLocal<Component> target = new ThreadLocal<>();
 
+    /**
+     * What the target held when the invocation started, kept so that the end of
+     * it can tell whether the user changed anything. Cleared with the rest at
+     * {@code invocationEnded}.
+     */
+    private final ThreadLocal<String> valueAtStart = new ThreadLocal<>();
+
+    /**
+     * @param buffer
+     *            where captured interactions are retained
+     * @param settings
+     *            the kit's settings, for which interactions to capture and how
+     *            much detail they may carry
+     * @param developmentMode
+     *            whether the application runs in development mode, which is
+     *            where component captions and the state of the view are
+     *            collected
+     */
     public InteractionCollector(RecentInteractions buffer,
-            ObservabilitySettings settings) {
-        this(buffer, settings, UX_BUDGET_MS);
+            ObservabilitySettings settings, boolean developmentMode) {
+        this(buffer, settings, developmentMode, UX_BUDGET_MS);
     }
 
     /**
@@ -98,12 +140,14 @@ public class InteractionCollector {
      * timing behaviour can be exercised without real delays.
      */
     InteractionCollector(RecentInteractions buffer,
-            ObservabilitySettings settings, long uxBudgetMs) {
+            ObservabilitySettings settings, boolean developmentMode,
+            long uxBudgetMs) {
         this.buffer = buffer;
         this.captureErrors = settings.isErrors();
         this.captureSlow = settings.isRequests();
         this.uxBudgetMs = uxBudgetMs;
         this.details = settings.isInsightsDetails();
+        this.screenDetail = developmentMode;
         this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
     }
 
@@ -128,9 +172,50 @@ public class InteractionCollector {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
-        componentType.set(
-                ComponentResolver.resolveComponentType(event).orElse(null));
+        Component component = ComponentResolver.resolveComponent(event)
+                .orElse(null);
+        target.set(component);
+        // What the field held before this invocation ran, which is how the
+        // invocations that change one are told from the ones that do not.
+        valueAtStart.set(
+                screenDetail ? ComponentCaptions.valueOf(component) : null);
         startNanos.set(System.nanoTime());
+    }
+
+    /**
+     * Notes that the user has changed a field, which is what later lets a
+     * replay report the values they set and leave out the ones the view came
+     * with. Only the component's identity is kept; its value is read when an
+     * interaction is captured.
+     * <p>
+     * Being targeted is not enough. A user picking one item out of a
+     * {@code Select} sends {@code opened-changed}, {@code value-changed} and
+     * {@code opened-changed} again, and one who merely looks sends the first
+     * and the last; counting any of them as working the field would report
+     * every dropdown the user ever opened at the value it already had. So the
+     * field's value is compared across the invocation, and only a change
+     * counts.
+     * <p>
+     * With one exception, which is an ordering fact rather than a preference: a
+     * synchronized property update is applied to the whole request's state
+     * <em>before</em> any invocation is reported, so by the time this could
+     * compare anything the new value is already on both sides. An {@code mSync}
+     * arriving at something that holds a value is the client saying the user
+     * typed in it, and is taken at its word.
+     */
+    private void rememberIfChanged(AbstractRpcInvocationEvent event,
+            Component component, String before) {
+        if (!screenDetail || !ComponentCaptions.holdsValue(component)) {
+            return;
+        }
+        if (!RPC_TYPE_PROPERTY_SYNC.equals(event.getType()) && Objects
+                .equals(before, ComponentCaptions.valueOf(component))) {
+            return;
+        }
+        TouchedFields touched = TouchedFields.of(event.getUI());
+        if (touched != null) {
+            touched.add(component);
+        }
     }
 
     void invocationFailed(RpcInvocationFailedEvent event) {
@@ -140,8 +225,11 @@ public class InteractionCollector {
             return;
         }
         try {
-            buffer.add(errorInteraction(event, error, elapsedMs(),
-                    componentType.get()));
+            Component component = target.get();
+            // Before the capture, so that an interaction failing in a field's
+            // own value-change handler still reports the value it was given.
+            rememberIfChanged(event, component, valueAtStart.get());
+            buffer.add(errorInteraction(event, error, elapsedMs(), component));
         } catch (RuntimeException e) {
             // Collection is best-effort enrichment; never interfere with the
             // framework's own error handling.
@@ -150,21 +238,42 @@ public class InteractionCollector {
 
     void invocationEnded(RpcInvocationEndedEvent event) {
         long durationMs = elapsedMs();
-        String component = componentType.get();
+        Component component = target.get();
+        String before = valueAtStart.get();
         startNanos.remove();
-        componentType.remove();
+        target.remove();
+        valueAtStart.remove();
         boolean failed = errored.get();
         errored.remove();
+        try {
+            rememberIfChanged(event, component, before);
+        } catch (RuntimeException e) {
+            // Best-effort: collection never interferes with the request.
+        }
         // Failed invocations are already captured with their duration; only
         // successful-but-slow ones are captured here.
-        if (failed || !captureSlow || durationMs < uxBudgetMs) {
-            return;
+        if (!failed && captureSlow && durationMs >= uxBudgetMs) {
+            try {
+                buffer.add(slowInteraction(event, durationMs, component));
+            } catch (RuntimeException e) {
+                // Best-effort, as above.
+            }
         }
-        try {
-            buffer.add(slowInteraction(event, durationMs, component));
-        } catch (RuntimeException e) {
-            // Best-effort, as above.
-        }
+    }
+
+    /**
+     * The values the view was holding, in the modes where the screen is read.
+     * Read now rather than accumulated as the user worked, so that what an
+     * insight reports is the state this interaction actually ran against.
+     */
+    private List<ComponentState> viewState(UI ui, Component component) {
+        return screenDetail ? ViewState.of(ui, component, TouchedFields.of(ui))
+                : List.of();
+    }
+
+    /** The component's caption, in the modes where captions are read. */
+    private String caption(Component component) {
+        return screenDetail ? ComponentCaptions.captionOf(component) : null;
     }
 
     private long elapsedMs() {
@@ -177,7 +286,7 @@ public class InteractionCollector {
 
     private CapturedInteraction errorInteraction(
             AbstractRpcInvocationEvent event, Throwable error, long durationMs,
-            String component) {
+            Component component) {
         UI ui = event.getUI();
         Throwable rootCause = Throwables.rootCause(error);
         StackTraceElement[] stack = rootCause.getStackTrace();
@@ -186,7 +295,8 @@ public class InteractionCollector {
         // user data. The message and the remaining frames are withheld unless
         // the application opted in.
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
-                component, event.getName(), event.getType(),
+                typeOf(component), caption(component), event.getName(),
+                event.getType(), viewState(ui, component),
                 CapturedInteraction.OUTCOME_ERROR, durationMs, -1, details,
                 rootCause.getClass().getName(),
                 details ? InsightDetails
@@ -200,16 +310,21 @@ public class InteractionCollector {
 
     private CapturedInteraction slowInteraction(
             AbstractRpcInvocationEvent event, long durationMs,
-            String component) {
+            Component component) {
         UI ui = event.getUI();
         // The budget this interaction was actually measured against travels
         // with it, so a report never has to assume the default.
         return new CapturedInteraction(Instant.now(), route(ui), location(ui),
-                component, event.getName(), event.getType(),
+                typeOf(component), caption(component), event.getName(),
+                event.getType(), viewState(ui, component),
                 CapturedInteraction.OUTCOME_SUCCESS, durationMs, uxBudgetMs,
                 details, null, null, null, null,
                 InsightDetails.sessionId(ui, details),
                 ui != null ? ui.getUIId() : -1);
+    }
+
+    private static String typeOf(Component component) {
+        return component == null ? null : component.getClass().getName();
     }
 
     /**
