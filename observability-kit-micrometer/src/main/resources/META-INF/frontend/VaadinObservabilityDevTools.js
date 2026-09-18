@@ -456,7 +456,7 @@
       // among the five on the view.
       parts.push(
         evidence.componentCaption
-          ? '"' + evidence.componentCaption + '" ' + simpleName(evidence.component)
+          ? "'" + evidence.componentCaption + "' " + simpleName(evidence.component)
           : simpleName(evidence.component)
       );
     }
@@ -607,7 +607,7 @@
       (showHidden ? '▾' : '▸') +
       '</span>' +
       '<span>' +
-      esc(count + ' ' + (count === 1 ? 'finding' : 'findings') + ' ' + what) +
+      esc(what) +
       '</span>' +
       '</div>'
     );

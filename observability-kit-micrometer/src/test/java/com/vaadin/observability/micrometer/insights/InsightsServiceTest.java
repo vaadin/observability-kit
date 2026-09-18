@@ -393,12 +393,12 @@ class InsightsServiceTest {
         buffer.add(returnsDeskFailure(List.of()));
 
         Map<String, Object> insight = insightWithType("user-interaction-error");
-        Assertions.assertEquals("Click the \"Process return\" Button",
+        Assertions.assertEquals("Click the 'Process return' Button",
                 replayOf(insight).get(1),
                 "a caption should replace 'Locate component Button'");
         Assertions.assertTrue(
                 insight.get("summary").toString()
-                        .contains("\"Process return\" Button"),
+                        .contains("'Process return' Button"),
                 "the summary too: " + insight.get("summary"));
         Assertions.assertEquals("Process return",
                 evidence(insight).get("componentCaption"));
@@ -415,9 +415,9 @@ class InsightsServiceTest {
 
         Assertions.assertEquals(
                 List.of("Open route '/returns'",
-                        "Set the \"Order number\" TextField to 'AC-10482'",
-                        "Set the \"Reason\" Select to 'Defective'",
-                        "Click the \"Process return\" Button",
+                        "Set the 'Order number' TextField to 'AC-10482'",
+                        "Set the 'Reason' Select to 'Defective'",
+                        "Click the 'Process return' Button",
                         "Expect IllegalStateException: Inspection template "
                                 + "'defective' not found"),
                 replayOf(insightWithType("user-interaction-error")),
@@ -447,7 +447,7 @@ class InsightsServiceTest {
                 "com.vaadin.flow.component.textfield.TextField", "Order number",
                 null))));
 
-        Assertions.assertEquals("Leave the \"Order number\" TextField empty",
+        Assertions.assertEquals("Leave the 'Order number' TextField empty",
                 replayOf(insightWithType("user-interaction-error")).get(1),
                 "a handler that rejects a blank value needs to be shown one");
     }
@@ -465,9 +465,9 @@ class InsightsServiceTest {
                 0));
 
         List<?> replay = replayOf(insightWithType("slow-user-interaction"));
-        Assertions.assertEquals("Set the \"Refund\" Select to 'Bank transfer'",
+        Assertions.assertEquals("Set the 'Refund' Select to 'Bank transfer'",
                 replay.get(1));
-        Assertions.assertEquals("Click the \"Process return\" Button",
+        Assertions.assertEquals("Click the 'Process return' Button",
                 replay.get(2));
     }
 }

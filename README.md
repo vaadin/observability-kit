@@ -238,15 +238,15 @@ person would actually do:
 
 ```
 Open route '/returns'
-Set the "Reason" Select to 'Defective'
-Click the "Process return" Button
+Set the 'Reason' Select to 'Defective'
+Click the 'Process return' Button
 Expect IllegalStateException: Inspection template 'defective' not found
 ```
 
 - **The caption** of the interacted component — its label, accessible name, own
   text, or failing all of those its id — so a step names the one control the
   reader is looking for. It is also in `evidence.componentCaption` and in the
-  panel's context line, `returns · "Process return" Button · 3 occurrences`,
+  panel's context line, `returns · 'Process return' Button · 3 occurrences`,
   and the component class stays alongside it because that is what you grep for.
 - **The state of the view**, read at the moment the interaction was captured.
 
@@ -256,19 +256,28 @@ arrives as three RPC invocations (`opened-changed`, `value-changed`,
 `opened-changed`), none of them an instruction anyone can carry out, and a user
 who changes their mind leaves the same field in the list twice with the stale
 value first. Reading the values once, when the failure is captured, gives each
-field once, as it actually stood, in the order the fields appear on screen.
+field once, as it actually stood, in the order the user last changed them.
 
 What goes in it: every component in the view that **holds a value**, **has a
-caption**, and **the user actually worked**. The last of those is what keeps
+caption**, and **the user actually changed**. The last of those is what keeps
 the list short. A replay starts from a freshly opened view, so a field nobody
-touched is already at the value the reader will find there, and telling them to
+changed is already at the value the reader will find there, and telling them to
 set it is a line that says nothing — the returns desk has four fields and one
 of them is the bug. Only identity is remembered as the user works, never
 values; the values are read once, at capture.
 
+"Changed" is decided by comparing the field's value across the invocation, not
+by the event that carried it: one selection sends `opened-changed`,
+`value-changed` and `opened-changed` again, and merely opening a dropdown sends
+the first and the last, so counting any invocation that reaches a field would
+report every dropdown the user ever looked at. The exception is a synchronized
+property update, where Flow applies the new value to the whole request's state
+before it reports any invocation — there is nothing left to compare by then, so
+an `mSync` reaching something that holds a value is taken as a user edit.
+
 The value is read from the component rather than from the property the client
 sent, so a `Select` says `'Defective'` and not the item key `'2'`. A field the
-user emptied is `Leave the "Order number" TextField empty`, which is worth a
+user emptied is `Leave the 'Order number' TextField empty`, which is worth a
 line because a blank value is frequently the whole bug. A value whose only text
 is a default `toString` (`com.example.Order@6f2b958e`) is left out — nobody can
 type that into a field. At most ten values per finding.

@@ -15,8 +15,12 @@ import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.dom.Element;
+import com.vaadin.flow.internal.StateNode;
+import com.vaadin.flow.internal.StateTree;
 
 /**
  * Reads the values a view is holding, so that a captured interaction can say
@@ -27,8 +31,8 @@ import com.vaadin.flow.component.UI;
  * and reporting a history of how it got there. A history says the same field
  * twice when the user changed their mind, in the order the browser happened to
  * send its events, mixed in with the events a component fires at itself. A
- * snapshot says each field once, as it stood, in the order the fields appear on
- * screen.
+ * snapshot says each field once, as it stood, in the order the user last
+ * changed them.
  * <p>
  * Scoped to the view, not the page: an application's shell — its navigation,
  * its app switcher — is on screen throughout and has nothing to do with the
@@ -53,21 +57,20 @@ final class ViewState {
     static final int MAX_VALUES = 10;
 
     /**
-     * Components visited before the walk gives up. The walk runs under the
-     * session lock, so it is bounded rather than trusted to be small: a view
-     * with a large grid or a deeply nested layout must not turn capturing one
-     * failure into a measurable pause.
-     */
-    private static final int MAX_VISITED = 500;
-
-    /**
      * A value whose text is {@code java.lang.Object}'s, e.g.
      * {@code com.example.Order@6f2b958e}. Nothing in it can be typed into a
      * field, so the component it came from is left out rather than reported
      * with text no reader can use.
+     * <p>
+     * A dotted class name is required, because the giveaway is the package and
+     * not the {@code @}: a real value may well contain one, and
+     * {@code BATCH@1a2b3c} is a code someone typed rather than an address
+     * nobody can. That leaves a class in the default package unrecognized,
+     * which is the right way round — reporting a value nobody can use costs one
+     * confusing line, silencing one that mattered costs the finding.
      */
     private static final Pattern DEFAULT_TO_STRING = Pattern
-            .compile("\\S+@[0-9a-fA-F]+");
+            .compile("([\\w$]+\\.)+[\\w$]+@[0-9a-fA-F]+");
 
     private ViewState() {
     }
@@ -95,14 +98,40 @@ final class ViewState {
             if (scope == null || touched == null) {
                 return List.of();
             }
+            // The fields the user worked are already known by node id, so the
+            // tree they live in is looked up rather than walked: a handful of
+            // lookups instead of every component on the view, under the
+            // session lock, each time an interaction is captured.
+            StateTree tree = treeOf(scope);
+            if (tree == null) {
+                return List.of();
+            }
             List<ComponentState> values = new ArrayList<>();
-            collect(scope, values, touched, new int[] { MAX_VISITED });
+            for (Integer nodeId : touched.nodeIds()) {
+                if (values.size() >= MAX_VALUES) {
+                    break;
+                }
+                ComponentState state = stateOf(tree, nodeId, scope);
+                if (state != null) {
+                    values.add(state);
+                }
+            }
             return List.copyOf(values);
         } catch (RuntimeException e) {
             // Reading the state is best-effort enrichment; never let it break
             // the invocation being observed.
             return List.of();
         }
+    }
+
+    /**
+     * The state tree the scope belongs to, taken from the scope rather than
+     * from the UI because that is the tree its descendants are in.
+     */
+    private static @Nullable StateTree treeOf(Component scope) {
+        return scope.getElement().getNode().getOwner() instanceof StateTree tree
+                ? tree
+                : null;
     }
 
     /** The part of the component tree worth reading. */
@@ -157,32 +186,25 @@ final class ViewState {
         return top;
     }
 
-    private static void collect(Component component,
-            List<ComponentState> values, TouchedFields touched, int[] budget) {
-        if (values.size() >= MAX_VALUES || --budget[0] < 0) {
-            return;
-        }
-        ComponentState state = stateOf(component, touched);
-        if (state != null) {
-            values.add(state);
-        }
-        for (Component child : component.getChildren().toList()) {
-            if (values.size() >= MAX_VALUES || budget[0] < 0) {
-                return;
-            }
-            collect(child, values, touched, budget);
-        }
-    }
-
     /**
-     * What one component contributes, or {@code null} when it contributes
-     * nothing: it holds no value, the user never touched it, it has no caption
-     * the reader could find it by, or its value has no readable text.
+     * What one worked field contributes, or {@code null} when it contributes
+     * nothing: its node is gone, it is no longer in the scope being reported,
+     * it holds no value, it has no caption the reader could find it by, or its
+     * value has no readable text.
      */
-    private static @Nullable ComponentState stateOf(Component component,
-            TouchedFields touched) {
-        if (!ComponentCaptions.holdsValue(component)
-                || !touched.contains(component)) {
+    private static @Nullable ComponentState stateOf(StateTree tree,
+            Integer nodeId, Component scope) {
+        StateNode node = tree.getNodeById(nodeId);
+        if (node == null) {
+            // A field of a view the user has navigated away from. Node ids are
+            // never reused, so this is the whole of the cleanup that needs
+            // doing.
+            return null;
+        }
+        Component component = ComponentUtil
+                .findParentComponent(Element.get(node)).orElse(null);
+        if (component == null || !contains(scope, component)
+                || !ComponentCaptions.holdsValue(component)) {
             return null;
         }
         String caption = ComponentCaptions.captionOf(component);

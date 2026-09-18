@@ -659,10 +659,16 @@ public class InsightsService {
         return named(interaction.component(), interaction.caption());
     }
 
+    /**
+     * Single quotes, like every other quoted thing in the payload — the route a
+     * step opens, the event it triggers, the value it sets. Double quotes would
+     * be the odd one out, and would have to be escaped in the JSON this travels
+     * as besides.
+     */
     private static String named(@Nullable String component,
             @Nullable String caption) {
         return caption == null ? simpleName(component)
-                : text("\"%s\" %s", caption, simpleName(component));
+                : text("'%s' %s", caption, simpleName(component));
     }
 
     /**

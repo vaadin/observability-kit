@@ -8,8 +8,10 @@
  */
 package com.vaadin.observability.micrometer.insights;
 
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.io.Serializable;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.jspecify.annotations.Nullable;
 
@@ -34,19 +36,39 @@ import com.vaadin.flow.component.UI;
  * <p>
  * Held on the UI itself, so it goes away with the tab rather than having to be
  * reaped, and touched only while the session lock is held — the contract of RPC
- * handling — so it needs no synchronization of its own.
+ * handling — so it needs no synchronization of its own. Being reachable from a
+ * UI also makes it part of whatever a container serializes a session into,
+ * hence {@link Serializable}.
  */
-final class TouchedFields {
+final class TouchedFields implements Serializable {
 
     /**
-     * Fields remembered per UI. Beyond this the oldest is forgotten, which
-     * costs a replay line for a field the user set and then left alone for
-     * fifty other fields — while the alternative is a set that grows with
-     * however long a tab stays open.
+     * Fields remembered per UI. Beyond this the least recently worked one is
+     * forgotten, which costs a replay line for a field the user set and then
+     * left alone for fifty others — while the alternative is a set that grows
+     * with however long a tab stays open.
      */
     static final int MAX_TRACKED = 50;
 
-    private final Set<Integer> nodeIds = new LinkedHashSet<>();
+    /**
+     * Node id to presence, in least-recently-worked-first order, which is both
+     * the eviction order and the order a replay lists the values in. A map
+     * rather than a set because {@link LinkedHashMap} is the one that does the
+     * ordering and the eviction for us.
+     */
+    private static final class Lru extends LinkedHashMap<Integer, Boolean> {
+        private Lru() {
+            super(16, 0.75f, true);
+        }
+
+        @Override
+        protected boolean removeEldestEntry(
+                Map.Entry<Integer, Boolean> eldest) {
+            return size() > MAX_TRACKED;
+        }
+    }
+
+    private final Lru nodeIds = new Lru();
 
     private TouchedFields() {
     }
@@ -70,25 +92,30 @@ final class TouchedFields {
         return touched;
     }
 
-    /** Remembers that the user worked this component. */
+    /**
+     * Remembers that the user worked this component. Working one again moves it
+     * to the end, so a field used throughout a long session is not the one
+     * evicted.
+     */
     void add(Component component) {
         Integer nodeId = nodeIdOf(component);
-        if (nodeId == null) {
-            return;
+        if (nodeId != null) {
+            nodeIds.put(nodeId, Boolean.TRUE);
         }
-        // Re-inserting must move it to the end, so that a field worked
-        // throughout a long session is not the one evicted.
-        nodeIds.remove(nodeId);
-        if (nodeIds.size() >= MAX_TRACKED) {
-            nodeIds.remove(nodeIds.iterator().next());
-        }
-        nodeIds.add(nodeId);
     }
 
-    /** Whether the user worked this component. */
-    boolean contains(Component component) {
-        Integer nodeId = nodeIdOf(component);
-        return nodeId != null && nodeIds.contains(nodeId);
+    /**
+     * The nodes of the fields the user worked, least recently worked first.
+     * <p>
+     * Handed out as ids rather than as components because that is what they
+     * are: holding the components would pin a view the user has navigated away
+     * from, and looking an id up in the current tree answers "is this still on
+     * screen" for free.
+     *
+     * @return the node ids, oldest first
+     */
+    List<Integer> nodeIds() {
+        return List.copyOf(nodeIds.keySet());
     }
 
     /**

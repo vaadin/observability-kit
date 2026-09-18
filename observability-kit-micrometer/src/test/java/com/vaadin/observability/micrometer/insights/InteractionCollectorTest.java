@@ -565,6 +565,19 @@ class InteractionCollectorTest {
         collector.invocationEnded(target.ended());
     }
 
+    /**
+     * A selection, the way an event-carried value change really arrives: the
+     * component still holds the old value when the invocation starts, and the
+     * new one by the time it ends.
+     */
+    private static void select(InteractionCollector collector, UI ui,
+            KeyedField field, String key) {
+        Target target = targetOf(ui, field, "event", "value-changed");
+        collector.invocationStarted(target.started());
+        field.select(key);
+        collector.invocationEnded(target.ended());
+    }
+
     /** The returns desk: a defaulted order number, a reason, and a button. */
     private record ReturnsDesk(UI ui, KeyedField orderNumber, KeyedField reason,
             TextComponent process) {
@@ -588,9 +601,7 @@ class InteractionCollectorTest {
         InteractionCollector collector = new InteractionCollector(buffer,
                 settings(true, true), PRODUCTION);
         ReturnsDesk desk = returnsDesk();
-        desk.reason().select("2");
-        succeedQuietly(collector,
-                targetOf(desk.ui(), desk.reason(), "event", "value-changed"));
+        select(collector, desk.ui(), desk.reason(), "2");
 
         fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
 
@@ -609,9 +620,7 @@ class InteractionCollectorTest {
         InteractionCollector collector = new InteractionCollector(buffer,
                 settings(true, true), DEVELOPMENT);
         ReturnsDesk desk = returnsDesk();
-        desk.reason().select("2");
-        succeedQuietly(collector,
-                targetOf(desk.ui(), desk.reason(), "event", "value-changed"));
+        select(collector, desk.ui(), desk.reason(), "2");
 
         fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
 
@@ -632,13 +641,9 @@ class InteractionCollectorTest {
         InteractionCollector collector = new InteractionCollector(buffer,
                 settings(true, true), DEVELOPMENT);
         ReturnsDesk desk = returnsDesk();
-        Target selection = targetOf(desk.ui(), desk.reason(), "event",
-                "value-changed");
 
-        desk.reason().select("2");
-        succeedQuietly(collector, selection);
-        desk.reason().select("1");
-        succeedQuietly(collector, selection);
+        select(collector, desk.ui(), desk.reason(), "2");
+        select(collector, desk.ui(), desk.reason(), "1");
 
         fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
 
@@ -651,18 +656,15 @@ class InteractionCollectorTest {
 
     @Test
     void eventsAComponentFiresAtItselfChangeNothing() {
-        // opened-changed, focus, blur and the rest are the component talking
-        // to itself. They mark the field as worked, which the user did, and
-        // contribute nothing else: the value is read once, at capture.
+        // One selection sends opened-changed, value-changed and
+        // opened-changed again. Only the middle one leaves anything behind.
         InteractionCollector collector = new InteractionCollector(buffer,
                 settings(true, true), DEVELOPMENT);
         ReturnsDesk desk = returnsDesk();
 
         succeedQuietly(collector,
                 targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
-        desk.reason().select("2");
-        succeedQuietly(collector,
-                targetOf(desk.ui(), desk.reason(), "event", "value-changed"));
+        select(collector, desk.ui(), desk.reason(), "2");
         succeedQuietly(collector,
                 targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
 
@@ -672,6 +674,51 @@ class InteractionCollectorTest {
         Assertions.assertEquals(1, state.size(),
                 "one selection, one line, whatever it sent; got: " + state);
         Assertions.assertEquals("Defective", state.get(0).value());
+    }
+
+    @Test
+    void lookingAtAFieldIsNotSettingIt() {
+        // Opening a dropdown and closing it again, focusing a field and
+        // leaving: the user touched it, but a replay that says to set it to
+        // what it already says is a line that reads as noise.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.reason(), "event", "opened-changed"));
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.orderNumber(), "event", "focus"));
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.orderNumber(), "event", "blur"));
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        Assertions.assertEquals(List.of(), buffer.snapshot().get(0).viewState(),
+                "nothing was changed, so there is nothing to restore");
+    }
+
+    @Test
+    void aSynchronizedPropertyIsTakenAtItsWord() {
+        // Flow applies every synchronized property of a request before it
+        // reports any of its invocations, so the new value is already on both
+        // sides of this one and there is nothing to compare. An mSync
+        // arriving at something that holds a value is a user edit.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        ReturnsDesk desk = returnsDesk();
+
+        desk.orderNumber().select("other");
+        succeedQuietly(collector,
+                targetOf(desk.ui(), desk.orderNumber(), "mSync", "value"));
+
+        fail(collector, targetOf(desk.ui(), desk.process(), "event", "click"));
+
+        List<ComponentState> state = buffer.snapshot().get(0).viewState();
+        Assertions.assertEquals(1, state.size(), "got: " + state);
+        Assertions.assertEquals("Order number", state.get(0).caption());
     }
 
     @Test

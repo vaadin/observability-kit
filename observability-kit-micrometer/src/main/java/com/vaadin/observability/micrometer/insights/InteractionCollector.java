@@ -11,6 +11,7 @@ package com.vaadin.observability.micrometer.insights;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -79,6 +80,9 @@ public class InteractionCollector {
 
     private static final int STACK_TOP_FRAMES = 5;
 
+    /** Flow's invocation type for a synchronized property update. */
+    private static final String RPC_TYPE_PROPERTY_SYNC = "mSync";
+
     private final RecentInteractions buffer;
     private final boolean captureErrors;
     private final boolean captureSlow;
@@ -107,6 +111,13 @@ public class InteractionCollector {
      * pinned by a thread between requests.
      */
     private final ThreadLocal<Component> target = new ThreadLocal<>();
+
+    /**
+     * What the target held when the invocation started, kept so that the end of
+     * it can tell whether the user changed anything. Cleared with the rest at
+     * {@code invocationEnded}.
+     */
+    private final ThreadLocal<String> valueAtStart = new ThreadLocal<>();
 
     /**
      * @param buffer
@@ -164,21 +175,44 @@ public class InteractionCollector {
         Component component = ComponentResolver.resolveComponent(event)
                 .orElse(null);
         target.set(component);
-        rememberIfField(event.getUI(), component);
+        // What the field held before this invocation ran, which is how the
+        // invocations that change one are told from the ones that do not.
+        valueAtStart.set(
+                screenDetail ? ComponentCaptions.valueOf(component) : null);
         startNanos.set(System.nanoTime());
     }
 
     /**
-     * Notes that the user has worked a field, which is what later lets a replay
-     * report the values they set and leave out the ones the view came with.
-     * Only the component's identity is kept; its value is read when an
+     * Notes that the user has changed a field, which is what later lets a
+     * replay report the values they set and leave out the ones the view came
+     * with. Only the component's identity is kept; its value is read when an
      * interaction is captured.
+     * <p>
+     * Being targeted is not enough. A user picking one item out of a
+     * {@code Select} sends {@code opened-changed}, {@code value-changed} and
+     * {@code opened-changed} again, and one who merely looks sends the first
+     * and the last; counting any of them as working the field would report
+     * every dropdown the user ever opened at the value it already had. So the
+     * field's value is compared across the invocation, and only a change
+     * counts.
+     * <p>
+     * With one exception, which is an ordering fact rather than a preference: a
+     * synchronized property update is applied to the whole request's state
+     * <em>before</em> any invocation is reported, so by the time this could
+     * compare anything the new value is already on both sides. An {@code mSync}
+     * arriving at something that holds a value is the client saying the user
+     * typed in it, and is taken at its word.
      */
-    private void rememberIfField(UI ui, Component component) {
+    private void rememberIfChanged(AbstractRpcInvocationEvent event,
+            Component component, String before) {
         if (!screenDetail || !ComponentCaptions.holdsValue(component)) {
             return;
         }
-        TouchedFields touched = TouchedFields.of(ui);
+        if (!RPC_TYPE_PROPERTY_SYNC.equals(event.getType()) && Objects
+                .equals(before, ComponentCaptions.valueOf(component))) {
+            return;
+        }
+        TouchedFields touched = TouchedFields.of(event.getUI());
         if (touched != null) {
             touched.add(component);
         }
@@ -191,8 +225,11 @@ public class InteractionCollector {
             return;
         }
         try {
-            buffer.add(
-                    errorInteraction(event, error, elapsedMs(), target.get()));
+            Component component = target.get();
+            // Before the capture, so that an interaction failing in a field's
+            // own value-change handler still reports the value it was given.
+            rememberIfChanged(event, component, valueAtStart.get());
+            buffer.add(errorInteraction(event, error, elapsedMs(), component));
         } catch (RuntimeException e) {
             // Collection is best-effort enrichment; never interfere with the
             // framework's own error handling.
@@ -202,17 +239,24 @@ public class InteractionCollector {
     void invocationEnded(RpcInvocationEndedEvent event) {
         long durationMs = elapsedMs();
         Component component = target.get();
+        String before = valueAtStart.get();
         startNanos.remove();
         target.remove();
+        valueAtStart.remove();
         boolean failed = errored.get();
         errored.remove();
+        try {
+            rememberIfChanged(event, component, before);
+        } catch (RuntimeException e) {
+            // Best-effort: collection never interferes with the request.
+        }
         // Failed invocations are already captured with their duration; only
         // successful-but-slow ones are captured here.
         if (!failed && captureSlow && durationMs >= uxBudgetMs) {
             try {
                 buffer.add(slowInteraction(event, durationMs, component));
             } catch (RuntimeException e) {
-                // Best-effort: collection never interferes with the request.
+                // Best-effort, as above.
             }
         }
     }
