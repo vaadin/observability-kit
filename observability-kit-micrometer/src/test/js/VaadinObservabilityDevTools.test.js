@@ -98,21 +98,70 @@ function harness(pathname) {
   const navigatorStub = {};
   let defined = null;
 
+  // Copilot's event bus, with the part the announcement rests on modelled
+  // rather than stubbed out: an event whose type nothing is listening for is
+  // buffered, and the first listener to subscribe is handed the buffer before
+  // it sees anything live. That is what carries an announcement across a log
+  // panel that is closed when the finding appears, so a fake that recorded
+  // every emit would pass whether or not the buffer existed.
+  //
+  // Copied from the shipped bundle (copilot.js, the class behind
+  // window.Vaadin.copilot.eventbus): emit() pushes onto eventBuffer unless the
+  // type is in handledTypes, on() appends to handledTypes and then flushes
+  // that type, and off() removes one entry from handledTypes.
+  const handledTypes = [];
+  const eventBuffer = [];
+
+  function dispatch(name, data) {
+    let claimed = false;
+    (busListeners[name] || []).forEach((cb) =>
+      cb({ detail: data, preventDefault: () => (claimed = true) })
+    );
+    return claimed;
+  }
+
+  const eventbus = {
+    on: (name, cb) => {
+      (busListeners[name] = busListeners[name] || []).push(cb);
+      handledTypes.push(name);
+      for (let i = 0; i < eventBuffer.length; i++) {
+        if (eventBuffer[i].name === name) {
+          dispatch(name, eventBuffer[i].data);
+          eventBuffer.splice(i, 1);
+          i--;
+        }
+      }
+      return () => eventbus.off(name, cb);
+    },
+    off: (name, cb) => {
+      const listeners = busListeners[name] || [];
+      const at = listeners.indexOf(cb);
+      if (at >= 0) listeners.splice(at, 1);
+      const typeAt = handledTypes.indexOf(name);
+      if (typeAt >= 0) handledTypes.splice(typeAt, 1);
+    },
+    // What the module asked the bus to write, whether or not anything was
+    // listening. The log panel's own view of it is `logged` below.
+    emit: (name, data) => {
+      if (name === 'log') {
+        announced.push(data);
+      }
+      if (!handledTypes.includes(name)) {
+        eventBuffer.push({ name: name, data: data });
+      }
+      return dispatch(name, data);
+    }
+  };
+
+  // Copilot's log panel, as far as an announcement can tell: it subscribes to
+  // 'log' when it opens and unsubscribes when it closes.
+  const logged = [];
+  const logListener = (event) => logged.push(event.detail);
+
   const copilot = {
     _uiState: {},
     plugins: [],
-    eventbus: {
-      on: (name, cb) => {
-        (busListeners[name] = busListeners[name] || []).push(cb);
-      },
-      // Copilot's log panel takes its entries from here, so this is where an
-      // announcement lands.
-      emit: (name, data) => {
-        if (name === 'log') {
-          announced.push(data);
-        }
-      }
-    },
+    eventbus: eventbus,
     send: (command, data) => {
       sent.push({ command, data });
     },
@@ -149,12 +198,7 @@ function harness(pathname) {
   // A server message as Copilot delivers it: on the event bus, ahead of any
   // panel, with preventDefault() the way a listener claims it.
   function deliver(command, data) {
-    const listeners = busListeners[command] || [];
-    let claimed = false;
-    listeners.forEach((cb) =>
-      cb({ detail: data, preventDefault: () => (claimed = true) })
-    );
-    if (!claimed) unclaimed++;
+    if (!dispatch(command, data)) unclaimed++;
   }
 
   const insightsHtml = () => panel.regions['[data-region="insights"]'].innerHTML;
@@ -194,6 +238,9 @@ function harness(pathname) {
     open: () => panel.connectedCallback(),
     close: () => panel.disconnectedCallback(),
     pollTick: () => intervals[intervals.length - 1].fn(),
+    logged,
+    openLogPanel: () => eventbus.on('log', logListener),
+    closeLogPanel: () => eventbus.off('log', logListener),
     insights: (data) => deliver('observability-kit-insights-data', data),
     meters: (data) => deliver('observability-kit-metrics', data),
     insightsHtml,
@@ -276,6 +323,18 @@ const HOSTILE = insight('client-error', 'error', 'A browser error at <script>ale
   occurrences: 1,
   firstSeen: BEFORE_THE_PAGE,
   lastSeen: at(1000)
+});
+
+// A summary longer than a log line should be. The server writes short ones,
+// but nothing in the panel guarantees that, and the cut is the panel's to make.
+const LONG_WINDED = insight('client-error', 'error', 'A browser error: ' + 'x'.repeat(500), {
+  route: 'reports',
+  kind: 'uncaught',
+  source: '/VAADIN/report.js',
+  frame: '/VAADIN/report.js:3:1',
+  occurrences: 1,
+  firstSeen: SINCE_THE_PAGE,
+  lastSeen: at(8000)
 });
 
 let generation = 0;
@@ -489,6 +548,52 @@ check('every server message was claimed on the event bus', app.unclaimed(), 0);
     meters: [meter('vaadin.navigation', { route: 'orders/:orderId?([0-9]+)' })]
   });
   check('a typed optional route matches the page without the parameter', one.metricsHtml().includes('current page'), true);
+}
+
+// 16. An announcement raised while the log panel is closed, which is the case
+// the watch exists for: nobody is looking when the finding appears. It rests
+// on Copilot's event bus buffering an event whose type nothing is listening
+// for and handing it to the first listener that subscribes, so the fake bus
+// implements that rule rather than recording the emit and calling it a day.
+{
+  const quiet = harness('/orders/17');
+  quiet.open();
+  quiet.insights(payload([FAILING_SAVE]));
+
+  check('the announcement was written', quiet.announced.length, 1);
+  check('and nothing reached a log panel that is not open', quiet.logged.length, 0);
+
+  quiet.openLogPanel();
+  check('opening the log panel delivers what was buffered', quiet.logged.map((entry) => entry.message), ['Observability: failing save']);
+
+  // Handed over, not kept: a buffer that replayed itself to each new listener
+  // would be a second way to log one finding twice.
+  quiet.closeLogPanel();
+  quiet.openLogPanel();
+  check('and hands it over once', quiet.logged.length, 1);
+}
+
+// 17. The same announcement with the log panel already open arrives live, and
+// once - one finding logged twice is the bug this path was rebuilt for.
+{
+  const watching = harness('/orders/17');
+  watching.open();
+  watching.openLogPanel();
+  watching.insights(payload([FAILING_SAVE]));
+  check('an open log panel is written to directly', watching.logged.map((entry) => entry.type), ['error']);
+}
+
+// 18. A log line is a notification, not a report. The cut was the server's
+// while the announcement was relayed through it, and moved here with it.
+{
+  const verbose = harness('/reports');
+  verbose.open();
+  verbose.insights(payload([LONG_WINDED]));
+
+  const message = verbose.announced[0].message;
+  check('a long summary is cut to 300 characters and an ellipsis', message.length, 301);
+  check('cut rather than replaced', message.startsWith('Observability: A browser error: xxx'), true);
+  check('with the ellipsis last', message.endsWith('…'), true);
 }
 
 process.exit(failures === 0 ? 0 : 1);
