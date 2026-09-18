@@ -368,11 +368,18 @@ what they do that one average across all of them means nothing:
 | `other` | Everything left — an application's own endpoints under the Vaadin servlet, among them. |
 
 A page load is recognised from the browser's `Sec-Fetch-Dest` header (falling
-back to an explicit `text/html` in `Accept` for browsers old enough not to send
-it), so a `fetch()` to an application endpoint that happens to sit under the
-Vaadin servlet is not counted as one. The classification is deliberately
-conservative in that direction: a page load that cannot be told apart from
-application traffic stays `other` rather than diluting `bootstrap`.
+back to an `Accept` header that asks for `text/html` first, for browsers old
+enough not to send it), so a `fetch()` to an application endpoint that happens
+to sit under the Vaadin servlet is not counted as one. The classification is
+deliberately conservative in that direction: a page load that cannot be told
+apart from application traffic stays `other` rather than diluting `bootstrap`.
+
+An embedded route counts as a page load too — a request whose destination is an
+`iframe`, `frame`, `embed` or `object` is served the same `index.html` and
+builds a UI of its own, and `vaadin.client.bootstrap.duration` records it from
+the browser's end as well. A view that embeds another of its own routes
+therefore reports a second `bootstrap`, which is the second UI it really does
+build.
 
 ### Navigation outcomes
 

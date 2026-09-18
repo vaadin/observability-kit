@@ -357,6 +357,31 @@ class RequestMetricsBinderTest {
             Mockito.when(r.getHeader("Accept")).thenReturn(
                     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
         }), "an explicit HTML Accept is a page load too");
+        Assertions.assertEquals("bootstrap", classify(r -> {
+            // An embedded route: served the same index.html, and it builds a
+            // UI of its own, so the browser-side bootstrap meter counts it too.
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getPathInfo()).thenReturn("/orders");
+            Mockito.when(r.getHeader("Sec-Fetch-Dest")).thenReturn("iframe");
+        }), "an embedded application start is a page load");
+    }
+
+    @Test
+    void anAcceptHeaderThatOnlyMentionsHtmlIsNotAPageLoad() {
+        // The Accept fallback runs for every request without a Sec-Fetch-Dest,
+        // scripted traffic included: only a header that asks for HTML first —
+        // as a navigating browser does — may be read as a page load.
+        Assertions.assertEquals("other", classify(r -> {
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getPathInfo()).thenReturn("/api/orders");
+            Mockito.when(r.getHeader("Accept"))
+                    .thenReturn("application/json, text/html;q=0.1");
+        }), "an API client listing text/html last is not navigating");
+        Assertions.assertEquals("bootstrap", classify(r -> {
+            Mockito.when(r.getMethod()).thenReturn("GET");
+            Mockito.when(r.getHeader("Accept"))
+                    .thenReturn("text/html; charset=utf-8, */*");
+        }), "parameters on the first media range must not hide it");
     }
 
     @Test

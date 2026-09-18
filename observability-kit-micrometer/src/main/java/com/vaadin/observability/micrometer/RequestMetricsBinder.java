@@ -21,6 +21,7 @@ import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
+import com.vaadin.flow.server.communication.StreamRequestHandler;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
@@ -85,9 +86,10 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     /**
      * The path prefix Flow's stream request handler serves downloads and
-     * uploads under, mirroring {@code StreamRequestHandler.DYN_RES_PREFIX}.
+     * uploads under. Taken from Flow rather than spelled out here, so a change
+     * on that side cannot silently stop stream requests being recognised.
      */
-    private static final String STREAM_PATH = "VAADIN/dynamic/resource/";
+    private static final String STREAM_PATH = StreamRequestHandler.DYN_RES_PREFIX;
 
     /**
      * {@code Sec-Fetch-Dest} values a browser sends for a request whose
@@ -96,6 +98,15 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
      * {@code fetch}, the service worker) reports a destination outside this
      * set, so an application's own endpoints under the Vaadin servlet stay in
      * the {@code other} bucket instead of being counted as page loads.
+     * <p>
+     * The embedded destinations are in deliberately: a route opened in an
+     * iframe is served the same {@code index.html} and gets a UI of its own, so
+     * it is a page load in every sense the server can see — and the
+     * browser-side {@code vaadin.client.bootstrap.duration} records it too.
+     * Leaving them out would make the two disagree, and would hide the
+     * embedded-application case entirely. What it costs is that a view
+     * embedding another of its own routes reports a second {@code bootstrap};
+     * that is one more UI being built, which is what the type measures.
      */
     private static final Set<String> PAGE_FETCH_DESTINATIONS = Set
             .of("document", "iframe", "frame", "embed", "object");
@@ -446,10 +457,9 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                 return ObservationNames.REQUEST_TYPE_HEARTBEAT;
             }
             // Downloads and uploads: everything Flow's StreamRequestHandler
-            // serves lives under this prefix (StreamRequestHandler
-            // .DYN_RES_PREFIX), the new streams API included. Matched before
-            // the static prefixes below, which /VAADIN/dynamic/ would
-            // otherwise swallow.
+            // serves lives under this prefix, the new streams API included.
+            // Matched before the static prefixes below, which /VAADIN/dynamic/
+            // would otherwise swallow.
             if (path.contains(STREAM_PATH)) {
                 return ObservationNames.REQUEST_TYPE_STREAM;
             }
@@ -500,8 +510,30 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                     .contains(dest.toLowerCase(Locale.ROOT));
         }
         // Browsers too old to send Sec-Fetch-Dest: a document request asks for
-        // HTML explicitly, an XHR asks for */* or a specific media type.
-        String accept = request.getHeader("Accept");
-        return accept != null && accept.contains("text/html");
+        // HTML first, an XHR asks for */* or a specific media type.
+        return prefersHtml(request.getHeader("Accept"));
+    }
+
+    /**
+     * Whether an {@code Accept} header asks for HTML <em>first</em>. Merely
+     * listing {@code text/html} somewhere is not enough — it appears in the
+     * default header of several HTTP clients, and this is the branch that runs
+     * for every request without a {@code Sec-Fetch-Dest}, so a loose match
+     * would quietly turn scripted traffic into page loads. Every browser that
+     * predates {@code Sec-Fetch-Dest} puts {@code text/html} at the head of the
+     * list when navigating.
+     */
+    private static boolean prefersHtml(String accept) {
+        if (accept == null) {
+            return false;
+        }
+        int end = accept.indexOf(',');
+        String first = (end < 0 ? accept : accept.substring(0, end)).trim();
+        // Drop any parameters (";q=0.9", ";charset=...") from the media range.
+        int params = first.indexOf(';');
+        if (params >= 0) {
+            first = first.substring(0, params).trim();
+        }
+        return "text/html".equalsIgnoreCase(first);
     }
 }
