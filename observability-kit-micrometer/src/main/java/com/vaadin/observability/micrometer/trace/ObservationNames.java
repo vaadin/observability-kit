@@ -27,7 +27,12 @@ public final class ObservationNames {
 
     public static final String REQUEST = "vaadin.request";
     public static final String NAVIGATION = "vaadin.navigation";
-    public static final String UI_ACCESS = "vaadin.ui.access";
+
+    /**
+     * Observation/span name for one task run by the Vaadin service executor;
+     * see {@link TracingExecutor} for what that covers.
+     */
+    public static final String EXECUTOR_TASK = "vaadin.executor.task";
 
     /**
      * Low-cardinality key that becomes the {@link MeterNames#TAG_OUTCOME} tag
