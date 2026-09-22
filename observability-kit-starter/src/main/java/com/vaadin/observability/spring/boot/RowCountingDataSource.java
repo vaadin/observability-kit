@@ -24,6 +24,8 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
 import java.util.logging.Logger;
 
+import com.vaadin.observability.micrometer.DatabaseActivity;
+
 /**
  * A {@link DataSource} wrapper that counts the rows read from every
  * {@link ResultSet} and reports each count to {@link DatabaseFetchMetrics}.
@@ -181,6 +183,15 @@ final class RowCountingDataSource implements DataSource {
             Object result;
             try {
                 result = RowCountingDataSource.invoke(statement, method, args);
+                if (producesQuery) {
+                    // Counted here rather than in the result set, so that the
+                    // tally holds every query a data load issued even when its
+                    // rows are never read or its result set never closed. Like
+                    // the span, this covers the executions that can produce a
+                    // result set; an executeUpdate is not a read and is not
+                    // what a data load is answered from.
+                    DatabaseActivity.queryExecuted();
+                }
             } catch (Throwable t) {
                 if (span != null) {
                     span.stop(-1);

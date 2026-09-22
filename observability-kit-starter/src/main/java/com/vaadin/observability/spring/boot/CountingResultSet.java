@@ -31,6 +31,8 @@ import java.sql.Timestamp;
 import java.util.Calendar;
 import java.util.Map;
 
+import com.vaadin.observability.micrometer.DatabaseActivity;
+
 /**
  * A concrete {@link ResultSet} delegate that counts rows as they are read and
  * reports the total to {@link DatabaseFetchMetrics} (and, when present, the
@@ -84,6 +86,7 @@ final class CountingResultSet implements ResultSet {
         if (!recorded) {
             recorded = true;
             metrics.recordFetch(rows);
+            DatabaseActivity.rowsRead(rows);
             if (span != null) {
                 span.stop(rows);
             }

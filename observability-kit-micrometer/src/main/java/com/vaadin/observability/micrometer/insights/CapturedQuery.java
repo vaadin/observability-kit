@@ -13,7 +13,8 @@ import java.time.Instant;
 /**
  * One captured data provider query worth surfacing as an insight: which
  * component asked for data, on which route, how much it asked for, how much
- * came back, and how long it took.
+ * came back, how long it took, and — where the kit can see the database — how
+ * much SQL work went into answering it.
  * <p>
  * Kept separate from {@link CapturedInteraction} rather than folded into it. An
  * interaction is a user action and carries a DOM event, an RPC type and, when
@@ -44,6 +45,13 @@ import java.time.Instant;
  * @param rows
  *            for a fetch, the items actually returned; for a count, the
  *            reported item total; {@code -1} when the query threw
+ * @param dbQueries
+ *            SQL queries issued while this query ran, {@code -1} when not
+ *            measured; see
+ *            {@link com.vaadin.observability.micrometer.DatabaseActivity}
+ * @param dbRows
+ *            rows those queries read from the database, {@code -1} when not
+ *            measured
  * @param durationMs
  *            how long the query took, in milliseconds
  * @param thresholdMs
@@ -57,8 +65,8 @@ import java.time.Instant;
  */
 public record CapturedQuery(Instant timestamp, String route, String component,
         String kind, boolean filtered, int offset, int limit, int rows,
-        long durationMs, long thresholdMs, String outcome,
-        String exceptionType) {
+        long dbQueries, long dbRows, long durationMs, long thresholdMs,
+        String outcome, String exceptionType) {
 
     public static final String KIND_COUNT = "count";
     public static final String KIND_FETCH = "fetch";
