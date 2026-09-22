@@ -10,6 +10,7 @@ package com.vaadin.observability.tests.starter;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.List;
 
 import org.openqa.selenium.JavascriptExecutor;
 
@@ -82,14 +83,37 @@ public class ClientTimingIT extends AbstractIT {
         // Left unfiltered, it would be timed, reported on the next flush, and
         // so on for as long as the tab is open. Two flush intervals of an idle
         // tab must therefore add nothing.
+        dump(js, "BEFORE SLEEP", prometheus);
         sleep(Duration.ofSeconds(11));
         String later = fetch("/actuator/prometheus");
+        dump(js, "AFTER SLEEP", later);
         assertThat(prometheusValue(later, REQUEST_COUNT, null))
                 .as("an idle tab must not time the collector's own requests")
                 .isEqualTo(requests);
         assertThat(prometheusValue(later, RENDER_COUNT, null))
                 .as("an idle tab must not time the collector's own responses")
                 .isEqualTo(renders);
+    }
+
+    // TEMP INSTRUMENTATION
+    @SuppressWarnings("unchecked")
+    private void dump(JavascriptExecutor js, String phase, String scrape) {
+        System.out.println("===== " + phase + " =====");
+        System.out.println("  window handles: "
+                + getDriver().getWindowHandles().size());
+        for (String line : scrape.split("\\R")) {
+            if (line.startsWith("vaadin_client_request_duration")
+                    || line.startsWith("vaadin_client_render_duration")) {
+                System.out.println("  METRIC " + line);
+            }
+        }
+        System.out.println("  this tab: " + js
+                .executeScript("return window.__vaadinMicrometer.tabId();"));
+        Object trace = js.executeScript("return window.__obsTrace || [];");
+        for (Object line : (List<Object>) trace) {
+            System.out.println("  TRACE " + line);
+        }
+        System.out.println("===== end " + phase + " =====");
     }
 
     private static void sleep(Duration duration) {

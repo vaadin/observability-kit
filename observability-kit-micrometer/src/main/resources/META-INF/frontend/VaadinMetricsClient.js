@@ -10,6 +10,16 @@
   }
   window.__vaadinMicrometerInstalled = true;
 
+  // TEMP INSTRUMENTATION
+  window.__obsTrace = window.__obsTrace || [];
+  var __tabId = Math.random().toString(36).slice(2, 7);
+  function T() {
+    var parts = [];
+    for (var i = 0; i < arguments.length; i++) { parts.push(String(arguments[i])); }
+    window.__obsTrace.push(
+      __tabId + ' t=' + (performance.now() | 0) + ' ' + parts.join(' '));
+  }
+
   var COLLECTOR_TAG = 'vaadin-metrics-collector';
   var BUFFER_MAX = 200;
   var FLUSH_INTERVAL_MS = 5000;
@@ -300,6 +310,8 @@
   // when the send arrived and the answer did not, which is the cheaper of the
   // two failures.
   function flush() {
+    T('flush(): buffer=' + buffer.length + ' inFlight=' + (inFlight ? inFlight.length : 'null')
+      + ' offline=' + offline());
     if (buffer.length === 0) {
       return;
     }
@@ -354,6 +366,8 @@
       // the request and the render check holds what is applied until the
       // answer below says which response was ours.
       ownRequestAt = monotonicNow();
+      T('MARK set ownRequestAt=' + ownRequestAt.toFixed(3)
+        + ' batch=' + batch.map(function (x) { return x.name; }).join(','));
       ownRenderAt = ownRequestAt;
       ownAnswerPending = false;
       ownRequestEnded = false;
@@ -405,6 +419,7 @@
   }
 
   restore();
+  T('after restore(): buffer=' + buffer.length);
 
   // Bootstrap timing.
   try {
@@ -1163,8 +1178,16 @@
   // that started before the mark is a request that was already in flight.
   function isOwnRequest(entry) {
     if (!pending(ownRequestAt) || entry.startTime + 1 < ownRequestAt) {
+      T('NOT-OWN start=' + entry.startTime.toFixed(3)
+        + ' mark=' + (ownRequestAt === null ? 'null' : ownRequestAt.toFixed(3))
+        + ' pending=' + pending(ownRequestAt)
+        + ' delta=' + (ownRequestAt === null ? 'n/a'
+            : (entry.startTime - ownRequestAt).toFixed(3))
+        + ' name=' + entry.name);
       return false;
     }
+    T('OWN     start=' + entry.startTime.toFixed(3)
+      + ' mark=' + ownRequestAt.toFixed(3) + ' name=' + entry.name);
     ownRequestAt = null;
     return true;
   }
@@ -1176,6 +1199,7 @@
           return;
         }
         if (!isOwnRequest(entry)) {
+          T('PUSH request.duration ' + entry.duration.toFixed(1) + 'ms');
           pushSample(REQUEST_DURATION, { route: currentRoute() }, entry.duration);
         }
         // The entry can be delivered before or after Flow applies the
@@ -1251,6 +1275,8 @@
     flush: flush,
     bufferSize: function () {
       return buffer.length;
-    }
+    },
+    trace: function () { return window.__obsTrace; },
+    tabId: function () { return __tabId; }
   };
 })();
