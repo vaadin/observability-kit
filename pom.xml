@@ -37,8 +37,8 @@
         <junit.version>5.11.4</junit.version>
         <mockito.version>5.20.0</mockito.version>
         <spring.boot.version>4.1.1</spring.boot.version>
-        <testbench.version>25.2.1</testbench.version>
-        <vaadin.license.checker.version>3.0.1</vaadin.license.checker.version>
+        <testbench.version>25.3.0</testbench.version>
+        <vaadin.license.checker.version>3.1.3</vaadin.license.checker.version>
 
         <maven.compiler.release>21</maven.compiler.release>
         <maven.compiler.source>${maven.compiler.release}</maven.compiler.source>
