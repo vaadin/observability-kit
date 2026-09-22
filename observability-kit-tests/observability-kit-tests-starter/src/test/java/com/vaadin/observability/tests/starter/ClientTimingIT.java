@@ -99,8 +99,8 @@ public class ClientTimingIT extends AbstractIT {
     @SuppressWarnings("unchecked")
     private void dump(JavascriptExecutor js, String phase, String scrape) {
         System.out.println("===== " + phase + " =====");
-        System.out.println("  window handles: "
-                + getDriver().getWindowHandles().size());
+        System.out.println(
+                "  window handles: " + getDriver().getWindowHandles().size());
         for (String line : scrape.split("\\R")) {
             if (line.startsWith("vaadin_client_request_duration")
                     || line.startsWith("vaadin_client_render_duration")) {
