@@ -395,7 +395,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.errors` | `true` | Error counters. |
 | `vaadin.observability.client` | `true` | Browser-side timing, connection state and errors collected from the client (see [Connection and client-side problems](#connection-and-client-side-problems)). |
 | `vaadin.observability.resync` | `true` | Observe UIDL message resends and client-requested resynchronizations. |
-| `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route and (when tracing is on) emit a span per query (Spring Boot starter only). |
+| `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route, report the SQL queries behind each [slow data query insight](#what-a-slow-data-query-cost-in-the-database), and (when tracing is on) emit a span per query (Spring Boot starter only). |
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the session id as a span attribute. |
@@ -967,6 +967,40 @@ persistence layer and adds a small per-row cost. It covers all JDBC access
 (Spring Data, `JdbcTemplate`, raw JDBC) that flows through a managed
 `DataSource`; row counting is best-effort and attributes to `_unknown` when no
 view is active (for example background tasks).
+
+### What a slow data query cost in the database
+
+The same counting also reaches the [insights](#in-development-the-copilot-panel).
+A `slow-data-query` finding is built from the data provider's own numbers, which
+say what a component asked for and what it got — `requested: 150, returned: 150`
+reads exactly the same whether that page came out of one indexed query or out of
+sixty thousand, and only the second is a bug. With `vaadin.observability.database=true`
+the finding also carries the SQL work that answering it took:
+
+```json
+"evidence": {
+  "component": "com.vaadin.flow.component.grid.Grid",
+  "queryKind": "fetch",
+  "requested": 150,
+  "returned": 150,
+  "sqlQueries": 60001,
+  "sqlRowsRead": 210458
+}
+```
+
+and says so in the summary, with a `suggestion` naming what the numbers point
+at: a query per item returned is a per-row lookup (a lazily loaded association,
+or a query inside the loop that builds the items), and a read far larger than
+the page means the offset and limit are not reaching the database. Both are
+invisible from the Vaadin side alone.
+
+The queries are counted on the thread the data load runs on, which is where a
+data provider issues them. A load that hands its queries to another thread
+measures nothing, and the finding then reports no SQL rather than zero — "the
+database is not the problem" is the more damaging of the two answers to get
+wrong. Row counts are best-effort in the same way the `vaadin.db.fetch.rows`
+summary is: a result set that is never closed contributes to the query count but
+not to the rows.
 
 ### Locating slow or large queries in a trace
 

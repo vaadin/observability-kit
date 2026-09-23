@@ -24,6 +24,7 @@ import io.micrometer.observation.ObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Test;
 
+import com.vaadin.observability.micrometer.DatabaseActivity;
 import com.vaadin.observability.micrometer.MeterNames;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
@@ -278,5 +279,91 @@ class RowCountingDataSourceTest {
         }
 
         assertThat(stopped).hasSize(2);
+    }
+
+    @Test
+    void everyQuery_countsTowardsTheThreadTally() throws Exception {
+        // What the data query insights read: the metric says how big each
+        // result set was, the tally says how many result sets a single data
+        // load needed. An N+1 only shows in the second.
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement prepared = mock(PreparedStatement.class);
+        ResultSet page = mock(ResultSet.class);
+        ResultSet perRow = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(prepared);
+        when(prepared.executeQuery()).thenReturn(page, perRow);
+        when(page.next()).thenReturn(true, true, false);
+        when(perRow.next()).thenReturn(true, false);
+
+        DatabaseActivity.instrumented();
+        DatabaseActivity.Work start = DatabaseActivity.current();
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry), null);
+        try (Connection c = ds.getConnection();
+                PreparedStatement ps = c.prepareStatement("select 1")) {
+            for (int query = 0; query < 2; query++) {
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        // drain
+                    }
+                }
+            }
+        }
+        DatabaseActivity.Work work = DatabaseActivity.since(start);
+
+        assertThat(work.queries()).isEqualTo(2);
+        assertThat(work.rows()).isEqualTo(3);
+    }
+
+    @Test
+    void aQueryWhoseRowsAreNeverRead_stillCounts() throws Exception {
+        // The row count is best-effort -- an unclosed result set reports none
+        // -- but the query itself happened, and the count of queries is the
+        // number the N+1 finding rests on.
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.executeQuery(anyString())).thenReturn(resultSet);
+
+        DatabaseActivity.instrumented();
+        DatabaseActivity.Work start = DatabaseActivity.current();
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry), null);
+        try (Connection c = ds.getConnection();
+                Statement s = c.createStatement()) {
+            s.executeQuery("select 1");
+        }
+
+        assertThat(DatabaseActivity.since(start).queries()).isEqualTo(1);
+    }
+
+    @Test
+    void anExecuteThatProducesNoResultSet_isNotCounted() throws Exception {
+        // execute() returns false for a write; counting it would inflate the
+        // queries a fetch reports and could suggest an N+1 that is not there.
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.execute("UPDATE x SET y = 1")).thenReturn(false);
+        when(statement.execute("SELECT * FROM x")).thenReturn(true);
+
+        DatabaseActivity.instrumented();
+        DatabaseActivity.Work start = DatabaseActivity.current();
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry), null);
+        try (Connection c = ds.getConnection();
+                Statement s = c.createStatement()) {
+            s.execute("UPDATE x SET y = 1");
+            s.execute("SELECT * FROM x");
+        }
+
+        assertThat(DatabaseActivity.since(start).queries()).isEqualTo(1);
     }
 }

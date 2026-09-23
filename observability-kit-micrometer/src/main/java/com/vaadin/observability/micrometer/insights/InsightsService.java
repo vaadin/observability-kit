@@ -386,7 +386,7 @@ public class InsightsService {
                         latest.kind(), simpleName(latest.component()),
                         simpleName(latest.exceptionType()), group.size(),
                         group.size() == 1 ? "" : "s"));
-        insight.put("evidence", queryEvidence(group));
+        insight.put("evidence", queryEvidence(group, latestMeasured(group)));
         insight.put("replay", List.of(
                 text("Open route '%s'", nullSafe(latest.route())),
                 text("Load data into %s", simpleName(latest.component())),
@@ -406,25 +406,122 @@ public class InsightsService {
         insight.put("type", "slow-data-query");
         insight.put("severity", "warning");
         insight.put("category", "performance");
-        String scale = CapturedQuery.KIND_COUNT.equals(latest.kind())
-                && latest.rows() >= 0
-                        ? text(" It counted %,d items.", latest.rows())
+        CapturedQuery measured = latestMeasured(group);
+        // The size and the SQL work are read off the same occurrence, so the
+        // sentence describes one event rather than pairing two.
+        CapturedQuery sized = measured != null ? measured : latest;
+        String scale = CapturedQuery.KIND_COUNT.equals(sized.kind())
+                && sized.rows() >= 0
+                        ? text(" It counted %,d items.", sized.rows())
                         : "";
-        insight.put("summary",
-                text("The %s query for %s takes %d ms (max %d ms), over the "
+        insight.put("summary", text(
+                "The %s query for %s takes %d ms (max %d ms), over the "
                         + "%d ms budget. The component cannot render until it "
-                        + "returns, so this is time the user waits.%s",
-                        latest.kind(), simpleName(latest.component()), medianMs,
-                        maxMs, latest.thresholdMs(), scale));
-        insight.put("evidence", queryEvidence(group));
+                        + "returns, so this is time the user waits.%s%s",
+                latest.kind(), simpleName(latest.component()), medianMs, maxMs,
+                latest.thresholdMs(), scale, databaseScale(measured)));
+        insight.put("evidence", queryEvidence(group, measured));
         insight.put("replay",
                 List.of(text("Open route '%s'", nullSafe(latest.route())),
                         text("Load data into %s",
                                 simpleName(latest.component())),
                         text("Expect the %s query to take around %d ms",
                                 latest.kind(), medianMs)));
+        String suggestion = databaseSuggestion(measured);
+        if (suggestion != null) {
+            insight.put("suggestion", suggestion);
+        }
         insight.put("examples", queryExamples(group));
         return insight;
+    }
+
+    /**
+     * The most recent occurrence whose SQL work the kit actually measured, or
+     * {@code null} when none was.
+     * <p>
+     * Not simply the latest: the measurement is thread-confined (see
+     * {@link com.vaadin.observability.micrometer.DatabaseActivity}), so an
+     * occurrence that ran its queries elsewhere carries none, and dropping the
+     * database detail from the whole insight because the last occurrence
+     * happened to be one of those would lose the finding.
+     */
+    private static @Nullable CapturedQuery latestMeasured(
+            List<CapturedQuery> group) {
+        return group.stream().filter(q -> q.dbQueries() >= 0).findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * What the query cost in the database, as a sentence appended to a summary.
+     * <p>
+     * This is the number the Vaadin-side counts cannot show. "Requested 150,
+     * returned 150" reads the same whether the page came out of one indexed
+     * query or out of sixty thousand, and only the second is a bug.
+     *
+     * @param measured
+     *            an occurrence with a measurement, or {@code null}
+     * @return the sentence, or an empty string when there is nothing to say
+     */
+    private static String databaseScale(@Nullable CapturedQuery measured) {
+        if (measured == null) {
+            return "";
+        }
+        String read = measured.dbRows() > 0
+                ? text(", reading %,d row%s from the database",
+                        measured.dbRows(), measured.dbRows() == 1 ? "" : "s")
+                : "";
+        return text(" Answering it ran %,d SQL quer%s%s.", measured.dbQueries(),
+                measured.dbQueries() == 1 ? "y" : "ies", read);
+    }
+
+    /**
+     * Reads the two shapes the SQL numbers can take on a fetch — a query per
+     * item, and a read that ignores the page — and says what to do about them.
+     * Both are invisible from the data provider's own counts, which report the
+     * page the component asked for and the page it got, and both are what an
+     * agent handed this insight needs to know before it opens the code.
+     *
+     * @param measured
+     *            an occurrence with a measurement, or {@code null}
+     * @return the suggestion, or {@code null} when the numbers say nothing
+     */
+    private static @Nullable String databaseSuggestion(
+            @Nullable CapturedQuery measured) {
+        if (measured == null
+                || !CapturedQuery.KIND_FETCH.equals(measured.kind())
+                || measured.rows() <= 0) {
+            return null;
+        }
+        int items = measured.rows();
+        List<String> sentences = new ArrayList<>();
+        // One query per item is the classic N+1 and the line is drawn there,
+        // not at some multiple of it: a fetch that scales with the number of
+        // items rather than staying flat is the finding, whether it costs one
+        // query per item or four hundred. The floor keeps a two-item page whose
+        // three queries mean nothing off the list.
+        if (measured.dbQueries() >= items && measured.dbQueries() >= 5) {
+            sentences.add(text(
+                    "That is %,d SQL queries for %,d items returned, which is "
+                            + "the shape of a per-row lookup: an association "
+                            + "loaded lazily as each item is read, or a query "
+                            + "issued inside the loop that builds them. Fetch "
+                            + "it together with the items in one query — a "
+                            + "join fetch or an entity graph — rather than "
+                            + "once per row.",
+                    measured.dbQueries(), items));
+        }
+        if (measured.dbRows() >= 10L * items) {
+            sentences.add(text(
+                    "The queries also read %,d rows to fill a page of %,d. A "
+                            + "component asks for one page at a time; where "
+                            + "the query behind it does not take that offset "
+                            + "and limit, the cost grows with the table "
+                            + "instead of with the page, so push the paging "
+                            + "into the query rather than trimming the result "
+                            + "in memory.",
+                    measured.dbRows(), items));
+        }
+        return sentences.isEmpty() ? null : String.join(" ", sentences);
     }
 
     private static long medianQueryMs(List<CapturedQuery> group) {
@@ -438,24 +535,38 @@ public class InsightsService {
                 : (sorted[middle - 1] + sorted[middle]) / 2;
     }
 
-    private static Map<String, Object> queryEvidence(
-            List<CapturedQuery> group) {
+    /**
+     * @param group
+     *            the occurrences, most recent first
+     * @param measured
+     *            the occurrence from {@link #latestMeasured(List)}, or
+     *            {@code null}; when present, the size fields are taken from it
+     *            too, since a group spans fetches of different page sizes and
+     *            the SQL numbers only describe the one they were measured on
+     */
+    private static Map<String, Object> queryEvidence(List<CapturedQuery> group,
+            @Nullable CapturedQuery measured) {
         CapturedQuery latest = group.get(0);
+        CapturedQuery sized = measured != null ? measured : latest;
         Instant firstSeen = group.stream().map(CapturedQuery::timestamp)
                 .min(Comparator.naturalOrder()).orElseThrow();
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("route", latest.route());
         evidence.put("component", latest.component());
         evidence.put("queryKind", latest.kind());
-        evidence.put("filtered", latest.filtered());
-        if (CapturedQuery.KIND_FETCH.equals(latest.kind())) {
-            evidence.put("requested", latest.limit());
-            evidence.put("returned", latest.rows());
-        } else if (latest.rows() >= 0) {
+        evidence.put("filtered", sized.filtered());
+        if (CapturedQuery.KIND_FETCH.equals(sized.kind())) {
+            evidence.put("requested", sized.limit());
+            evidence.put("returned", sized.rows());
+        } else if (sized.rows() >= 0) {
             // A count carries its result in the same field. Reporting it is
             // the point of a slow-count insight: "took 4 s" is far less
             // actionable than "took 4 s counting 2,000,000 items".
-            evidence.put("counted", latest.rows());
+            evidence.put("counted", sized.rows());
+        }
+        if (measured != null) {
+            evidence.put("sqlQueries", measured.dbQueries());
+            evidence.put("sqlRowsRead", measured.dbRows());
         }
         if (latest.exceptionType() != null) {
             evidence.put("exception", latest.exceptionType());
@@ -476,6 +587,10 @@ public class InsightsService {
                 example.put("offset", q.offset());
                 example.put("limit", q.limit());
                 example.put("rows", q.rows());
+            }
+            if (q.dbQueries() >= 0) {
+                example.put("sqlQueries", q.dbQueries());
+                example.put("sqlRowsRead", q.dbRows());
             }
             return example;
         }).toList();

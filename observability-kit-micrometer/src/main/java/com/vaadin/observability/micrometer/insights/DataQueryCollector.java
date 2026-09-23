@@ -21,6 +21,7 @@ import com.vaadin.flow.server.data.DataFetchEndedEvent;
 import com.vaadin.flow.server.data.DataFetchFailedEvent;
 import com.vaadin.flow.server.data.DataFetchStartedEvent;
 import com.vaadin.flow.shared.Registration;
+import com.vaadin.observability.micrometer.DatabaseActivity;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
 
@@ -42,6 +43,12 @@ import com.vaadin.observability.micrometer.RouteTagResolver;
  * start time lives in a thread local. Count and fetch keep separate slots
  * because an asynchronous component runs its fetches on its own executor while
  * its counts stay on the request thread.
+ * <p>
+ * The same thread local carries the {@link DatabaseActivity} tally taken when
+ * the query started, so each captured query also reports the SQL work that
+ * answering it took — the difference between a page that came out of one query
+ * and one that came out of sixty thousand, which the row counts alone cannot
+ * show.
  */
 public class DataQueryCollector {
 
@@ -51,8 +58,24 @@ public class DataQueryCollector {
     private final long uxBudgetMs;
     private final RouteTagResolver routes;
 
-    private final ThreadLocal<Long> countStart = new ThreadLocal<>();
-    private final ThreadLocal<Long> fetchStart = new ThreadLocal<>();
+    private final ThreadLocal<Started> countStart = new ThreadLocal<>();
+    private final ThreadLocal<Started> fetchStart = new ThreadLocal<>();
+
+    /**
+     * What is remembered between a query's start and end event: when it
+     * started, and the JDBC tally of the thread it started on, so the queries
+     * it issues can be counted by difference.
+     */
+    private record Started(long nanos, DatabaseActivity.Work db) {
+
+        static Started now() {
+            return new Started(System.nanoTime(), DatabaseActivity.current());
+        }
+
+        long elapsedMs() {
+            return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - nanos);
+        }
+    }
 
     public DataQueryCollector(RecentQueries buffer,
             ObservabilitySettings settings) {
@@ -96,7 +119,7 @@ public class DataQueryCollector {
     }
 
     void countStarted(DataCountStartedEvent event) {
-        countStart.set(System.nanoTime());
+        countStart.set(Started.now());
     }
 
     void countFailed(DataCountFailedEvent event) {
@@ -105,12 +128,13 @@ public class DataQueryCollector {
         }
         capture(CapturedQuery.KIND_COUNT, event.getUI(),
                 event.getComponent().orElse(null), event.isFiltered(), -1, -1,
-                -1, elapsedMs(countStart), -1, CapturedQuery.OUTCOME_ERROR,
-                event.getError());
+                -1, dbWork(countStart), elapsedMs(countStart), -1,
+                CapturedQuery.OUTCOME_ERROR, event.getError());
     }
 
     void countEnded(DataCountEndedEvent event) {
         long durationMs = elapsedMs(countStart);
+        DatabaseActivity.Work db = dbWork(countStart);
         countStart.remove();
         // A failed count is already captured with its throwable; -1 here only
         // says the query threw.
@@ -119,12 +143,12 @@ public class DataQueryCollector {
         }
         capture(CapturedQuery.KIND_COUNT, event.getUI(),
                 event.getComponent().orElse(null), event.isFiltered(), -1, -1,
-                event.getCount(), durationMs, uxBudgetMs,
+                event.getCount(), db, durationMs, uxBudgetMs,
                 CapturedQuery.OUTCOME_SUCCESS, null);
     }
 
     void fetchStarted(DataFetchStartedEvent event) {
-        fetchStart.set(System.nanoTime());
+        fetchStart.set(Started.now());
     }
 
     void fetchFailed(DataFetchFailedEvent event) {
@@ -133,12 +157,14 @@ public class DataQueryCollector {
         }
         capture(CapturedQuery.KIND_FETCH, event.getUI(),
                 event.getComponent().orElse(null), event.isFiltered(),
-                event.getOffset(), event.getLimit(), -1, elapsedMs(fetchStart),
-                -1, CapturedQuery.OUTCOME_ERROR, event.getError());
+                event.getOffset(), event.getLimit(), -1, dbWork(fetchStart),
+                elapsedMs(fetchStart), -1, CapturedQuery.OUTCOME_ERROR,
+                event.getError());
     }
 
     void fetchEnded(DataFetchEndedEvent event) {
         long durationMs = elapsedMs(fetchStart);
+        DatabaseActivity.Work db = dbWork(fetchStart);
         fetchStart.remove();
         if (event.getRowsReturned() < 0 || !captureSlow
                 || durationMs < uxBudgetMs) {
@@ -147,19 +173,21 @@ public class DataQueryCollector {
         capture(CapturedQuery.KIND_FETCH, event.getUI(),
                 event.getComponent().orElse(null), event.isFiltered(),
                 event.getOffset(), event.getLimit(), event.getRowsReturned(),
-                durationMs, uxBudgetMs, CapturedQuery.OUTCOME_SUCCESS, null);
+                db, durationMs, uxBudgetMs, CapturedQuery.OUTCOME_SUCCESS,
+                null);
     }
 
     private void capture(String kind, UI ui, Component component,
-            boolean filtered, int offset, int limit, int rows, long durationMs,
-            long thresholdMs, String outcome, Throwable error) {
+            boolean filtered, int offset, int limit, int rows,
+            DatabaseActivity.Work db, long durationMs, long thresholdMs,
+            String outcome, Throwable error) {
         try {
             buffer.add(
                     new CapturedQuery(Instant.now(), routes.tagForUi(ui, null),
                             component == null ? null
                                     : component.getClass().getName(),
-                            kind, filtered, offset, limit, rows, durationMs,
-                            thresholdMs, outcome,
+                            kind, filtered, offset, limit, rows, db.queries(),
+                            db.rows(), durationMs, thresholdMs, outcome,
                             error == null ? null
                                     : Throwables.rootCause(error).getClass()
                                             .getName()));
@@ -169,10 +197,19 @@ public class DataQueryCollector {
         }
     }
 
-    private long elapsedMs(ThreadLocal<Long> start) {
-        Long started = start.get();
-        return started == null ? -1
-                : TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+    private long elapsedMs(ThreadLocal<Started> start) {
+        Started started = start.get();
+        return started == null ? -1 : started.elapsedMs();
+    }
+
+    /**
+     * The JDBC work done since the query started, which is unknown unless the
+     * queries ran on this thread and something is counting them.
+     */
+    private DatabaseActivity.Work dbWork(ThreadLocal<Started> start) {
+        Started started = start.get();
+        return started == null ? DatabaseActivity.Work.UNKNOWN
+                : DatabaseActivity.since(started.db());
     }
 
 }

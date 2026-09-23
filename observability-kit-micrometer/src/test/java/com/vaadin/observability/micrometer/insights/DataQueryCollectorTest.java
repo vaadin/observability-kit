@@ -23,6 +23,7 @@ import com.vaadin.flow.server.data.DataCountStartedEvent;
 import com.vaadin.flow.server.data.DataFetchEndedEvent;
 import com.vaadin.flow.server.data.DataFetchFailedEvent;
 import com.vaadin.flow.server.data.DataFetchStartedEvent;
+import com.vaadin.observability.micrometer.DatabaseActivity;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 class DataQueryCollectorTest {
@@ -272,5 +273,149 @@ class DataQueryCollectorTest {
         Assertions.assertEquals(30, evidence.get("returned"));
         Assertions.assertNull(evidence.get("counted"),
                 "a fetch reports a range, not a count");
+    }
+
+    @Test
+    void aSlowFetchReportsTheSqlWorkBehindIt() {
+        // The shape that started this: a grid page of 150 items, answered by
+        // one query for the table and one per row. "requested 150, returned
+        // 150" is the same sentence either way, so without the SQL numbers the
+        // insight describes a healthy fetch and a broken one identically.
+        DatabaseActivity.instrumented();
+        DataQueryCollector collector = collector(CAPTURE_ALL);
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 150, false));
+        for (int query = 0; query < 60_001; query++) {
+            DatabaseActivity.queryExecuted();
+        }
+        DatabaseActivity.rowsRead(210_000);
+        collector.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 0, 150, false, 150));
+
+        CapturedQuery captured = buffer.snapshot().get(0);
+        Assertions.assertEquals(60_001, captured.dbQueries());
+        Assertions.assertEquals(210_000, captured.dbRows());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, buffer).payload().get("insights");
+        Map<String, Object> insight = insights.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+
+        Assertions.assertEquals(60_001L, evidence.get("sqlQueries"));
+        Assertions.assertEquals(210_000L, evidence.get("sqlRowsRead"));
+        Assertions.assertTrue(
+                insight.get("summary").toString()
+                        .contains("ran 60,001 SQL queries"),
+                () -> "the cost belongs where a reader looks first: "
+                        + insight.get("summary"));
+        Assertions.assertTrue(
+                insight.get("suggestion").toString()
+                        .contains("60,001 SQL queries for 150 items returned"),
+                () -> "a query per item is the finding, and the suggestion has "
+                        + "to name it: " + insight.get("suggestion"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> examples = (List<Map<String, Object>>) insight
+                .get("examples");
+        Assertions.assertEquals(60_001L, examples.get(0).get("sqlQueries"),
+                "each occurrence carries its own count, so a reader can see "
+                        + "whether the cost is stable or growing");
+    }
+
+    @Test
+    void aFetchThatCountedNoQueriesSaysNothingAboutTheDatabase() {
+        // Nothing counted is not the same as nothing run: the count is
+        // thread-confined, so a fetch on another thread measures nothing.
+        // Reporting that as "0 SQL queries" would clear the database of a
+        // problem it may well have.
+        DatabaseActivity.instrumented();
+        DataQueryCollector collector = collector(CAPTURE_ALL);
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        collector.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 0, 50, false, 50));
+
+        Assertions.assertEquals(-1, buffer.snapshot().get(0).dbQueries());
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, buffer).payload().get("insights");
+        Map<String, Object> insight = insights.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+
+        Assertions.assertNull(evidence.get("sqlQueries"));
+        Assertions.assertNull(insight.get("suggestion"),
+                "nothing measured, nothing to suggest");
+        Assertions.assertFalse(
+                insight.get("summary").toString().contains("SQL"),
+                () -> "the summary must not mention SQL it never saw: "
+                        + insight.get("summary"));
+    }
+
+    @Test
+    void aFailedFetchReportsTheSqlWorkBehindIt() {
+        DatabaseActivity.instrumented();
+        DataQueryCollector collector = collector(CAPTURE_NONE);
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        for (int query = 0; query < 51; query++) {
+            DatabaseActivity.queryExecuted();
+        }
+        collector.fetchFailed(new DataFetchFailedEvent(ui, component, 0, 50,
+                false, new IllegalStateException("backend down")));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, buffer).payload().get("insights");
+        Map<String, Object> insight = insights.get(0);
+        Assertions.assertEquals("data-query-error", insight.get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+
+        Assertions.assertEquals(51L, evidence.get("sqlQueries"));
+        Assertions.assertEquals(50, evidence.get("requested"));
+    }
+
+    @Test
+    void theSizeAndTheSqlWorkComeFromTheSameOccurrence() {
+        // A group spans fetches of different page sizes. When the latest one
+        // measured nothing, the SQL figures come from an earlier one, and the
+        // page they are set against has to be that one's too.
+        DatabaseActivity.instrumented();
+        DataQueryCollector collector = collector(CAPTURE_ALL);
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        for (int query = 0; query < 51; query++) {
+            DatabaseActivity.queryExecuted();
+        }
+        collector.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 0, 50, false, 50));
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 50, 100, false));
+        collector.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 50, 100, false, 100));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, buffer).payload().get("insights");
+        Map<String, Object> insight = insights.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+
+        Assertions.assertEquals(2, evidence.get("occurrences"));
+        Assertions.assertEquals(51L, evidence.get("sqlQueries"));
+        Assertions.assertEquals(50, evidence.get("requested"));
+        Assertions.assertEquals(50, evidence.get("returned"));
+        Assertions.assertTrue(
+                insight.get("suggestion").toString()
+                        .contains("51 SQL queries for 50 items returned"),
+                () -> String.valueOf(insight.get("suggestion")));
     }
 }

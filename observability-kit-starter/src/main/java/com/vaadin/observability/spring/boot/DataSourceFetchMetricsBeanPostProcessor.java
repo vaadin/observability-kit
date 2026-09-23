@@ -16,6 +16,7 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 
+import com.vaadin.observability.micrometer.DatabaseActivity;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 /**
@@ -53,6 +54,10 @@ class DataSourceFetchMetricsBeanPostProcessor implements BeanPostProcessor {
                 && !(bean instanceof RowCountingDataSource)) {
             DatabaseFetchMetrics m = metrics();
             if (m != null) {
+                // From here on a data load that counts no query on its thread
+                // has genuinely issued none, which is what lets the insights
+                // report SQL work per query rather than stay silent.
+                DatabaseActivity.instrumented();
                 return new RowCountingDataSource(dataSource, m, spans());
             }
         }
