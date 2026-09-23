@@ -21,6 +21,7 @@ import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
+import com.vaadin.flow.server.WrappedSession;
 import com.vaadin.flow.server.communication.StreamRequestHandler;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
@@ -56,7 +57,9 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * The UI id and the client location are attached as high-cardinality
  * key-values, so they enrich the span without multiplying the Timer's time
  * series: a UI id is unbounded over an application's lifetime, and the client
- * location is deliberately kept un-templated.
+ * location is deliberately kept un-templated. With
+ * {@code settings.isTracesSessionId()} the HTTP session id is attached the same
+ * way.
  * <p>
  * This interceptor only ever sees exceptions that <em>escape</em> request
  * handling. The failures a user triggers are caught by Flow and routed to the
@@ -255,6 +258,28 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     }
 
     /**
+     * The id of the HTTP session the request belongs to, or {@code null} when
+     * there is none. Prefers the Vaadin session Flow resolved for the request
+     * and falls back to the request's own session without ever creating one: a
+     * static-resource request must not start a session just to be traced.
+     */
+    private static String sessionId(VaadinRequest request,
+            VaadinSession session) {
+        try {
+            WrappedSession wrapped = session != null ? session.getSession()
+                    : null;
+            if (wrapped == null && request != null) {
+                wrapped = request.getWrappedSession(false);
+            }
+            return wrapped != null ? wrapped.getId() : null;
+        } catch (IllegalStateException e) {
+            // The session was invalidated during the request (a logout);
+            // the container refuses to hand out its id any more.
+            return null;
+        }
+    }
+
+    /**
      * Extracts the page path the UIDL request was sent from. Falls back to the
      * Referer header path so we always emit something useful when reading a
      * trace, without ever exposing PII. The path is deliberately kept
@@ -430,6 +455,16 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                 obs.lowCardinalityKeyValue(ObservationNames.KEY_INTERACTION,
                         kind);
                 obs.contextualName(ObservationNames.REQUEST + "." + kind);
+            }
+            if (settings.isTracesSessionId()) {
+                // Resolved at request end so the page load that creates the
+                // session is attributed too. Span-only, like the UI id: a
+                // session id is unbounded and must never become a Timer tag.
+                String sessionId = sessionId(request, session);
+                if (sessionId != null) {
+                    obs.highCardinalityKeyValue(ObservationNames.KEY_SESSION_ID,
+                            sessionId);
+                }
             }
             obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
             obs.stop();

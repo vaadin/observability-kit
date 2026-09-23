@@ -237,7 +237,13 @@ class DataQueryCollectorTest {
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
                         null, queries).payload().get("insights");
-                String summary = insights.get(0).get("summary").toString();
+                // The measured durations are wall-clock and differ between
+                // runs (the first one pays for warm-up), so they are masked
+                // before comparing. Only ASCII digits are masked: a duration
+                // rendered in locale digits stays in and fails the comparison.
+                String summary = insights.get(0).get("summary").toString()
+                        .replaceAll("takes [0-9]+ ms \\(max [0-9]+ ms\\)",
+                                "takes # ms (max # ms)");
 
                 Assertions.assertTrue(summary.contains("2,000,000"),
                         () -> "grouping separator followed the locale under "

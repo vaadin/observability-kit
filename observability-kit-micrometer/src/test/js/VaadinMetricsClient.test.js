@@ -720,6 +720,29 @@ function err(message, stack) {
         timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
     }
 
+    // 8o. Flow's actual order: the response is applied, the $server promise
+    //     is answered from inside it, and only then does the loading round
+    //     trip end. A flush response that cost nothing is over at that point
+    //     too; a mark left armed would take the next interaction's render for
+    //     the flush's own and drop it.
+    {
+      await ownRoundTrip(1);
+      nudge();
+      collectorApi.flush();
+      cs.go('loading');
+      flow.last = 0;
+      wire(40);
+      answer();
+      await settle();
+      cs.go('connected');
+      await settle();
+      check('a free flush response answered before its round trip ends leaves nothing behind', collectorApi.bufferSize(), 0);
+      await roundTrip(25);
+      all = await drain();
+      check('and does not swallow the interaction after it',
+        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 25]]);
+    }
+
     // 8e. Without profiling data -- production mode with requestTiming off --
     //     the wire is still timed and the browser is simply not.
     await ownRoundTrip(1);

@@ -59,20 +59,50 @@ public class ClientTimingIT extends AbstractIT {
                 .as("the test app sets vaadin.requestTiming=true, so Flow "
                         + "should publish its profiling data")
                 .isEqualTo(Boolean.TRUE);
+        recordFlushes(js);
+
+        // Page load is timed too: the navigation it ends with is a UIDL
+        // request. Sent now, so the counts the click is measured against are
+        // settled. Waiting for the periodic flush instead left it to chance
+        // which samples it carried, and a slow browser that clicked after it
+        // had its snapshot taken before the click was reported at all.
+        // The navigation must have been timed first: Flow idle, its entry in
+        // the buffer, and the flush a task later than the collector's
+        // observer, which the entry is delivered to asynchronously.
+        waitUntil(driver -> Boolean.TRUE.equals(js.executeScript(
+                "return Object.values(window.Vaadin.Flow.clients).every("
+                        + "function (c) { return !c.isActive(); })"
+                        + " && performance.getEntriesByType('resource').some("
+                        + "function (e) { return /[?&]v-r=uidl(?:&|$)/"
+                        + ".test(e.name); });")));
+        js.executeAsyncScript("var done = arguments[arguments.length - 1];"
+                + "setTimeout(function () {"
+                + "  window.__vaadinMicrometer.flush(); done(); }, 100);");
+        waitUntil(driver -> Boolean.TRUE.equals(js.executeScript(
+                "return window.__vaadinMicrometer.bufferSize() === 0"
+                        + " && window.__itFlushes.every("
+                        + "function (f) { return f.answered; });")));
+        String before = fetch("/actuator/prometheus");
+        double requestsBefore = prometheusValue(before, REQUEST_COUNT, null);
 
         $(NativeButtonElement.class).id("bump").click();
         assertThat(clicks.getText()).isEqualTo("1");
 
+        // The click's round trip is always timed. Its render is only when it
+        // cost Flow a millisecond or more -- Flow counts whole milliseconds --
+        // but it is reported with the round trip, so once the request sample
+        // is in, the render counts are final too.
         String prometheus = awaitPrometheus(
-                body -> prometheusValue(body, REQUEST_COUNT, null) >= 1.0
-                        && prometheusValue(body, RENDER_COUNT, null) >= 1.0,
-                REQUEST_COUNT + " and " + RENDER_COUNT, TIMEOUT);
+                body -> prometheusValue(body, REQUEST_COUNT,
+                        null) >= requestsBefore + 1.0,
+                "the click's " + REQUEST_COUNT, TIMEOUT);
 
         double requests = prometheusValue(prometheus, REQUEST_COUNT, null);
         double renders = prometheusValue(prometheus, RENDER_COUNT, null);
-        assertThat(requests).as("the click's round trip should be timed")
-                .isGreaterThanOrEqualTo(1.0);
-        assertThat(renders).as("applying the click's response should be timed")
+        assertThat(requests).as("the click's round trip should be timed once")
+                .isEqualTo(requestsBefore + 1.0);
+        assertThat(renders)
+                .as("applying the responses should be timed in the browser")
                 .isGreaterThanOrEqualTo(1.0);
         assertThat(prometheusValue(prometheus,
                 "vaadin_client_request_duration_seconds_sum", null))
@@ -84,12 +114,57 @@ public class ClientTimingIT extends AbstractIT {
         // tab must therefore add nothing.
         sleep(Duration.ofSeconds(11));
         String later = fetch("/actuator/prometheus");
+        // When this fails, which request was timed is only knowable from the
+        // browser, and a CI run is often the only one that shows it.
+        String timeline = timeline(js);
         assertThat(prometheusValue(later, REQUEST_COUNT, null))
-                .as("an idle tab must not time the collector's own requests")
+                .as("an idle tab must not time the collector's own requests; "
+                        + "browser timeline: %s", timeline)
                 .isEqualTo(requests);
         assertThat(prometheusValue(later, RENDER_COUNT, null))
-                .as("an idle tab must not time the collector's own responses")
+                .as("an idle tab must not time the collector's own responses; "
+                        + "browser timeline: %s", timeline)
                 .isEqualTo(renders);
+    }
+
+    /**
+     * Logs every batch the collector hands to the server, with when it did,
+     * which samples it carried and whether the server has answered for it, so
+     * the test can tell when a batch has landed and a failure can be laid
+     * against the UIDL requests the browser made. The collector looks the call
+     * up afresh on every flush, so wrapping it here sees them all.
+     */
+    private void recordFlushes(JavascriptExecutor js) {
+        waitUntil(driver -> Boolean.TRUE.equals(js.executeScript(
+                "var el = document.querySelector('vaadin-metrics-collector');"
+                        + "return !!(el && el.$server"
+                        + " && el.$server.recordSamples);")));
+        js.executeScript("var server = document"
+                + ".querySelector('vaadin-metrics-collector').$server;"
+                + "var send = server.recordSamples;"
+                + "window.__itFlushes = [];"
+                + "server.recordSamples = function (batch) {"
+                + "  var flush = { at: Math.round(performance.now()),"
+                + "    samples: batch.map(function (s) { return s.name; }),"
+                + "    answered: false };" + "  window.__itFlushes.push(flush);"
+                + "  var sent = send.apply(this, arguments);"
+                + "  var done = function () { flush.answered = true; };"
+                + "  if (sent && sent.then) { sent.then(done, done); }"
+                + "  else { done(); }" + "  return sent;" + "};");
+    }
+
+    /**
+     * The UIDL requests the tab made (start and end, on the page's clock) and
+     * the flushes {@link #recordFlushes} logged, as JSON.
+     */
+    private static String timeline(JavascriptExecutor js) {
+        return String.valueOf(js.executeScript("return JSON.stringify({"
+                + "uidl: performance.getEntriesByType('resource')"
+                + "  .filter(function (e) {"
+                + "    return /[?&]v-r=uidl(?:&|$)/.test(e.name); })"
+                + "  .map(function (e) { return { start: Math.round(e.startTime),"
+                + "    end: Math.round(e.responseEnd) }; }),"
+                + "flushes: window.__itFlushes || [] });"));
     }
 
     private static void sleep(Duration duration) {

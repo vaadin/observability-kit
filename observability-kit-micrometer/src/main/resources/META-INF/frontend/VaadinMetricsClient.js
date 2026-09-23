@@ -357,6 +357,7 @@
       ownRenderAt = ownRequestAt;
       ownAnswerPending = false;
       ownRequestEnded = false;
+      ownAnswered = false;
       var sent = el.$server.recordSamples(batch);
       var answered = function () {
         // The server either recorded the batch or answered that it could not.
@@ -383,6 +384,7 @@
       ownRenderAt = null;
       ownAnswerPending = false;
       ownRequestEnded = false;
+      ownAnswered = false;
       releaseHeldRender();
       settle(batch, true);
     }
@@ -1021,6 +1023,11 @@
   // response that cost the browser nothing does not move the processing
   // total, so this is the only evidence that it came and went.
   var ownRequestEnded = false;
+  // Whether the outstanding flush was answered while its render mark was kept.
+  // Flow answers from inside the response and ends the loading round trip only
+  // afterwards, so a free flush response comes with nothing applied at the
+  // answer, and the round trip ending next is what says it is over.
+  var ownAnswered = false;
   // A response applied while a flush was outstanding and its answer still to
   // come, with the client it came from and the processing total it brought
   // that client to. Whether it was the user's or the flush's own is not
@@ -1118,6 +1125,11 @@
       ownRequestEnded = true;
     }
     sampleRender(false);
+    if (ownAnswered && pending(ownRenderAt)) {
+      // Answered, and now the round trip is over with nothing applied: the
+      // flush's response cost nothing, and the next one is not its.
+      ownRenderAt = null;
+    }
   }
 
   // The flush has been answered. Flow does that from inside the response that
@@ -1125,8 +1137,10 @@
   // with the response applied and the store listener having seen it. If it
   // cost the browser anything it is the most recent applied response and the
   // one held; if it cost nothing, whatever is held predates it and was the
-  // user's. Should the answer ever land before the response is applied, the
-  // mark is kept and the default rule claims the response when it arrives.
+  // user's. With nothing applied the mark is kept: either the response cost
+  // nothing and the round trip ending, which Flow reports after the answer,
+  // releases the mark, or the answer landed before the response was applied
+  // and the default rule claims the response when it arrives.
   // What none of this can separate is a user RPC queued in the same tick as
   // the flush, which shares its request: that response is dropped with it,
   // one missing sample and nothing reported in its place.
@@ -1138,6 +1152,8 @@
       // way it is ours and over. Otherwise it has not arrived yet.
       if (sampleRender(true) || ownRequestEnded) {
         ownRenderAt = null;
+      } else {
+        ownAnswered = true;
       }
       return;
     }
