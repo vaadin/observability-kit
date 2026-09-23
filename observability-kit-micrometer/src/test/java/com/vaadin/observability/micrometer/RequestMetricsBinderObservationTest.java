@@ -34,6 +34,7 @@ import com.vaadin.flow.internal.CurrentInstance;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
+import com.vaadin.flow.server.WrappedSession;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 class RequestMetricsBinderObservationTest {
@@ -400,6 +401,96 @@ class RequestMetricsBinderObservationTest {
                 timer.getId().getTags().stream().map(Tag::getKey)
                         .collect(Collectors.toSet()),
                 "vaadin.request.duration should carry only bounded tags");
+    }
+
+    @Test
+    void sessionIdIsSpanOnlyWhenEnabled() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(registry))
+                .observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, obs,
+                ObservabilitySettings.builder().tracesSessionId(true).build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getParameter("v-r")).thenReturn("uidl");
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+        WrappedSession wrapped = Mockito.mock(WrappedSession.class);
+        Mockito.when(wrapped.getId()).thenReturn("abc123");
+        Mockito.when(session.getSession()).thenReturn(wrapped);
+
+        binder.requestStart(req, resp);
+        binder.requestEnd(req, resp, session);
+
+        Assertions.assertEquals("abc123", recorder.highCardinalityTags.get(0)
+                .get(ObservationNames.KEY_SESSION_ID));
+        Assertions.assertFalse(
+                recorder.tags.get(0)
+                        .containsKey(ObservationNames.KEY_SESSION_ID),
+                "vaadin.session.id must not be a low-cardinality Timer tag");
+    }
+
+    @Test
+    void sessionIdFallsBackToRequestSessionWithoutCreatingOne() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().tracesSessionId(true).build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        WrappedSession wrapped = Mockito.mock(WrappedSession.class);
+        Mockito.when(wrapped.getId()).thenReturn("from-request");
+        Mockito.when(req.getWrappedSession(false)).thenReturn(wrapped);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+
+        binder.requestStart(req, resp);
+        binder.requestEnd(req, resp, null);
+
+        Assertions.assertEquals("from-request", recorder.highCardinalityTags
+                .get(0).get(ObservationNames.KEY_SESSION_ID));
+        Mockito.verify(req, Mockito.never()).getWrappedSession();
+        Mockito.verify(req, Mockito.never()).getWrappedSession(true);
+    }
+
+    @Test
+    void sessionIdOmittedByDefaultAndWhenInvalidated() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+        WrappedSession wrapped = Mockito.mock(WrappedSession.class);
+        Mockito.when(session.getSession()).thenReturn(wrapped);
+
+        // Default settings: the id is available but must not be attached.
+        Mockito.when(wrapped.getId()).thenReturn("abc123");
+        RequestMetricsBinder byDefault = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build());
+        byDefault.requestStart(req, resp);
+        byDefault.requestEnd(req, resp, session);
+
+        // Enabled, but the session was invalidated during the request.
+        Mockito.when(wrapped.getId()).thenThrow(new IllegalStateException());
+        RequestMetricsBinder enabled = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().tracesSessionId(true).build());
+        enabled.requestStart(req, resp);
+        enabled.requestEnd(req, resp, session);
+
+        Assertions.assertEquals(2, recorder.highCardinalityTags.size());
+        recorder.highCardinalityTags.forEach(tags -> Assertions.assertFalse(
+                tags.containsKey(ObservationNames.KEY_SESSION_ID)));
     }
 
     @Test
