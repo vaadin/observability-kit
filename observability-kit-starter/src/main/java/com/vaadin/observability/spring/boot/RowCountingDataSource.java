@@ -183,13 +183,14 @@ final class RowCountingDataSource implements DataSource {
             Object result;
             try {
                 result = RowCountingDataSource.invoke(statement, method, args);
-                if (producesQuery) {
+                if (name.equals("executeQuery")
+                        || Boolean.TRUE.equals(result)) {
                     // Counted here rather than in the result set, so that the
                     // tally holds every query a data load issued even when its
-                    // rows are never read or its result set never closed. Like
-                    // the span, this covers the executions that can produce a
-                    // result set; an executeUpdate is not a read and is not
-                    // what a data load is answered from.
+                    // rows are never read or its result set never closed. Only
+                    // executions that produce a result set count: an update,
+                    // whether via executeUpdate or a false-returning execute,
+                    // is not what a data load is answered from.
                     DatabaseActivity.queryExecuted();
                 }
             } catch (Throwable t) {

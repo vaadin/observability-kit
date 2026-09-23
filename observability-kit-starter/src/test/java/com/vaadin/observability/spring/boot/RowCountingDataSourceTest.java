@@ -341,4 +341,29 @@ class RowCountingDataSourceTest {
 
         assertThat(DatabaseActivity.since(start).queries()).isEqualTo(1);
     }
+
+    @Test
+    void anExecuteThatProducesNoResultSet_isNotCounted() throws Exception {
+        // execute() returns false for a write; counting it would inflate the
+        // queries a fetch reports and could suggest an N+1 that is not there.
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.execute("UPDATE x SET y = 1")).thenReturn(false);
+        when(statement.execute("SELECT * FROM x")).thenReturn(true);
+
+        DatabaseActivity.instrumented();
+        DatabaseActivity.Work start = DatabaseActivity.current();
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry), null);
+        try (Connection c = ds.getConnection();
+                Statement s = c.createStatement()) {
+            s.execute("UPDATE x SET y = 1");
+            s.execute("SELECT * FROM x");
+        }
+
+        assertThat(DatabaseActivity.since(start).queries()).isEqualTo(1);
+    }
 }

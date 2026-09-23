@@ -356,4 +356,66 @@ class DataQueryCollectorTest {
                 () -> "the summary must not mention SQL it never saw: "
                         + insight.get("summary"));
     }
+
+    @Test
+    void aFailedFetchReportsTheSqlWorkBehindIt() {
+        DatabaseActivity.instrumented();
+        DataQueryCollector collector = collector(CAPTURE_NONE);
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        for (int query = 0; query < 51; query++) {
+            DatabaseActivity.queryExecuted();
+        }
+        collector.fetchFailed(new DataFetchFailedEvent(ui, component, 0, 50,
+                false, new IllegalStateException("backend down")));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, buffer).payload().get("insights");
+        Map<String, Object> insight = insights.get(0);
+        Assertions.assertEquals("data-query-error", insight.get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+
+        Assertions.assertEquals(51L, evidence.get("sqlQueries"));
+        Assertions.assertEquals(50, evidence.get("requested"));
+    }
+
+    @Test
+    void theSizeAndTheSqlWorkComeFromTheSameOccurrence() {
+        // A group spans fetches of different page sizes. When the latest one
+        // measured nothing, the SQL figures come from an earlier one, and the
+        // page they are set against has to be that one's too.
+        DatabaseActivity.instrumented();
+        DataQueryCollector collector = collector(CAPTURE_ALL);
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 0, 50, false));
+        for (int query = 0; query < 51; query++) {
+            DatabaseActivity.queryExecuted();
+        }
+        collector.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 0, 50, false, 50));
+        collector.fetchStarted(
+                new DataFetchStartedEvent(ui, component, 50, 100, false));
+        collector.fetchEnded(
+                new DataFetchEndedEvent(ui, component, 50, 100, false, 100));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, buffer).payload().get("insights");
+        Map<String, Object> insight = insights.get(0);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+
+        Assertions.assertEquals(2, evidence.get("occurrences"));
+        Assertions.assertEquals(51L, evidence.get("sqlQueries"));
+        Assertions.assertEquals(50, evidence.get("requested"));
+        Assertions.assertEquals(50, evidence.get("returned"));
+        Assertions.assertTrue(
+                insight.get("suggestion").toString()
+                        .contains("51 SQL queries for 50 items returned"),
+                () -> String.valueOf(insight.get("suggestion")));
+    }
 }
