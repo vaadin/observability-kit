@@ -36,6 +36,7 @@ class ObservabilitySettingsTest {
         assertEquals(100, settings.getClientRatePerSession());
         assertEquals(10000, settings.getUiStateSampleInterval());
         assertEquals(0, settings.getUiStateBytesPerNode());
+        assertEquals(5, settings.getUiStateGrowthSamples());
         assertEquals(100, settings.getInsightsCapacity());
     }
 
@@ -64,6 +65,19 @@ class ObservabilitySettingsTest {
     void uiStateBytesPerNode_negative_throwsIllegalArgument() {
         assertThrows(IllegalArgumentException.class,
                 () -> ObservabilitySettings.builder().uiStateBytesPerNode(-1));
+    }
+
+    @Test
+    void uiStateGrowthSamples_negative_throwsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().uiStateGrowthSamples(-1));
+    }
+
+    @Test
+    void uiStateGrowthSamples_zero_isAllowed() {
+        // Zero is the off switch for reading view collections.
+        assertDoesNotThrow(
+                () -> ObservabilitySettings.builder().uiStateGrowthSamples(0));
     }
 
     @Test

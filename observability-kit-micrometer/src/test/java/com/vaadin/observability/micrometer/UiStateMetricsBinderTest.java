@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.AbstractList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -33,6 +35,7 @@ import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
+import com.vaadin.observability.micrometer.insights.GrowingViewState;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,6 +67,58 @@ class UiStateMetricsBinderTest {
     /** A layout, which is a view whether or not it is routable itself. */
     private static class TestLayout extends Component implements RouterLayout {
         TestLayout() {
+            super(ElementFactory.createDiv());
+        }
+    }
+
+    /**
+     * A view that keeps every result it loaded, the way a "since last refresh"
+     * column tempts one to: its tree never changes, its heap only grows.
+     */
+    private static class HoardingLayout extends Component
+            implements RouterLayout {
+
+        private final List<List<String>> history = new ArrayList<>();
+        private List<String> current = List.of();
+
+        HoardingLayout() {
+            super(ElementFactory.createDiv());
+        }
+
+        /** Loads three rows, keeping the previous load. */
+        void refresh() {
+            history.add(current);
+            current = List.of("a", "b", "c");
+        }
+
+        void forgetHistory() {
+            history.clear();
+        }
+    }
+
+    /** A collection that would do work to answer, like a lazy association. */
+    private static class LazyList extends AbstractList<String> {
+
+        private int sizeCalls;
+
+        @Override
+        public String get(int index) {
+            throw new IndexOutOfBoundsException(index);
+        }
+
+        @Override
+        public int size() {
+            sizeCalls++;
+            return 0;
+        }
+    }
+
+    /** A layout holding a collection that must not be asked for its size. */
+    private static class LazyLayout extends Component implements RouterLayout {
+
+        private final LazyList lazy = new LazyList();
+
+        LazyLayout() {
             super(ElementFactory.createDiv());
         }
     }
@@ -455,6 +510,138 @@ class UiStateMetricsBinderTest {
 
         assertEquals(before, gauge(MeterNames.UI_STATE_NODES), 0.0,
                 "a measurement mid-scrape should not re-fold the map");
+    }
+
+    @Test
+    void collectionsAViewHoldsAreCountedWithTheirNestedElements() {
+        Tab tab = tab(mock(VaadinSession.class));
+        HoardingLayout view = new HoardingLayout();
+        tab.navigateTo(view);
+        view.refresh();
+        view.refresh();
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        // history: two lists (the empty first load, then three rows) plus
+        // their elements; current: three rows.
+        assertEquals(2 + 3 + 3, gauge(MeterNames.UI_STATE_RETAINED_ELEMENTS),
+                0.0);
+        assertEquals(2 + 3, gauge(MeterNames.UI_STATE_RETAINED_ELEMENTS_MAX),
+                0.0, "history is the larger field");
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_RETAINED_GROWING), 0.0,
+                "one measurement cannot show growth");
+    }
+
+    @Test
+    void aFieldThatKeepsGrowingIsReportedWhileItsTreeStaysTheSame() {
+        useBinder(ObservabilitySettings.builder().uiState(true)
+                .uiStateSampleInterval(0).uiStateGrowthSamples(3));
+        Tab tab = tab(mock(VaadinSession.class));
+        HoardingLayout view = new HoardingLayout();
+        tab.navigateTo(view);
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+        double nodes = gauge(MeterNames.UI_STATE_NODES);
+
+        for (int i = 0; i < 2; i++) {
+            view.refresh();
+            resample(tab);
+        }
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_RETAINED_GROWING), 0.0,
+                "two measurements of growth are under the configured three");
+
+        view.refresh();
+        resample(tab);
+
+        assertEquals(nodes, gauge(MeterNames.UI_STATE_NODES), 0.0,
+                "the tree gauges cannot see this growth");
+        assertEquals(1.0, gauge(MeterNames.UI_STATE_RETAINED_GROWING), 0.0,
+                "history grew at three measurements; current did not");
+        List<GrowingViewState> growing = binder.growing();
+        assertEquals(1, growing.size());
+        GrowingViewState state = growing.get(0);
+        assertEquals(HoardingLayout.class.getName() + ".history",
+                state.field());
+        assertEquals(HoardingLayout.class.getName(), state.viewClass());
+        assertEquals(0, state.firstElements());
+        assertEquals(3 + 6, state.elements(),
+                "three lists, one of them empty, and six rows");
+        assertEquals(3, state.growthSamples());
+    }
+
+    @Test
+    void aMeasurementThatSeesNoChangeDoesNotBreakTheRun() {
+        // Measurements follow any interaction, and most of them happen between
+        // two refreshes rather than after one.
+        useBinder(ObservabilitySettings.builder().uiState(true)
+                .uiStateSampleInterval(0).uiStateGrowthSamples(2));
+        Tab tab = tab(mock(VaadinSession.class));
+        HoardingLayout view = new HoardingLayout();
+        tab.navigateTo(view);
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        view.refresh();
+        resample(tab);
+        resample(tab);
+        view.refresh();
+        resample(tab);
+
+        assertEquals(1.0, gauge(MeterNames.UI_STATE_RETAINED_GROWING), 0.0);
+    }
+
+    @Test
+    void aShrinkStartsTheRunOver() {
+        useBinder(ObservabilitySettings.builder().uiState(true)
+                .uiStateSampleInterval(0).uiStateGrowthSamples(3));
+        Tab tab = tab(mock(VaadinSession.class));
+        HoardingLayout view = new HoardingLayout();
+        tab.navigateTo(view);
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        for (int i = 0; i < 2; i++) {
+            view.refresh();
+            resample(tab);
+        }
+        view.forgetHistory();
+        resample(tab);
+        for (int i = 0; i < 2; i++) {
+            view.refresh();
+            resample(tab);
+        }
+
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_RETAINED_GROWING), 0.0,
+                "a bounded collection that is trimmed is not a leak");
+        assertTrue(binder.growing().isEmpty());
+    }
+
+    @Test
+    void aCollectionOutsideTheJdkIsNeverAskedForItsSize() {
+        // A lazy JPA association loads itself on size(); a measurement must
+        // not be what queries the database.
+        Tab tab = tab(mock(VaadinSession.class));
+        LazyLayout view = new LazyLayout();
+        tab.navigateTo(view);
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        assertEquals(0, view.lazy.sizeCalls);
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_RETAINED_ELEMENTS), 0.0);
+    }
+
+    @Test
+    void zeroGrowthSamplesReadsNoCollections() {
+        useBinder(ObservabilitySettings.builder().uiState(true)
+                .uiStateSampleInterval(0).uiStateGrowthSamples(0));
+        Tab tab = tab(mock(VaadinSession.class));
+        HoardingLayout view = new HoardingLayout();
+        tab.navigateTo(view);
+        view.refresh();
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        assertNull(
+                registry.find(MeterNames.UI_STATE_RETAINED_ELEMENTS).gauge());
+        assertNull(registry.find(MeterNames.UI_STATE_RETAINED_GROWING).gauge());
+        assertTrue(binder.growing().isEmpty());
     }
 
     /** Fires the end of an RPC invocation on the given tab. */

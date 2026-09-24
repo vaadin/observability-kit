@@ -8,9 +8,11 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -66,10 +68,28 @@ import com.vaadin.flow.server.VaadinSession;
  * 100 000 rows counts as a single node. See
  * {@link ObservabilitySettings#getUiStateBytesPerNode()} for turning nodes into
  * a byte figure with a cost measured for the application at hand.
+ * <p>
+ * <strong>Nor what views hold outside the tree.</strong> A view that keeps
+ * every result it loaded in a field grows on the heap while its tree stays the
+ * same size. When asked to, the walk also reads the sizes of the collections
+ * each view holds in its own fields — see {@link RetainedCollections} — which
+ * is what lets {@link UiStateMetricsBinder} notice that kind of growth.
  */
 final class UiStateSampler {
 
     private UiStateSampler() {
+    }
+
+    /**
+     * Measures one UI, leaving out the collections its views hold. Must be
+     * called on a thread holding that UI's session lock.
+     *
+     * @param ui
+     *            the UI to measure, not {@code null}
+     * @return the measurement
+     */
+    static UiStateSample sample(UI ui) {
+        return sample(ui, false);
     }
 
     /**
@@ -78,13 +98,17 @@ final class UiStateSampler {
      *
      * @param ui
      *            the UI to measure, not {@code null}
+     * @param retained
+     *            whether to also read the collections each view holds in its
+     *            own fields, see {@link RetainedCollections}
      * @return the measurement
      */
-    static UiStateSample sample(UI ui) {
-        StateWalk walk = new StateWalk(activeChain(ui), routeRegistry(ui));
+    static UiStateSample sample(UI ui, boolean retained) {
+        StateWalk walk = new StateWalk(activeChain(ui), routeRegistry(ui),
+                retained);
         ui.getElement().getNode().visitNodeTree(walk::visit);
         return new UiStateSample(walk.nodes, walk.components, walk.views,
-                walk.staleViews, System.nanoTime());
+                walk.staleViews, System.nanoTime(), walk.collections);
     }
 
     /**
@@ -133,15 +157,20 @@ final class UiStateSampler {
          */
         private final Map<Class<?>, Boolean> routeClasses = new HashMap<>();
 
+        private final boolean retained;
+        private final List<RetainedCollection> collections = new ArrayList<>();
+
         private int nodes;
         private int components;
         private int views;
         private int staleViews;
 
-        StateWalk(Set<Component> activeChain, RouteRegistry registry) {
+        StateWalk(Set<Component> activeChain, RouteRegistry registry,
+                boolean retained) {
             this.activeChain = activeChain;
             this.routes = registry == null ? null
                     : RouteConfiguration.forRegistry(registry);
+            this.retained = retained;
         }
 
         private void visit(StateNode node) {
@@ -154,9 +183,34 @@ final class UiStateSampler {
             components++;
             if (activeChain.contains(component)) {
                 views++;
+                measureRetained(component);
             } else if (isView(component)) {
                 views++;
                 staleViews++;
+                measureRetained(component);
+            }
+        }
+
+        /**
+         * Reads the collections a view holds. Views only, not every component:
+         * a view is where application code keeps what it loaded, and there are
+         * few of them per tree, so the reflection this costs stays small.
+         */
+        private void measureRetained(Component view) {
+            if (retained && !(view instanceof UI)) {
+                RetainedCollections.measure(view, routeOf(view), collections);
+            }
+        }
+
+        /** The route template of a view, or {@code null} when it has none. */
+        private String routeOf(Component view) {
+            if (routes == null) {
+                return null;
+            }
+            try {
+                return routes.getTemplate(view.getClass()).orElse(null);
+            } catch (RuntimeException e) {
+                return null;
             }
         }
 

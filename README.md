@@ -406,6 +406,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.client-rate-per-session` | `100` | Maximum client-side samples accepted per session (throttling guard). |
 | `vaadin.observability.ui-state-sample-interval` | `10000` | Minimum milliseconds between two measurements of the same UI. One measurement walks that UI's whole component tree under its session lock, so this is the knob that bounds the cost of the feature. |
 | `vaadin.observability.ui-state-bytes-per-node` | `0` | Bytes per state-tree node used for `vaadin.ui.state.size`; `0` publishes no byte figure. |
+| `vaadin.observability.ui-state-growth-samples` | `5` | Measurements a collection held in a view field has to grow in, without shrinking, before it is reported as growing (see [State outside the tree](#state-outside-the-tree)); `0` does not read view collections at all. |
 
 For plain Spring the same keys are read via `@Value`; for standalone use, build an
 `ObservabilitySettings` with the matching builder methods:
@@ -438,6 +439,9 @@ ObservabilitySettings.builder()
 | `vaadin.ui.state.sample.age.max` | Gauge | Age in seconds of the stalest per-UI measurement in the aggregate (opt-in). |
 | `vaadin.session.state.nodes.max` | Gauge | State-tree nodes held by the largest single session (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.session.uis.max` | Gauge | Most UIs (browser tabs) held open by one session (opt-in, see `vaadin.observability.ui-state`). |
+| `vaadin.ui.state.retained.elements` | Gauge | Elements held in the collection fields of views across all UIs — state the state tree does not contain (opt-in, with `ui-state`). |
+| `vaadin.ui.state.retained.elements.max` | Gauge | Elements held by the largest single view field (opt-in, with `ui-state`). |
+| `vaadin.ui.state.retained.growing` | Gauge | View fields whose collection keeps growing across measurements without shrinking. Normally zero (opt-in, with `ui-state`). |
 | `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). See [Navigation outcomes](#navigation-outcomes) for what a navigation that never completes is recorded as. |
 | `vaadin.request.duration` | Timer | Server-side request handling time, tagged by `vaadin.request.type`. See [Request types](#request-types). |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
@@ -581,6 +585,52 @@ vaadin.observability.ui-state-bytes-per-node=96
 
 Divided into the heap headroom, that is an estimate of how many more tabs the
 instance can hold.
+
+### State outside the tree
+
+The tree gauges cannot see what a view keeps in its own fields. A view that
+appends each refresh to a `List` — to show what changed since the last one, say
+— grows on the heap every time while its component tree, and every gauge above,
+stays flat. Only the heap shows it, and the heap cannot say which view is to
+blame.
+
+So with `ui-state` on, each measurement also reads the collections views hold:
+the instance fields of every route target and router layout in the tree, and
+their superclasses up to the first Flow class, whose declared type is a
+`Collection`, a `Map` or an array. A field's size includes the collections
+nested directly inside it, so a `List<List<T>>` that gains a whole result set
+per refresh grows by that result set. The kit publishes the totals as
+`vaadin.ui.state.retained.elements` and `vaadin.ui.state.retained.elements.max`.
+
+It then follows each field of each view instance from one measurement of its UI
+to the next. A field that has grown at `ui-state-growth-samples` measurements
+(default 5) without shrinking in between is counted in
+`vaadin.ui.state.retained.growing`. A measurement that finds the size unchanged
+neither counts nor breaks the run, because measurements follow interactions, not
+the code that adds to the field. The gauge is normally zero, so it can be
+alerted on directly:
+
+```yaml
+- alert: VaadinViewStateGrowing
+  expr: max(vaadin_ui_state_retained_growing) > 0
+  for: 10m
+  annotations:
+    summary: A view keeps accumulating state; see /actuator/vaadin/observability
+```
+
+Which view and field is growing is not a tag, since that would add a series per
+view class. The insights endpoint reports it instead, as a
+`growing-view-state` insight: one per field, naming the class and field (for
+example `SpendingOverviewView.oldData`), how large it is in the worst UI, what
+it started from, and how many open UIs show the same growth.
+
+What is deliberately not read: only `java.util` implementations are asked for
+their size, because another collection may do work to answer (a lazy JPA
+association loads itself on `size()`), and nothing reachable from an element is
+followed. These count what a field holds, not how many bytes that is. Some
+collections legitimately grow for a while, like a chat log or rows a user keeps
+adding; raise `ui-state-growth-samples` if they report too early, or set it to
+`0` to turn the collection reading off.
 
 ## Error metrics
 
