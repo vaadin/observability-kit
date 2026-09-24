@@ -67,6 +67,8 @@ public class ObservabilityConfiguration {
                         number(environment, "ui-state-sample-interval", 10000))
                 .uiStateBytesPerNode(
                         number(environment, "ui-state-bytes-per-node", 0))
+                .uiStateGrowthSamples(
+                        number(environment, "ui-state-growth-samples", 5))
                 .navigation(flag(environment, "navigation", true))
                 .requests(flag(environment, "requests", true))
                 .data(flag(environment, "data", true))

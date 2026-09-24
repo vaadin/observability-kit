@@ -41,6 +41,7 @@ public class ObservabilityProperties {
     private int clientRatePerSession = 100;
     private int uiStateSampleInterval = 10000;
     private int uiStateBytesPerNode = 0;
+    private int uiStateGrowthSamples = 5;
     private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
     public boolean isEnabled() {
@@ -229,6 +230,20 @@ public class ObservabilityProperties {
     }
 
     /**
+     * Measurements a view collection has to grow in before it is reported as
+     * growing; {@code 0} does not read view collections at all.
+     *
+     * @return the number of measurements, or {@code 0}
+     */
+    public int getUiStateGrowthSamples() {
+        return uiStateGrowthSamples;
+    }
+
+    public void setUiStateGrowthSamples(int uiStateGrowthSamples) {
+        this.uiStateGrowthSamples = uiStateGrowthSamples;
+    }
+
+    /**
      * Converts these properties to an {@link ObservabilitySettings} instance.
      * The {@code enabled} flag is not included in settings; it only gates
      * activation of the auto-configuration.
@@ -262,6 +277,7 @@ public class ObservabilityProperties {
                 .clientRatePerSession(clientRatePerSession)
                 .uiStateSampleInterval(uiStateSampleInterval)
                 .uiStateBytesPerNode(uiStateBytesPerNode)
+                .uiStateGrowthSamples(uiStateGrowthSamples)
                 .insightsCapacity(insightsCapacity).build();
     }
 }

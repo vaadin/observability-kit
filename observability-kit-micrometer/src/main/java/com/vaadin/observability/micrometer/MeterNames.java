@@ -75,6 +75,24 @@ public final class MeterNames {
     /** Gauge: most UIs (browser tabs) held open by one session. */
     public static final String SESSION_UIS_MAX = "vaadin.session.uis.max";
 
+    /**
+     * Gauge: elements held in the collection-typed fields of views across all
+     * UIs — state the state tree does not contain. Registered only when
+     * {@link ObservabilitySettings#getUiStateGrowthSamples()} is greater than
+     * zero.
+     */
+    public static final String UI_STATE_RETAINED_ELEMENTS = "vaadin.ui.state.retained.elements";
+
+    /** Gauge: elements held by the largest single view field. */
+    public static final String UI_STATE_RETAINED_ELEMENTS_MAX = "vaadin.ui.state.retained.elements.max";
+
+    /**
+     * Gauge: view fields whose collection has kept growing across the
+     * configured number of measurements without ever shrinking. Normally zero;
+     * anything else is a view accumulating state on each interaction.
+     */
+    public static final String UI_STATE_RETAINED_GROWING = "vaadin.ui.state.retained.growing";
+
     public static final String NAVIGATION = "vaadin.navigation";
 
     public static final String REQUEST_DURATION = "vaadin.request.duration";

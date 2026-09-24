@@ -35,6 +35,7 @@ public final class ObservabilitySettings {
     private final int clientRatePerSession;
     private final int uiStateSampleInterval;
     private final int uiStateBytesPerNode;
+    private final int uiStateGrowthSamples;
     private final int insightsCapacity;
 
     private ObservabilitySettings(Builder builder) {
@@ -57,6 +58,7 @@ public final class ObservabilitySettings {
         this.clientRatePerSession = builder.clientRatePerSession;
         this.uiStateSampleInterval = builder.uiStateSampleInterval;
         this.uiStateBytesPerNode = builder.uiStateBytesPerNode;
+        this.uiStateGrowthSamples = builder.uiStateGrowthSamples;
         this.insightsCapacity = builder.insightsCapacity;
     }
 
@@ -208,6 +210,32 @@ public final class ObservabilitySettings {
     }
 
     /**
+     * How many measurements in a row a collection held by a view has to grow in
+     * before it is reported as growing, or {@code 0} to not read the
+     * collections views hold at all.
+     * <p>
+     * A view that keeps what it loads in a field — every refresh appended to a
+     * list, every result cached in a map — grows on the heap while its
+     * component tree stays the same size, so none of the state-tree gauges
+     * move. When this is above zero, each UI measurement also reads the sizes
+     * of the collections its views hold in their own fields, and a field whose
+     * size went up at this many measurements without once going down is counted
+     * in {@code vaadin.ui.state.retained.growing}. A measurement where the size
+     * stayed the same neither counts nor breaks the run, because measurements
+     * follow interactions, not the code that adds to the field.
+     * <p>
+     * Some collections legitimately grow for a while — a chat log, rows a user
+     * keeps adding — so a higher value trades a later signal for fewer of
+     * those. Only takes effect when {@link #isUiState()} is on.
+     *
+     * @return measurements of growth before a collection is reported, or
+     *         {@code 0} when collections are not read
+     */
+    public int getUiStateGrowthSamples() {
+        return uiStateGrowthSamples;
+    }
+
+    /**
      * Maximum number of records retained for the insights endpoint, applied to
      * <em>each</em> buffer rather than shared between them: interactions, data
      * provider queries and browser errors are retained separately, so with all
@@ -244,6 +272,7 @@ public final class ObservabilitySettings {
         private int clientRatePerSession = 100;
         private int uiStateSampleInterval = 10000;
         private int uiStateBytesPerNode = 0;
+        private int uiStateGrowthSamples = 5;
         private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
         private Builder() {
@@ -368,6 +397,16 @@ public final class ObservabilitySettings {
                                 + uiStateBytesPerNode);
             }
             this.uiStateBytesPerNode = uiStateBytesPerNode;
+            return this;
+        }
+
+        public Builder uiStateGrowthSamples(int uiStateGrowthSamples) {
+            if (uiStateGrowthSamples < 0) {
+                throw new IllegalArgumentException(
+                        "uiStateGrowthSamples must be >= 0, got "
+                                + uiStateGrowthSamples);
+            }
+            this.uiStateGrowthSamples = uiStateGrowthSamples;
             return this;
         }
 

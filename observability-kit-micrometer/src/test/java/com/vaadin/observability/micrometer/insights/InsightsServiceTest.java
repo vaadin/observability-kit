@@ -470,4 +470,45 @@ class InsightsServiceTest {
         Assertions.assertEquals("Click the 'Process return' Button",
                 replay.get(2));
     }
+
+    private static GrowingViewState growing(String field, int elements,
+            int uiId) {
+        Instant now = Instant.now();
+        return new GrowingViewState("com.example.SpendingOverviewView",
+                "com.example.SpendingOverviewView." + field, "overview",
+                elements, 10, 7, now.minusSeconds(60), now, "session", uiId);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void growingViewStateIsOneInsightPerFieldLargestFirst() {
+        List<GrowingViewState> states = List.of(growing("oldData", 400, 1),
+                growing("oldData", 900, 2), growing("cache", 50, 1));
+        List<Map<String, Object>> insights = (List<Map<String, Object>>) new InsightsService(
+                null, null, null, () -> states).payload().get("insights");
+
+        Assertions.assertEquals(2, insights.size(),
+                "two tabs growing the same field are one finding");
+        Map<String, Object> insight = insights.get(0);
+        Assertions.assertEquals("growing-view-state", insight.get("type"));
+        Map<String, Object> evidence = (Map<String, Object>) insight
+                .get("evidence");
+        Assertions.assertEquals("com.example.SpendingOverviewView.oldData",
+                evidence.get("field"));
+        Assertions.assertEquals(900, evidence.get("elements"),
+                "the worst occurrence describes the finding");
+        Assertions.assertEquals(2, evidence.get("occurrences"));
+        Assertions.assertTrue(
+                insight.get("summary").toString().startsWith(
+                        "SpendingOverviewView.oldData keeps growing"),
+                "the summary names the field: " + insight.get("summary"));
+    }
+
+    @Test
+    void growthSourceAloneMakesInstrumentationActive() {
+        Map<String, Object> payload = new InsightsService(null, null, null,
+                List::of).payload();
+
+        Assertions.assertEquals("active", payload.get("instrumentation"));
+    }
 }

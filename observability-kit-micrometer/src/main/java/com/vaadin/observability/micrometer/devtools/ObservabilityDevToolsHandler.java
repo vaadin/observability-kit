@@ -104,7 +104,8 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
         devToolsInterface.send(COMMAND_INSIGHTS_DATA,
                 new InsightsService(ObservabilityKit.getRecentInteractions(),
                         ObservabilityKit.getRecentQueries(),
-                        ObservabilityKit.getRecentClientErrors()).payload());
+                        ObservabilityKit.getRecentClientErrors(),
+                        ObservabilityKit.getRetainedStateGrowth()).payload());
     }
 
     private List<Map<String, Object>> snapshot() {
