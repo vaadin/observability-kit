@@ -9,6 +9,7 @@
 package com.vaadin.observability.micrometer;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -55,6 +56,13 @@ public final class ObservabilityKit {
      */
     private static final AtomicReference<RecentClientErrors> RECENT_CLIENT_ERRORS = new AtomicReference<>();
 
+    /**
+     * Whether {@code serviceInit} skipped binding because the kit has no valid
+     * license. Read by the dev-mode Copilot panel, which says so rather than
+     * showing empty sections that read like an idle application.
+     */
+    private static final AtomicBoolean LICENSE_MISSING = new AtomicBoolean();
+
     private ObservabilityKit() {
     }
 
@@ -89,6 +97,24 @@ public final class ObservabilityKit {
      */
     static void setActiveMeterRegistry(MeterRegistry registry) {
         ACTIVE_METER_REGISTRY.set(registry);
+    }
+
+    /**
+     * Records whether the license check at {@code serviceInit} failed. Called
+     * from {@code MetricsServiceInitListener}.
+     */
+    static void setLicenseMissing(boolean missing) {
+        LICENSE_MISSING.set(missing);
+    }
+
+    /**
+     * Whether instrumentation was not bound because the kit has no valid
+     * license. Read by the dev-mode Copilot metrics panel.
+     *
+     * @return {@code true} if the last license check failed
+     */
+    public static boolean isLicenseMissing() {
+        return LICENSE_MISSING.get();
     }
 
     /**
@@ -171,5 +197,6 @@ public final class ObservabilityKit {
         RECENT_INTERACTIONS.set(null);
         RECENT_QUERIES.set(null);
         RECENT_CLIENT_ERRORS.set(null);
+        LICENSE_MISSING.set(false);
     }
 }

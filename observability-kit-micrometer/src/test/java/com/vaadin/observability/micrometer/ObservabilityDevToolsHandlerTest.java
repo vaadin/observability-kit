@@ -164,6 +164,22 @@ class ObservabilityDevToolsHandlerTest {
     }
 
     @Test
+    void licenseMissing_stillAnswersAndSaysSo() {
+        ObservabilityKit.setLicenseMissing(true);
+
+        handler.handleConnect(devTools);
+
+        // The panel is shown either way; the flag is what lets it explain
+        // its empty sections instead of looking like an idle application.
+        Assertions.assertEquals(List.of(COMMAND_METRICS, COMMAND_INSIGHTS_DATA),
+                devTools.commands);
+        Assertions.assertEquals(false,
+                devTools.payloads.get(COMMAND_METRICS).get("licensed"));
+        Assertions.assertEquals(List.of(),
+                devTools.payloads.get(COMMAND_METRICS).get("meters"));
+    }
+
+    @Test
     void announce_isNotRelayedThroughTheServer() {
         // The panel writes its own log line on Copilot's event bus. A 'log'
         // command sent from here would be offered to that same event bus and

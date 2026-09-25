@@ -158,6 +158,7 @@ function harness(pathname) {
   const logged = [];
   const logListener = (event) => logged.push(event.detail);
 
+  let panelsAdded = 0;
   const copilot = {
     _uiState: {},
     plugins: [],
@@ -165,7 +166,9 @@ function harness(pathname) {
     send: (command, data) => {
       sent.push({ command, data });
     },
-    addPanel: () => {}
+    addPanel: () => {
+      panelsAdded++;
+    }
   };
   const win = { location: { pathname: pathname }, Vaadin: { copilot } };
 
@@ -247,6 +250,7 @@ function harness(pathname) {
     metricsHtml,
     clickIn,
     commands: () => sent.map((message) => message.command),
+    panelsAdded: () => panelsAdded,
     unclaimed: () => unclaimed
   };
 }
@@ -526,6 +530,25 @@ check('every server message was claimed on the event bus', app.unclaimed(), 0);
   // not re-fold or re-open on their behalf.
   waiting.insights(payload([]));
   check('a later payload leaves the fold alone', waiting.metricsHtml().includes('▸'), true);
+}
+
+// 14b. The panel is offered to Copilot whether or not the kit is licensed;
+// without a license it says why its sections are empty rather than looking
+// like an idle application, or like one with the insights setting off.
+{
+  const bare = harness('/orders/17');
+  check('the panel is added without waiting for the server', bare.panelsAdded(), 1);
+  bare.open();
+  bare.meters({ timestamp: Date.now(), licensed: false, meters: [] });
+  bare.insights(payload([], 'inactive'));
+  check('an unlicensed kit shows the license notice', bare.panel.regions['[data-region="license"]'].innerHTML.includes('needs a license'), true);
+  check('and does not blame the insights setting', bare.insightsHtml().includes('vaadin.observability.insights'), false);
+  check('nor invite interaction to generate meters', bare.metricsHtml().includes('Interact with the application'), false);
+
+  const licensed = harness('/orders/17');
+  licensed.open();
+  licensed.meters({ timestamp: Date.now(), licensed: true, meters: [] });
+  check('a licensed kit shows no notice', licensed.panel.regions['[data-region="license"]'].innerHTML.includes('needs a license'), false);
 }
 
 // 15. A typed parameter carries its regex after the modifier, which is where

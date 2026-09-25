@@ -1,8 +1,8 @@
 // Copyright 2000-2026 Vaadin Ltd.
 // Licensed under the Vaadin Commercial License and Service Terms.
 //
-// Dev-mode Vaadin Copilot panel for observability-kit. Injected per UI by
-// ObservabilityDevToolsClient via Page.executeJs (development mode only).
+// Dev-mode Vaadin Copilot panel for observability-kit, bundled through the
+// development-only @JsModule on ObservabilityDevToolsHandler.
 // Registers a Copilot plugin with two sections: the insights the server built
 // from the retained interactions, queries and browser errors, ranked so the
 // worst is first; and below them, collapsed, the live vaadin.* Micrometer
@@ -23,13 +23,7 @@
 // listening for until the log panel opens - and the log panel is usually not
 // open either.
 //
-// The IIFE is idempotent so repeated injection does not re-register the plugin.
-//
-// NOTE: this file is injected through ClientResourceLoader, which strips its
-// comments with a parser that is not a JavaScript parser: a double slash with
-// code after it on the same line deletes the rest of that line. Hence no regex
-// literals and no URLs in string literals here. ClientResourceIntegrityTest
-// enforces it.
+// The IIFE is idempotent so a second load does not re-register the plugin.
 (function () {
   if (window.__vaadinObservabilityDevToolsInstalled) {
     return;
@@ -996,6 +990,13 @@
     return true;
   }
 
+  // Whether the server said the kit has no license, which it says on the meter
+  // snapshot: the insights payload is the actuator's, unaltered. The panel is
+  // shown either way, with its sections empty and a notice saying why.
+  function unlicensed() {
+    return !!latest && latest.licensed === false;
+  }
+
   var ticks = 0;
 
   // Insights are polled whether or not the panel is open - that is what makes
@@ -1115,14 +1116,29 @@
       if (!this._insightsEl) {
         this.innerHTML =
           '<div style="font:13px sans-serif">' +
+          '<div data-region="license"></div>' +
           '<div data-region="insights"></div>' +
           '<div data-region="metrics"></div>' +
           '</div>';
+        this._licenseEl = this.querySelector('[data-region="license"]');
         this._insightsEl = this.querySelector('[data-region="insights"]');
         this._metersEl = this.querySelector('[data-region="metrics"]');
       }
+      this.renderLicense();
       this.renderInsights();
       this.renderMeters();
+    }
+
+    renderLicense() {
+      this._licenseEl.innerHTML = unlicensed()
+        ? '<div style="margin:8px 12px;padding:8px 10px;border-radius:4px;' +
+          'background:rgba(255,160,0,.15)">' +
+          'Observability Kit needs a license. Without one, no metrics or ' +
+          'insights are collected. See ' +
+          '<a href="https://vaadin.com/commercial-license-and-service-terms" ' +
+          'target="_blank" rel="noopener">vaadin.com/commercial-license-and-service-terms</a>.' +
+          '</div>'
+        : '';
     }
 
     renderInsights(force) {
@@ -1161,6 +1177,7 @@
       // all, and hiding one changes it without the server being involved.
       var signature = JSON.stringify([
         !!latestInsights,
+        unlicensed(),
         instrumentation,
         this._ranked,
         Object.keys(expanded).sort(),
@@ -1203,6 +1220,13 @@
         body =
           '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
           'Waiting for the first snapshot…' +
+          '</div>';
+      } else if (unlicensed()) {
+        // Not "no problems detected", and not the insights setting either:
+        // the notice above says why nothing is here.
+        body =
+          '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
+          'Not collected without a license.' +
           '</div>';
       } else if (quiet.length > 0) {
         // Findings exist; none is being counted. Saying "no problems
@@ -1257,7 +1281,9 @@
         this._metersEl.innerHTML =
           header +
           '<div style="padding:0 12px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
-          'No Vaadin meters yet. Interact with the application to generate metrics.' +
+          (unlicensed()
+            ? 'Not collected without a license.'
+            : 'No Vaadin meters yet. Interact with the application to generate metrics.') +
           '</div>';
         return;
       }
@@ -1305,37 +1331,41 @@
     });
   }
 
+  function addPanel() {
+    copilot.addPanel({
+      header: 'Observability',
+      tag: PANEL_TAG,
+      // Plain HTMLElements don't self-position the way Copilot's BasePanel
+      // does, and the panel manager skips viewport adjustment when no
+      // position is set - so it would open off-screen. Give it an explicit
+      // on-screen position and size.
+      position: {
+        top: 80,
+        left: 80,
+        width: 720,
+        height: 460
+      },
+      toolbarOptions: {
+        iconKey: 'barChart',
+        // The toolbar only renders an icon for panels mapped to an active
+        // mode; 'common' alone gives no entry point. 'play' hides the panel
+        // container, so expose the icon in the remaining modes.
+        allowedModesWithOrder: {
+          edit: 100,
+          inspect: 100,
+          test: 100
+        }
+      }
+    });
+  }
+
   var plugin = {
     init: function (copilotInterface) {
       copilot = copilotInterface;
       listen();
       poll();
       setInterval(poll, REFRESH_INTERVAL_MS);
-      copilotInterface.addPanel({
-        header: 'Observability',
-        tag: PANEL_TAG,
-        // Plain HTMLElements don't self-position the way Copilot's BasePanel
-        // does, and the panel manager skips viewport adjustment when no
-        // position is set - so it would open off-screen. Give it an explicit
-        // on-screen position and size.
-        position: {
-          top: 80,
-          left: 80,
-          width: 720,
-          height: 460
-        },
-        toolbarOptions: {
-          iconKey: 'barChart',
-          // The toolbar only renders an icon for panels mapped to an active
-          // mode; 'common' alone gives no entry point. 'play' hides the panel
-          // container, so expose the icon in the remaining modes.
-          allowedModesWithOrder: {
-            edit: 100,
-            inspect: 100,
-            test: 100
-          }
-        }
-      });
+      addPanel();
     }
   };
 

@@ -23,6 +23,15 @@ const src = fs.readFileSync(
   'utf8'
 );
 
+// Loading the module only defines the collector element; the stand-in for the
+// browser connects one as soon as it is defined, which is what attaching it
+// from the server does.
+global.HTMLElement = class {};
+global.customElements = {
+  get: () => undefined,
+  define: (tag, type) => new type().connectedCallback()
+};
+
 // The frame corpus, read from the same file StackFramesTest reads, so that
 // "the two copies of this rule agree" is enforced rather than asserted.
 const CORPUS = path.join(__dirname, '../resources/stack-frames-corpus.tsv');
@@ -42,15 +51,17 @@ const corpus = fs
     return { verdict: columns[0], line: columns[1], location: columns[2] };
   });
 
-// parseFrame and isLocation live inside the IIFE; reach them by evaluating the
-// body with a probe appended, in a throwaway environment separate from the one
-// below. Both are needed: parseFrame is the stack-line rule, isLocation the
-// rule applied to `source` and to a bare `frame`, and the corpus has rows that
-// only one of the two decides.
+// parseFrame and isLocation live inside installCollector; reach them by
+// evaluating its body, after the declarations above it, with a probe appended,
+// in a throwaway environment separate from the one below. Both are needed:
+// parseFrame is the stack-line rule, isLocation the rule applied to `source`
+// and to a bare `frame`, and the corpus has rows that only one of the two
+// decides.
 function frameRules() {
-  const open = src.indexOf('(function () {');
-  const close = src.lastIndexOf('})();');
-  const body = src.slice(open + '(function () {'.length, close);
+  const head = src.slice(0, src.indexOf('function installCollector() {'));
+  const open = src.indexOf('function installCollector() {');
+  const close = src.indexOf('\n}\n\nif (!customElements');
+  const body = head + src.slice(open + 'function installCollector() {'.length, close);
   return new Function(
     'window',
     'document',
@@ -84,7 +95,9 @@ const store = {
 };
 
 let sent = [];
-const collector = { $server: { recordSamples: (batch) => { sent.push(batch); return Promise.resolve(); } } };
+// `details` stands for the attribute the server sets when error messages are
+// to be gathered.
+const collector = { details: true, hasAttribute(name) { return name === 'details' && this.details; }, $server: { recordSamples: (batch) => { sent.push(batch); return Promise.resolve(); } } };
 
 global.window = {
   addEventListener: add,
@@ -93,8 +106,7 @@ global.window = {
   // exactly what must not be published.
   location: { pathname: '/orders/17', href: 'https://app.example.com/orders/17?token=abc123' },
   sessionStorage: { store: {}, getItem(k) { return this.store[k] || null; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } },
-  Vaadin: { connectionState: store },
-  __vaadinMicrometerDetails: true
+  Vaadin: { connectionState: store }
 };
 global.document = { querySelector: (s) => (s === 'vaadin-metrics-collector' ? collector : null), addEventListener: add, visibilityState: 'visible' };
 global.performance = { getEntriesByType: () => [], now: () => clock };
@@ -144,8 +156,7 @@ function freshCollector(stored) {
       getItem(k) { return this.store[k] === undefined ? null : this.store[k]; },
       setItem(k, v) { this.store[k] = v; },
       removeItem(k) { delete this.store[k]; }
-    },
-    __vaadinMicrometerDetails: false
+    }
   };
   new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', src)(
     win,
@@ -250,18 +261,18 @@ function err(message, stack) {
   // 5b'''. The function name travels separately, and only under the gate.
   {
     const stack = 'Error: boom\n    at handleCardNumber4111 (chart.js:44:13)';
-    global.window.__vaadinMicrometerDetails = true;
+    collector.details = true;
     fire('error', { message: 'boom', filename: '', lineno: 0, error: err('boom', stack) });
     let one = (await recoverAndFlush())[0];
     check('the location is the frame', one.detail.frame, 'chart.js:44:13');
     check('the name is its own field when detail is on', one.detail.function, 'handleCardNumber4111');
 
-    global.window.__vaadinMicrometerDetails = false;
+    collector.details = false;
     fire('error', { message: 'boom', filename: '', lineno: 0, error: err('boom', stack) });
     one = (await recoverAndFlush())[0];
     check('the location is published either way', one.detail.frame, 'chart.js:44:13');
     check('the name is not gathered when detail is off', one.detail.function, undefined);
-    global.window.__vaadinMicrometerDetails = true;
+    collector.details = true;
   }
 
   // 5b'. Separators that are whitespace to one engine and not the other.
@@ -421,7 +432,7 @@ function err(message, stack) {
   }
 
   // 7. The message gate, and what it keeps out of sessionStorage.
-  global.window.__vaadinMicrometerDetails = false;
+  collector.details = false;
   store.go('connection-lost');
   fire('error', { message: 'secret payload', filename: '/app.js', lineno: 1, error: err('secret payload') });
   check('nothing sensitive reaches sessionStorage while offline',
@@ -456,12 +467,11 @@ function err(message, stack) {
       Vaadin: {
         connectionState: cs,
         Flow: { clients: { app: { getProfilingData: () => [flow.last, flow.total, -1, -1, 0] } } }
-      },
-      __vaadinMicrometerDetails: false
+      }
     };
     const doc = {
       querySelector: (sel) => (sel === 'vaadin-metrics-collector'
-        ? { $server: { recordSamples: (batch) => { batches.push(batch); return promiseless ? undefined : new Promise((r) => answers.push(r)); } } }
+        ? { hasAttribute: () => false, $server: { recordSamples: (batch) => { batches.push(batch); return promiseless ? undefined : new Promise((r) => answers.push(r)); } } }
         : null),
       addEventListener() {},
       visibilityState: 'visible'
@@ -751,6 +761,48 @@ function err(message, stack) {
     all = await drain();
     check('without profiling data only the request is timed',
       timing(all), [['request', '/orders/17', 180]]);
+  }
+
+  // 9. Loading the module is not attaching the element. The module is in the
+  //    bundle of every application with the kit, client metrics or not, so
+  //    only the element the server attaches may start the collector; and a
+  //    module evaluated a second time must not define the element again.
+  {
+    let defined = null;
+    let defines = 0;
+    const registry = {
+      get: (tag) => (tag === 'vaadin-metrics-collector' ? defined : undefined),
+      define: (tag, type) => { defines++; defined = type; }
+    };
+    const win = {
+      handlers: {},
+      addEventListener(name, cb) { (this.handlers[name] = this.handlers[name] || []).push(cb); },
+      location: { pathname: '/x', href: 'https://app.example.com/x' },
+      sessionStorage: { store: {}, getItem(k) { return this.store[k] === undefined ? null : this.store[k]; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } }
+    };
+    const load = () => new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', 'customElements', 'HTMLElement', src)(
+      win,
+      { querySelector: () => null, addEventListener() {}, visibilityState: 'visible' },
+      { getEntriesByType: () => [], now: () => 0 },
+      function () { throw new Error('unsupported'); },
+      {},
+      () => 0,
+      () => 0,
+      registry,
+      class {}
+    );
+
+    load();
+    check('loading the module defines the element', defines, 1);
+    check('but installs nothing', win.__vaadinMicrometerInstalled, undefined);
+    check('and listens to nothing', Object.keys(win.handlers), []);
+
+    load();
+    check('a second load does not define the element again', defines, 1);
+
+    new defined().connectedCallback();
+    check('attaching the element installs the collector', win.__vaadinMicrometerInstalled, true);
+    check('which then listens for errors', (win.handlers.error || []).length > 0, true);
   }
 
   process.exit(failures === 0 ? 0 : 1);
