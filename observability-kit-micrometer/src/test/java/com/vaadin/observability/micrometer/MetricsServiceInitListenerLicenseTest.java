@@ -77,6 +77,8 @@ class MetricsServiceInitListenerLicenseTest {
     void developmentMode_withValidLicense_registersInstrumentation() {
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(false);
+        // Left over from an earlier start without a license
+        ObservabilityKit.setLicenseMissing(true);
 
         // An unstubbed static checkLicense is a no-op, i.e. a valid license
         try (var licenseChecker = mockStatic(LicenseChecker.class)) {
@@ -90,6 +92,8 @@ class MetricsServiceInitListenerLicenseTest {
         // binder closing out navigations that never complete.
         verify(event, times(2)).addVaadinRequestInterceptor(
                 any(VaadinRequestInterceptor.class));
+        // Cleared, or the Copilot panel would keep asking for a license
+        Assertions.assertFalse(ObservabilityKit.isLicenseMissing());
     }
 
     @Test
