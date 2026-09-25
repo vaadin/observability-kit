@@ -6,7 +6,7 @@
 // Registers a Copilot plugin with four tabs. Three read the live vaadin.*
 // Micrometer meters: the vitals, a handful of figures read against common
 // budgets with a preview of how they would feel over a real network; the last
-// click, broken down into network, server and render time, above the slowest
+// interaction, broken down into network, server and render time, above the slowest
 // things this session; and the key metrics pinned above every meter, grouped
 // by the route it was recorded on. The fourth holds the insights the server
 // built from the retained interactions, queries and browser errors, ranked so
@@ -96,15 +96,15 @@
   var expanded = {};
 
   // The panel's four tabs: three views over the meters, each answering a
-  // different question - how does the app feel, where did my last click's
-  // time go, what do the numbers say - and the findings.
+  // different question - how does the app feel, where did my last
+  // interaction's time go, what do the numbers say - and the findings.
   var TAB_VITALS = 'vitals';
   var TAB_ANATOMY = 'anatomy';
   var TAB_METRICS = 'metrics';
   var TAB_FINDINGS = 'findings';
   var TABS = [
     { key: TAB_VITALS, label: 'Vitals' },
-    { key: TAB_ANATOMY, label: 'Last click' },
+    { key: TAB_ANATOMY, label: 'Last interaction' },
     { key: TAB_METRICS, label: 'Metrics' },
     { key: TAB_FINDINGS, label: 'Findings' }
   ];
@@ -919,9 +919,9 @@
   var NOISE_INTERACTIONS = ['poll'];
   var CLIENT_REQUEST = 'vaadin.client.request.duration';
   var CLIENT_RENDER = 'vaadin.client.render.duration';
-  var CLICK_BUDGET_MS = 100;
+  var INTERACTION_BUDGET_MS = 100;
   // How far apart, on the server's clock, a browser sample and the server's
-  // record of an interaction may be and still describe the same click.
+  // record of an interaction may be and still describe the same interaction.
   var CLIENT_MATCH_MS = 5000;
 
   function matches(meter, name, tags) {
@@ -1053,22 +1053,22 @@
    */
   var VITALS = [
     {
-      title: 'Click response',
-      keyTitle: 'Click response time',
+      title: 'Interaction response',
+      keyTitle: 'Interaction response time',
       keyNote: 'Round trip from user action to updated UI.',
       name: CLIENT_REQUEST,
-      budget: CLICK_BUDGET_MS,
-      scaleLabel: CLICK_BUDGET_MS + ' ms feels instant · ' + CLICK_BUDGET_MS + ' ms INP budget',
+      budget: INTERACTION_BUDGET_MS,
+      scaleLabel: INTERACTION_BUDGET_MS + ' ms feels instant · ' + INTERACTION_BUDGET_MS + ' ms INP budget',
       fast: 'Instant',
       note: function (meters, stat) {
         return esc(
           'Every Vaadin interaction is a server round trip. This is your ' +
-            "app's INP. Avg of " + stat.count + (stat.count === 1 ? ' click.' : ' clicks.')
+            "app's INP. Avg of " + stat.count + (stat.count === 1 ? ' interaction.' : ' interactions.')
         );
       }
     },
     {
-      title: 'Server time per click',
+      title: 'Server time per interaction',
       keyTitle: 'Server time per event',
       keyNote: 'Your listener and service code for one interaction.',
       name: 'vaadin.request.duration',
@@ -1157,7 +1157,7 @@
   var KEY_METRICS = VITALS.filter(function (def) {
     return !!def.keyTitle;
   });
-  var VITAL_CLICK = VITALS[0];
+  var VITAL_INTERACTION = VITALS[0];
   var VITAL_NAVIGATION = VITALS[2];
 
   function vitalCard(def, meters) {
@@ -1219,9 +1219,9 @@
       "Pick a user's round-trip latency:</div>" +
       '<div class="ok-seg">' + buttons + '</div>' +
       '<div class="ok-tiles">' +
-      previewTile('Typical click',
-        meanOf(meters, VITAL_CLICK.name, VITAL_CLICK.tags),
-        VITAL_CLICK.budget, 'Still feels instant') +
+      previewTile('Typical interaction',
+        meanOf(meters, VITAL_INTERACTION.name, VITAL_INTERACTION.tags),
+        VITAL_INTERACTION.budget, 'Still feels instant') +
       previewTile('View navigation',
         meanOf(meters, VITAL_NAVIGATION.name, VITAL_NAVIGATION.tags),
         VITAL_NAVIGATION.budget, 'Within the ' + VITAL_NAVIGATION.budget + ' ms budget') +
@@ -1239,7 +1239,7 @@
       '<div class="ok-sec">' +
       '<div class="ok-h"><span>How your app feels right now</span>' +
       '<span class="ok-aside">' + esc('this session' + (when ? ' · updated ' + when : '')) + '</span></div>' +
-      '<div class="ok-sub">Measured from real clicks in your browser and your ' +
+      '<div class="ok-sub">Measured from real interactions in your browser and your ' +
       'server. Baselines are common budgets, not hard rules.</div>' +
       '<div class="ok-grid">' +
       VITALS.map(function (def) {
@@ -1251,7 +1251,7 @@
     );
   }
 
-  // ---- the anatomy of the last click ---------------------------------------
+  // ---- the anatomy of the last interaction ---------------------------------
 
   // The browser collector's most recent sample of a meter, when it is close
   // enough in time to the interaction to be the same one. Null without the
@@ -1329,7 +1329,7 @@
     if (!last) {
       return (
         '<div class="ok-sec"><div class="ok-caps">Your last interaction</div>' +
-        '<div class="ok-note">Click something in the application and it is ' +
+        '<div class="ok-note">Interact with the application and it is ' +
         'broken down here. Needs vaadin.observability.insights together with ' +
         'errors or requests.</div></div>'
       );
@@ -1343,7 +1343,7 @@
     var total = hasNumber(roundTrip)
       ? roundTrip + (render || 0)
       : (server || 0) + (render || 0);
-    var judged = verdict(total, CLICK_BUDGET_MS, 'Instant');
+    var judged = verdict(total, INTERACTION_BUDGET_MS, 'Instant');
     var parts = (network || 0) + (server || 0) + (render || 0);
     var invocations = last.invocations || 1;
     return (
@@ -1355,7 +1355,7 @@
       '<span class="ok-unit">ms</span>' +
       (judged
         ? '<span class="ok-pill ok-' + judged.tone + ' ok-inline">' +
-          esc(judged.label + ' · INP budget ' + CLICK_BUDGET_MS + ' ms') + '</span>'
+          esc(judged.label + ' · INP budget ' + INTERACTION_BUDGET_MS + ' ms') + '</span>'
         : '') +
       '</div>' +
       '<div class="ok-stack">' +
@@ -1377,7 +1377,7 @@
       esc(
         invocations + (invocations === 1 ? ' event' : ' events') +
           ' handled in one server round trip. More than one round trip per ' +
-          'click is a common prod latency multiplier.'
+          'interaction is a common prod latency multiplier.'
       ) +
       '</div>' +
       '</div>'

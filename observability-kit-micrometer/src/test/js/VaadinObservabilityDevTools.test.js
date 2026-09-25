@@ -527,7 +527,7 @@ check('every server message was claimed on the event bus', app.unclaimed(), 0);
   const waiting = harness('/orders/17');
   waiting.open();
   check('the panel starts on the vitals', waiting.shownTab(), ['vitals']);
-  waiting.clickIn(waiting.html('tabs'), '>Last click<');
+  waiting.clickIn(waiting.html('tabs'), '>Last interaction<');
   check('a tab click switches tabs', waiting.shownTab(), ['anatomy']);
   waiting.insights(payload([FAILING_SAVE]));
   check('a later payload leaves the choice alone', waiting.shownTab(), ['anatomy']);
@@ -556,7 +556,7 @@ const SESSION_METERS = [
   vitals.open();
   vitals.meters({ timestamp: Date.now(), meters: SESSION_METERS });
   const html = vitals.html('vitals');
-  check('the click response is the count-weighted mean', html.includes('12.5<span'), true);
+  check('the interaction response is the count-weighted mean', html.includes('12.5<span'), true);
   check('far under its budget reads as instant', html.includes('>Instant<'), true);
   check('a navigation 30% over reads as slightly slow', html.includes('>Slightly slow<'), true);
   check('the navigation note carries the lifecycle', html.includes('48 ms in the navigation lifecycle'), true);
@@ -566,7 +566,7 @@ const SESSION_METERS = [
   // The production preview: measured time plus one round trip.
   check('the preview starts at 80 ms', html.includes('93<span'), true);
   vitals.clickIn(vitals.html('vitals'), '>200 ms<');
-  check('picking a latency re-estimates the click', vitals.html('vitals').includes('213<span'), true);
+  check('picking a latency re-estimates the interaction', vitals.html('vitals').includes('213<span'), true);
   check('and says it is over budget', vitals.html('vitals').includes('Over the 100 ms INP budget'), true);
 
   // The slowest table leaves out what nothing has hit, and tips on the worst
@@ -576,7 +576,7 @@ const SESSION_METERS = [
   check('it splits navigation into lifecycle and the rest', anatomy.includes('48 ms lifecycle · 212 ms other server work'), true);
   check('an idle meter is not a row', anatomy.includes('Component events'), false);
   check('the tip names what is over budget', anatomy.includes('Tip: view navigation is over its 200 ms budget'), true);
-  check('with no interaction yet it says what to do', anatomy.includes('Click something in the application'), true);
+  check('with no interaction yet it says what to do', anatomy.includes('Interact with the application'), true);
 
   // The key metrics, and the filters on the full list.
   check('the key metrics are pinned', vitals.html('key').includes('5 of 10 · pinned by Vaadin'), true);
@@ -586,7 +586,7 @@ const SESSION_METERS = [
   check('the noise filter can be turned off', vitals.metricsHtml().includes('Showing 9 of 10 meters · 1 idle hidden'), true);
 }
 
-// 14c. The last click, split into the wire, the server and the browser. The
+// 14c. The last interaction, split into the wire, the server and the browser. The
 // round trip and the render come from the browser collector.
 {
   const click = harness('/orders');
@@ -619,7 +619,7 @@ const SESSION_METERS = [
   check('the title names the component, caption and view, escaped', html.includes('Click on [Button &quot;Save &lt;now&gt;&quot;] in [OrderView]'), true);
   check('the total is the round trip plus the render', html.includes('17.4<span'), true);
   check('the network is the round trip less the server', html.includes('8.4 ms'), true);
-  check('a click is judged against the INP budget', html.includes('Instant · INP budget 100 ms'), true);
+  check('an interaction is judged against the INP budget', html.includes('Instant · INP budget 100 ms'), true);
 
   // A browser sample from long before the interaction is some other click.
   click.win.__vaadinMicrometer.latest = (name) => ({ valueMs: 99, ts: now - 60000 });
