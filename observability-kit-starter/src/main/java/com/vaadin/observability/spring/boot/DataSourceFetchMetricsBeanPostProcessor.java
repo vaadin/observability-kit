@@ -91,7 +91,8 @@ class DataSourceFetchMetricsBeanPostProcessor implements BeanPostProcessor {
             ObservationRegistry registry = observationRegistry.getIfAvailable();
             if (registry != null) {
                 existing = new DatabaseQuerySpans(registry,
-                        s.isDatabaseStatement());
+                        meterRegistry.getIfAvailable(), s.isDatabaseStatement(),
+                        s.getDatabaseSpanLimit());
                 spans = existing;
             }
         }

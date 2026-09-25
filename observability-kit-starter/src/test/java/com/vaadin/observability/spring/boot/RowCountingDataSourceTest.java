@@ -126,7 +126,7 @@ class RowCountingDataSourceTest {
 
         DataSource ds = new RowCountingDataSource(delegate,
                 new DatabaseFetchMetrics(registry),
-                new DatabaseQuerySpans(observationRegistry, true));
+                new DatabaseQuerySpans(observationRegistry, null, true, 100));
         try (Connection c = ds.getConnection();
                 PreparedStatement ps = c.prepareStatement("SELECT * FROM x");
                 ResultSet rs = ps.executeQuery()) {
@@ -216,7 +216,7 @@ class RowCountingDataSourceTest {
 
         DataSource ds = new RowCountingDataSource(delegate,
                 new DatabaseFetchMetrics(registry),
-                new DatabaseQuerySpans(observationRegistry, true));
+                new DatabaseQuerySpans(observationRegistry, null, true, 100));
         try (Connection c = ds.getConnection();
                 Statement s = c.createStatement()) {
             s.execute("SELECT * FROM x");
@@ -265,7 +265,7 @@ class RowCountingDataSourceTest {
 
         DataSource ds = new RowCountingDataSource(delegate,
                 new DatabaseFetchMetrics(registry),
-                new DatabaseQuerySpans(observationRegistry, true));
+                new DatabaseQuerySpans(observationRegistry, null, true, 100));
         try (Connection c = ds.getConnection();
                 PreparedStatement ps = c.prepareStatement("select 1")) {
             // Re-execute before the first result set is closed; the driver

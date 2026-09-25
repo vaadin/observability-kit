@@ -59,7 +59,8 @@ class DatabaseQueryObservationContractTest {
         observations.observationConfig().observationHandler(recorder);
 
         // Statement capture on, rows known: the maximal attribute surface.
-        DatabaseQuerySpans spans = new DatabaseQuerySpans(observations, true);
+        DatabaseQuerySpans spans = new DatabaseQuerySpans(observations, null,
+                true, 100);
         spans.start("select 1").stop(5);
 
         Observation.Context ctx = recorder.stopped;
@@ -73,6 +74,30 @@ class DatabaseQueryObservationContractTest {
         Assertions.assertEquals(Set.of("db.rows", "db.statement"),
                 keys(ctx.getHighCardinalityKeyValues()),
                 "high-cardinality keys are span-only attributes");
+    }
+
+    @Test
+    void unspannedQueriesAreCountedOnTheParentSpan() {
+        RecordingHandler recorder = new RecordingHandler();
+        ObservationRegistry observations = ObservationRegistry.create();
+        observations.observationConfig().observationHandler(recorder);
+        DatabaseQuerySpans spans = new DatabaseQuerySpans(observations, null,
+                false, 1);
+
+        Observation parent = Observation.start("vaadin.data.fetch",
+                observations);
+        try (Observation.Scope scope = parent.openScope()) {
+            spans.start("select 1").stop(1);
+            spans.start("select 2").stop(1);
+        }
+        parent.stop();
+
+        // The key is span-only: a Timer tag counting queries would be a new
+        // series per count.
+        Assertions.assertEquals(Set.of(),
+                keys(recorder.stopped.getLowCardinalityKeyValues()));
+        Assertions.assertEquals(Set.of("vaadin.db.queries.unspanned"),
+                keys(recorder.stopped.getHighCardinalityKeyValues()));
     }
 
     /**

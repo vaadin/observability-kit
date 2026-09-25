@@ -35,6 +35,7 @@ public class ObservabilityProperties {
     private boolean tracesSessionId = false;
     private boolean database = false;
     private boolean databaseStatement = false;
+    private int databaseSpanLimit = 100;
     private boolean insights = true;
     private boolean insightsDetails = false;
     private int routeCardinalityLimit = 200;
@@ -196,6 +197,20 @@ public class ObservabilityProperties {
         this.databaseStatement = databaseStatement;
     }
 
+    /**
+     * Maximum number of {@code vaadin.db.query} spans under any one parent
+     * span; queries past it are timed and counted but not spanned.
+     *
+     * @return the most query spans per parent span, {@code 0} for none
+     */
+    public int getDatabaseSpanLimit() {
+        return databaseSpanLimit;
+    }
+
+    public void setDatabaseSpanLimit(int databaseSpanLimit) {
+        this.databaseSpanLimit = databaseSpanLimit;
+    }
+
     public int getRouteCardinalityLimit() {
         return routeCardinalityLimit;
     }
@@ -257,7 +272,8 @@ public class ObservabilityProperties {
                 .data(data).errors(errors).client(client).resync(resync)
                 .traces(traces).tracesSessionId(tracesSessionId)
                 .database(database).databaseStatement(databaseStatement)
-                .insights(insights).insightsDetails(insightsDetails)
+                .databaseSpanLimit(databaseSpanLimit).insights(insights)
+                .insightsDetails(insightsDetails)
                 .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession)
                 .uiStateSampleInterval(uiStateSampleInterval)

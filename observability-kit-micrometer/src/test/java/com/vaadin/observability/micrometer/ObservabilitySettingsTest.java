@@ -99,6 +99,21 @@ class ObservabilitySettingsTest {
     }
 
     @Test
+    void databaseSpanLimit_defaultsTo100_andZeroIsAllowed() {
+        assertEquals(100,
+                ObservabilitySettings.builder().build().getDatabaseSpanLimit());
+        // Zero is a real choice: time and count queries, span none of them.
+        assertEquals(0, ObservabilitySettings.builder().databaseSpanLimit(0)
+                .build().getDatabaseSpanLimit());
+    }
+
+    @Test
+    void databaseSpanLimit_negative_throwsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().databaseSpanLimit(-1));
+    }
+
+    @Test
     void builder_overridesAreApplied() {
         ObservabilitySettings settings = ObservabilitySettings.builder()
                 .sessions(false).tracesSessionId(true).routeCardinalityLimit(50)
