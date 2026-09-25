@@ -22,6 +22,12 @@
       <artifactId>observability-kit-spring</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!-- Vaadin Spring integration, which the kit expects the application to
+         bring -->
+    <dependency>
+      <groupId>com.vaadin</groupId>
+      <artifactId>vaadin-spring</artifactId>
+    </dependency>
     <!-- Plain Spring MVC for the WAR bootstrap -->
     <dependency>
       <groupId>org.springframework</groupId>
