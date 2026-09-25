@@ -68,8 +68,7 @@ public class RecentInteractions {
         if (previous == null || requestId != latestRequestId) {
             latest = interaction;
         } else {
-            LatestInteraction headline = propertySync ? previous
-                    : interaction;
+            LatestInteraction headline = propertySync ? previous : interaction;
             String outcome = CapturedInteraction.OUTCOME_ERROR
                     .equals(previous.outcome()) ? previous.outcome()
                             : interaction.outcome();

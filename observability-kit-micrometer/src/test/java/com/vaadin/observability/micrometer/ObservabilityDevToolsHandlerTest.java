@@ -126,10 +126,11 @@ class ObservabilityDevToolsHandlerTest {
     void refresh_carriesTheLatestInteractionWithTheMeters() {
         ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
         RecentInteractions interactions = new RecentInteractions(10);
-        interactions.recordLatest(1, new LatestInteraction(
-                Instant.ofEpochMilli(1000), "orders", "OrderView",
-                "com.example.SaveButton", "Save", "click",
-                CapturedInteraction.OUTCOME_SUCCESS, 4.5, 1), false);
+        interactions.recordLatest(1,
+                new LatestInteraction(Instant.ofEpochMilli(1000), "orders",
+                        "OrderView", "com.example.SaveButton", "Save", "click",
+                        CapturedInteraction.OUTCOME_SUCCESS, 4.5, 1),
+                false);
         ObservabilityKit.setRecentInteractions(interactions);
 
         handler.handleMessage(COMMAND_REFRESH, null, devTools);
@@ -151,8 +152,8 @@ class ObservabilityDevToolsHandlerTest {
 
         Assertions.assertTrue(devTools.payloads.get(COMMAND_METRICS)
                 .containsKey("lastInteraction"));
-        Assertions.assertNull(devTools.payloads.get(COMMAND_METRICS)
-                .get("lastInteraction"));
+        Assertions.assertNull(
+                devTools.payloads.get(COMMAND_METRICS).get("lastInteraction"));
     }
 
     @Test
