@@ -16,7 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
 import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
@@ -268,6 +271,31 @@ class ObservabilityAutoConfigurationTest {
                 .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
                 .run(context -> assertThat(context)
                         .hasSingleBean(VaadinObservabilityEndpoint.class));
+    }
+
+    /**
+     * The resync detection filter needs {@code spring-web}, an optional
+     * dependency of the starter: it is registered when present, and the rest of
+     * the auto-configuration still starts when it is missing.
+     */
+    @Test
+    void resyncDetectionFilter_registeredOnlyWithSpringWeb() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .run(context -> assertThat(context)
+                        .hasSingleBean(FilterRegistrationBean.class));
+
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withClassLoader(
+                        new FilteredClassLoader(OncePerRequestFilter.class))
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context)
+                            .doesNotHaveBean(FilterRegistrationBean.class);
+                    assertThat(context)
+                            .hasSingleBean(MetricsServiceInitListener.class);
+                });
     }
 
     /**
