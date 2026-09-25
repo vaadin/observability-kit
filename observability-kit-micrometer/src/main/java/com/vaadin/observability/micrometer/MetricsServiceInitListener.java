@@ -237,11 +237,6 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         ObservabilityKit.setActiveMeterRegistry(r);
         ObservabilityUsage.markAsUsed(s);
         bind(event, r, or, s);
-        if (!productionMode) {
-            event.getSource()
-                    .addUIInitListener(uiEvent -> ObservabilityDevToolsClient
-                            .inject(uiEvent.getUI()));
-        }
     }
 
     void bind(ServiceInitEvent event, MeterRegistry registry,

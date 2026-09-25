@@ -1,16 +1,19 @@
 // Copyright 2000-2026 Vaadin Ltd.
 // Licensed under the Vaadin Commercial License and Service Terms.
 //
-// In-browser collector for observability-kit. Injected per UI by
-// MetricsCollectorElement via Page.executeJs. The IIFE is idempotent so the
-// re-attach path does not double-install hooks.
-(function () {
+// In-browser collector for observability-kit, bundled through the @JsModule
+// on MetricsCollectorElement. Loading the module only defines the
+// <vaadin-metrics-collector> element; nothing is collected until the server
+// attaches one, which it does only when client metrics are enabled. The
+// install is idempotent so the re-attach path does not double-install hooks.
+var COLLECTOR_TAG = 'vaadin-metrics-collector';
+
+function installCollector() {
   if (window.__vaadinMicrometerInstalled) {
     return;
   }
   window.__vaadinMicrometerInstalled = true;
 
-  var COLLECTOR_TAG = 'vaadin-metrics-collector';
   var BUFFER_MAX = 200;
   var FLUSH_INTERVAL_MS = 5000;
   // How long a handed-over batch may go unanswered before a flush takes it
@@ -473,15 +476,17 @@
     return text.length > DETAIL_MAX ? text.slice(0, DETAIL_MAX) : text;
   }
 
-  // Whether the application asked for error messages to be collected. Set by
-  // the server ahead of this script. The message is gathered only when it is
-  // on, rather than gathered and discarded later: a browser error message can
-  // quote whatever the page was working with, and buffering one puts it in
-  // sessionStorage and then on the wire, neither of which a server-side
-  // retention rule can undo. The server applies the same rule again, for the
-  // page that was already open when the setting changed.
+  // Whether the application asked for error messages to be collected, which the
+  // server says with the `details` attribute on the collector element. The
+  // message is gathered only when it is on, rather than gathered and discarded
+  // later: a browser error message can quote whatever the page was working
+  // with, and buffering one puts it in sessionStorage and then on the wire,
+  // neither of which a server-side retention rule can undo. The server applies
+  // the same rule again, for the page that was already open when the setting
+  // changed.
   function detailsEnabled() {
-    return window.__vaadinMicrometerDetails === true;
+    var el = document.querySelector(COLLECTOR_TAG);
+    return !!el && el.hasAttribute('details');
   }
 
 
@@ -1269,4 +1274,15 @@
       return buffer.length;
     }
   };
-})();
+}
+
+if (!customElements.get(COLLECTOR_TAG)) {
+  customElements.define(
+    COLLECTOR_TAG,
+    class extends HTMLElement {
+      connectedCallback() {
+        installCollector();
+      }
+    }
+  );
+}

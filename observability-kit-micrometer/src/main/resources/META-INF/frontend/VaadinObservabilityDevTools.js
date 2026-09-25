@@ -1,8 +1,8 @@
 // Copyright 2000-2026 Vaadin Ltd.
 // Licensed under the Vaadin Commercial License and Service Terms.
 //
-// Dev-mode Vaadin Copilot panel for observability-kit. Injected per UI by
-// ObservabilityDevToolsClient via Page.executeJs (development mode only).
+// Dev-mode Vaadin Copilot panel for observability-kit, bundled through the
+// development-only @JsModule on ObservabilityDevToolsHandler.
 // Registers a Copilot plugin with two sections: the insights the server built
 // from the retained interactions, queries and browser errors, ranked so the
 // worst is first; and below them, collapsed, the live vaadin.* Micrometer
@@ -23,13 +23,7 @@
 // listening for until the log panel opens - and the log panel is usually not
 // open either.
 //
-// The IIFE is idempotent so repeated injection does not re-register the plugin.
-//
-// NOTE: this file is injected through ClientResourceLoader, which strips its
-// comments with a parser that is not a JavaScript parser: a double slash with
-// code after it on the same line deletes the rest of that line. Hence no regex
-// literals and no URLs in string literals here. ClientResourceIntegrityTest
-// enforces it.
+// The IIFE is idempotent so a second load does not re-register the plugin.
 (function () {
   if (window.__vaadinObservabilityDevToolsInstalled) {
     return;
