@@ -397,6 +397,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.resync` | `true` | Observe UIDL message resends and client-requested resynchronizations. |
 | `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route, report the SQL queries behind each [slow data query insight](#what-a-slow-data-query-cost-in-the-database), and (when tracing is on) emit a span per query (Spring Boot starter only). |
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
+| `vaadin.observability.database-span-limit` | `100` | Most `vaadin.db.query` spans under any one parent span (request, RPC, data fetch). Queries past it are still timed and counted but get no span; the parent carries how many as `vaadin.db.queries.unspanned`. `0` spans no queries. See [N+1 loads and the span limit](#n1-loads-and-the-span-limit). |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the HTTP session id as the `vaadin.session.id` attribute of the `vaadin.request.*` span. Span-only; it never becomes a metric tag. |
 | `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. In development mode a retained interaction also carries the caption of its component and the state its view was in — see [Replay steps that replay](#replay-steps-that-replay). |
@@ -1017,6 +1018,31 @@ The span does not include the SQL text by default. Set
 `vaadin.observability.database-statement=true` to attach the parameterized
 statement as `db.statement` — useful for pinpointing the offending query, but
 opt-in because SQL is higher cardinality and can be sensitive.
+
+### N+1 loads and the span limit
+
+An N+1 load — one query for a list, then one more per row, typically an eager
+or lazily touched JPA relation — issues tens of thousands of queries for a
+single click. A span for each would overflow the tracing exporter's queue
+(OpenTelemetry's `BatchSpanProcessor` holds 2048 by default), and the exporter
+then drops spans from every request, not just the one at fault.
+
+So at most `vaadin.observability.database-span-limit` (default `100`) query
+spans are started under any one parent span — a Vaadin request, an RPC, or a
+data provider fetch. Past that, a query:
+
+- still counts toward the `vaadin.db.query` timer, so DB time per view is not
+  under-reported for exactly the load that is slow;
+- still counts toward the query and row totals of the
+  [slow data query insight](#what-a-slow-data-query-cost-in-the-database);
+- gets no span of its own. Instead the parent span carries
+  `vaadin.db.queries.unspanned` with the number left out.
+
+In a trace, an N+1 load therefore looks like a request or fetch span with
+`vaadin.db.queries.unspanned` set, the first 100 query spans under it (most
+with `db.rows=1`), and one query with a large `db.rows` near their start. A query
+with no enclosing span, such as one on an application thread with no
+observation, has nothing to count against and is not limited.
 
 ## Tracing
 

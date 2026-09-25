@@ -29,6 +29,7 @@ public final class ObservabilitySettings {
     private final boolean tracesSessionId;
     private final boolean database;
     private final boolean databaseStatement;
+    private final int databaseSpanLimit;
     private final boolean insights;
     private final boolean insightsDetails;
     private final int routeCardinalityLimit;
@@ -51,6 +52,7 @@ public final class ObservabilitySettings {
         this.tracesSessionId = builder.tracesSessionId;
         this.database = builder.database;
         this.databaseStatement = builder.databaseStatement;
+        this.databaseSpanLimit = builder.databaseSpanLimit;
         this.insights = builder.insights;
         this.insightsDetails = builder.insightsDetails;
         this.routeCardinalityLimit = builder.routeCardinalityLimit;
@@ -163,6 +165,23 @@ public final class ObservabilitySettings {
         return databaseStatement;
     }
 
+    /**
+     * Maximum number of {@code vaadin.db.query} spans under any one parent span
+     * — a request, an RPC, a data provider fetch. An N+1 load issues a query
+     * per row, and sixty thousand spans for one click overflow the tracing
+     * exporter's queue, which then drops spans from every request, not just
+     * that one. Past the limit a query still counts toward the
+     * {@code vaadin.db.query} timer and the insights, but gets no span; the
+     * parent span carries how many it left out as
+     * {@code vaadin.db.queries.unspanned}. A query with no parent span is not
+     * limited.
+     *
+     * @return the most query spans per parent span, {@code 0} for none
+     */
+    public int getDatabaseSpanLimit() {
+        return databaseSpanLimit;
+    }
+
     public int getRouteCardinalityLimit() {
         return routeCardinalityLimit;
     }
@@ -238,6 +257,7 @@ public final class ObservabilitySettings {
         private boolean tracesSessionId = false;
         private boolean database = false;
         private boolean databaseStatement = false;
+        private int databaseSpanLimit = 100;
         private boolean insights = true;
         private boolean insightsDetails = false;
         private int routeCardinalityLimit = 200;
@@ -328,6 +348,16 @@ public final class ObservabilitySettings {
 
         public Builder databaseStatement(boolean databaseStatement) {
             this.databaseStatement = databaseStatement;
+            return this;
+        }
+
+        public Builder databaseSpanLimit(int databaseSpanLimit) {
+            if (databaseSpanLimit < 0) {
+                throw new IllegalArgumentException(
+                        "databaseSpanLimit must be >= 0, got "
+                                + databaseSpanLimit);
+            }
+            this.databaseSpanLimit = databaseSpanLimit;
             return this;
         }
 

@@ -257,6 +257,18 @@ class ObservabilityAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void databaseSpanLimit_isBoundFromProperties() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withPropertyValues(
+                        "vaadin.observability.database-span-limit=25")
+                .run(context -> assertThat(
+                        context.getBean(ObservabilitySettings.class)
+                                .getDatabaseSpanLimit())
+                        .isEqualTo(25));
+    }
+
     /**
      * With Spring Boot Actuator on the classpath (an optional dependency of the
      * starter, present here at test scope) the insights endpoint bean is
