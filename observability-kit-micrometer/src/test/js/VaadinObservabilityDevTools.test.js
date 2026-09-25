@@ -158,6 +158,7 @@ function harness(pathname) {
   const logged = [];
   const logListener = (event) => logged.push(event.detail);
 
+  let panelsAdded = 0;
   const copilot = {
     _uiState: {},
     plugins: [],
@@ -165,7 +166,9 @@ function harness(pathname) {
     send: (command, data) => {
       sent.push({ command, data });
     },
-    addPanel: () => {}
+    addPanel: () => {
+      panelsAdded++;
+    }
   };
   const win = { location: { pathname: pathname }, Vaadin: { copilot } };
 
@@ -247,6 +250,7 @@ function harness(pathname) {
     metricsHtml,
     clickIn,
     commands: () => sent.map((message) => message.command),
+    panelsAdded: () => panelsAdded,
     unclaimed: () => unclaimed
   };
 }
@@ -526,6 +530,18 @@ check('every server message was claimed on the event bus', app.unclaimed(), 0);
   // not re-fold or re-open on their behalf.
   waiting.insights(payload([]));
   check('a later payload leaves the fold alone', waiting.metricsHtml().includes('▸'), true);
+}
+
+// 14b. The panel is offered to Copilot only once the server answers, which it
+// does only when the kit is active; and only once however many answers follow.
+{
+  const silent = harness('/orders/17');
+  silent.pollTick();
+  check('no panel while the server has not answered', silent.panelsAdded(), 0);
+  check('but the insights are still asked for', silent.commands().includes('observability-kit-insights'), true);
+  silent.insights(payload([]));
+  silent.meters({ timestamp: Date.now(), meters: [] });
+  check('the first answer adds the panel, once', silent.panelsAdded(), 1);
 }
 
 // 15. A typed parameter carries its regex after the modifier, which is where

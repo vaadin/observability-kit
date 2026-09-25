@@ -65,6 +65,9 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
 
     @Override
     public void handleConnect(DevToolsInterface devToolsInterface) {
+        if (!isActive()) {
+            return;
+        }
         // Push an initial pair; the panel also pulls on demand.
         sendSnapshot(devToolsInterface);
         sendInsights(devToolsInterface);
@@ -74,14 +77,29 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
     public boolean handleMessage(String command, JsonNode data,
             DevToolsInterface devToolsInterface) {
         if (COMMAND_REFRESH.equals(command)) {
-            sendSnapshot(devToolsInterface);
+            if (isActive()) {
+                sendSnapshot(devToolsInterface);
+            }
             return true;
         }
         if (COMMAND_INSIGHTS.equals(command)) {
-            sendInsights(devToolsInterface);
+            if (isActive()) {
+                sendInsights(devToolsInterface);
+            }
             return true;
         }
         return false;
+    }
+
+    /**
+     * Whether the kit is bound to this application: licensed and past
+     * {@code serviceInit}. The panel script is in every development bundle with
+     * the kit, and it only adds itself to Copilot once this handler has
+     * answered, so staying silent is what keeps the panel out of an application
+     * the kit is not active in.
+     */
+    private static boolean isActive() {
+        return ObservabilityKit.getActiveMeterRegistry() != null;
     }
 
     private void sendSnapshot(DevToolsInterface devToolsInterface) {

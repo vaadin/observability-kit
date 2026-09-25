@@ -123,6 +123,7 @@ class ObservabilityDevToolsHandlerTest {
 
     @Test
     void insights_sendTheEndpointPayloadFromEveryBuffer() {
+        ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
         RecentInteractions interactions = new RecentInteractions(10);
         interactions.add(failedClick("com.example.SaveButton"));
         ObservabilityKit.setRecentInteractions(interactions);
@@ -161,6 +162,19 @@ class ObservabilityDevToolsHandlerTest {
         Assertions.assertEquals(List.of(), insights());
         Assertions.assertNotNull(
                 devTools.payloads.get(COMMAND_METRICS).get("meters"));
+    }
+
+    @Test
+    void kitNotActive_answersNothingSoThePanelStaysHidden() {
+        // No registry bound: unlicensed, or serviceInit never ran. The panel
+        // only adds itself to Copilot once one of these is answered.
+        handler.handleConnect(devTools);
+        Assertions.assertTrue(
+                handler.handleMessage(COMMAND_REFRESH, null, devTools));
+        Assertions.assertTrue(
+                handler.handleMessage(COMMAND_INSIGHTS, null, devTools));
+
+        Assertions.assertEquals(List.of(), devTools.commands);
     }
 
     @Test

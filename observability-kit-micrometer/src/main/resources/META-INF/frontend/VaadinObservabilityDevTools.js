@@ -984,6 +984,7 @@
     } else {
       return false;
     }
+    addPanel();
     if (panel) {
       panel.render();
     }
@@ -1299,37 +1300,50 @@
     });
   }
 
+  // Whether the panel has been offered to Copilot. That waits for the server's
+  // first answer: the module is in every development bundle with the kit, but
+  // the server only answers once the kit is licensed and bound, so an
+  // application the kit is not active in gets no panel.
+  var panelAdded = false;
+
+  function addPanel() {
+    if (panelAdded || !copilot) {
+      return;
+    }
+    panelAdded = true;
+    copilot.addPanel({
+      header: 'Observability',
+      tag: PANEL_TAG,
+      // Plain HTMLElements don't self-position the way Copilot's BasePanel
+      // does, and the panel manager skips viewport adjustment when no
+      // position is set - so it would open off-screen. Give it an explicit
+      // on-screen position and size.
+      position: {
+        top: 80,
+        left: 80,
+        width: 720,
+        height: 460
+      },
+      toolbarOptions: {
+        iconKey: 'barChart',
+        // The toolbar only renders an icon for panels mapped to an active
+        // mode; 'common' alone gives no entry point. 'play' hides the panel
+        // container, so expose the icon in the remaining modes.
+        allowedModesWithOrder: {
+          edit: 100,
+          inspect: 100,
+          test: 100
+        }
+      }
+    });
+  }
+
   var plugin = {
     init: function (copilotInterface) {
       copilot = copilotInterface;
       listen();
       poll();
       setInterval(poll, REFRESH_INTERVAL_MS);
-      copilotInterface.addPanel({
-        header: 'Observability',
-        tag: PANEL_TAG,
-        // Plain HTMLElements don't self-position the way Copilot's BasePanel
-        // does, and the panel manager skips viewport adjustment when no
-        // position is set - so it would open off-screen. Give it an explicit
-        // on-screen position and size.
-        position: {
-          top: 80,
-          left: 80,
-          width: 720,
-          height: 460
-        },
-        toolbarOptions: {
-          iconKey: 'barChart',
-          // The toolbar only renders an icon for panels mapped to an active
-          // mode; 'common' alone gives no entry point. 'play' hides the panel
-          // container, so expose the icon in the remaining modes.
-          allowedModesWithOrder: {
-            edit: 100,
-            inspect: 100,
-            test: 100
-          }
-        }
-      });
     }
   };
 
