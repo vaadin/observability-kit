@@ -532,16 +532,23 @@ check('every server message was claimed on the event bus', app.unclaimed(), 0);
   check('a later payload leaves the fold alone', waiting.metricsHtml().includes('▸'), true);
 }
 
-// 14b. The panel is offered to Copilot only once the server answers, which it
-// does only when the kit is active; and only once however many answers follow.
+// 14b. The panel is offered to Copilot whether or not the kit is licensed;
+// without a license it says why its sections are empty rather than looking
+// like an idle application, or like one with the insights setting off.
 {
-  const silent = harness('/orders/17');
-  silent.pollTick();
-  check('no panel while the server has not answered', silent.panelsAdded(), 0);
-  check('but the insights are still asked for', silent.commands().includes('observability-kit-insights'), true);
-  silent.insights(payload([]));
-  silent.meters({ timestamp: Date.now(), meters: [] });
-  check('the first answer adds the panel, once', silent.panelsAdded(), 1);
+  const bare = harness('/orders/17');
+  check('the panel is added without waiting for the server', bare.panelsAdded(), 1);
+  bare.open();
+  bare.meters({ timestamp: Date.now(), licensed: false, meters: [] });
+  bare.insights(payload([], 'inactive'));
+  check('an unlicensed kit shows the license notice', bare.panel.regions['[data-region="license"]'].innerHTML.includes('needs a license'), true);
+  check('and does not blame the insights setting', bare.insightsHtml().includes('vaadin.observability.insights'), false);
+  check('nor invite interaction to generate meters', bare.metricsHtml().includes('Interact with the application'), false);
+
+  const licensed = harness('/orders/17');
+  licensed.open();
+  licensed.meters({ timestamp: Date.now(), licensed: true, meters: [] });
+  check('a licensed kit shows no notice', licensed.panel.regions['[data-region="license"]'].innerHTML.includes('needs a license'), false);
 }
 
 // 15. A typed parameter carries its regex after the modifier, which is where

@@ -123,7 +123,6 @@ class ObservabilityDevToolsHandlerTest {
 
     @Test
     void insights_sendTheEndpointPayloadFromEveryBuffer() {
-        ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
         RecentInteractions interactions = new RecentInteractions(10);
         interactions.add(failedClick("com.example.SaveButton"));
         ObservabilityKit.setRecentInteractions(interactions);
@@ -165,16 +164,19 @@ class ObservabilityDevToolsHandlerTest {
     }
 
     @Test
-    void kitNotActive_answersNothingSoThePanelStaysHidden() {
-        // No registry bound: unlicensed, or serviceInit never ran. The panel
-        // only adds itself to Copilot once one of these is answered.
-        handler.handleConnect(devTools);
-        Assertions.assertTrue(
-                handler.handleMessage(COMMAND_REFRESH, null, devTools));
-        Assertions.assertTrue(
-                handler.handleMessage(COMMAND_INSIGHTS, null, devTools));
+    void licenseMissing_stillAnswersAndSaysSo() {
+        ObservabilityKit.setLicenseMissing(true);
 
-        Assertions.assertEquals(List.of(), devTools.commands);
+        handler.handleConnect(devTools);
+
+        // The panel is shown either way; the flag is what lets it explain
+        // its empty sections instead of looking like an idle application.
+        Assertions.assertEquals(List.of(COMMAND_METRICS, COMMAND_INSIGHTS_DATA),
+                devTools.commands);
+        Assertions.assertEquals(false,
+                devTools.payloads.get(COMMAND_METRICS).get("licensed"));
+        Assertions.assertEquals(List.of(),
+                devTools.payloads.get(COMMAND_METRICS).get("meters"));
     }
 
     @Test

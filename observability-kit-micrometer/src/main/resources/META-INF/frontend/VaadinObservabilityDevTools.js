@@ -984,11 +984,17 @@
     } else {
       return false;
     }
-    addPanel();
     if (panel) {
       panel.render();
     }
     return true;
+  }
+
+  // Whether the server said the kit has no license, which it says on the meter
+  // snapshot: the insights payload is the actuator's, unaltered. The panel is
+  // shown either way, with its sections empty and a notice saying why.
+  function unlicensed() {
+    return !!latest && latest.licensed === false;
   }
 
   var ticks = 0;
@@ -1110,14 +1116,29 @@
       if (!this._insightsEl) {
         this.innerHTML =
           '<div style="font:13px sans-serif">' +
+          '<div data-region="license"></div>' +
           '<div data-region="insights"></div>' +
           '<div data-region="metrics"></div>' +
           '</div>';
+        this._licenseEl = this.querySelector('[data-region="license"]');
         this._insightsEl = this.querySelector('[data-region="insights"]');
         this._metersEl = this.querySelector('[data-region="metrics"]');
       }
+      this.renderLicense();
       this.renderInsights();
       this.renderMeters();
+    }
+
+    renderLicense() {
+      this._licenseEl.innerHTML = unlicensed()
+        ? '<div style="margin:8px 12px;padding:8px 10px;border-radius:4px;' +
+          'background:rgba(255,160,0,.15)">' +
+          'Observability Kit needs a license. Without one, no metrics or ' +
+          'insights are collected. See ' +
+          '<a href="https://vaadin.com/commercial-license-and-service-terms" ' +
+          'target="_blank" rel="noopener">vaadin.com/commercial-license-and-service-terms</a>.' +
+          '</div>'
+        : '';
     }
 
     renderInsights(force) {
@@ -1156,6 +1177,7 @@
       // all, and hiding one changes it without the server being involved.
       var signature = JSON.stringify([
         !!latestInsights,
+        unlicensed(),
         instrumentation,
         this._ranked,
         Object.keys(expanded).sort(),
@@ -1198,6 +1220,13 @@
         body =
           '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
           'Waiting for the first snapshot…' +
+          '</div>';
+      } else if (unlicensed()) {
+        // Not "no problems detected", and not the insights setting either:
+        // the notice above says why nothing is here.
+        body =
+          '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
+          'Not collected without a license.' +
           '</div>';
       } else if (quiet.length > 0) {
         // Findings exist; none is being counted. Saying "no problems
@@ -1252,7 +1281,9 @@
         this._metersEl.innerHTML =
           header +
           '<div style="padding:0 12px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
-          'No Vaadin meters yet. Interact with the application to generate metrics.' +
+          (unlicensed()
+            ? 'Not collected without a license.'
+            : 'No Vaadin meters yet. Interact with the application to generate metrics.') +
           '</div>';
         return;
       }
@@ -1300,17 +1331,7 @@
     });
   }
 
-  // Whether the panel has been offered to Copilot. That waits for the server's
-  // first answer: the module is in every development bundle with the kit, but
-  // the server only answers once the kit is licensed and bound, so an
-  // application the kit is not active in gets no panel.
-  var panelAdded = false;
-
   function addPanel() {
-    if (panelAdded || !copilot) {
-      return;
-    }
-    panelAdded = true;
     copilot.addPanel({
       header: 'Observability',
       tag: PANEL_TAG,
@@ -1344,6 +1365,7 @@
       listen();
       poll();
       setInterval(poll, REFRESH_INTERVAL_MS);
+      addPanel();
     }
   };
 

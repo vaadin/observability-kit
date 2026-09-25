@@ -10,6 +10,7 @@ package com.vaadin.observability.micrometer;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -68,6 +69,8 @@ class MetricsServiceInitListenerLicenseTest {
         verify(service, never()).addSessionInitListener(any());
         verify(service, never()).addUIInitListener(any());
         verify(event, never()).addVaadinRequestInterceptor(any());
+        // Recorded so the Copilot panel can say why it has nothing to show.
+        Assertions.assertTrue(ObservabilityKit.isLicenseMissing());
     }
 
     @Test
