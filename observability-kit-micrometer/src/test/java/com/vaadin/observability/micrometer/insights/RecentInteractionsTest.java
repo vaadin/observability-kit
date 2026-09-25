@@ -67,4 +67,42 @@ class RecentInteractionsTest {
     void emptyBufferSnapshotIsEmpty() {
         Assertions.assertTrue(new RecentInteractions(10).snapshot().isEmpty());
     }
+
+    private static LatestInteraction latest(String event, String outcome,
+            double serverMs) {
+        return new LatestInteraction(Instant.now(), "orders", "OrderView",
+                "Button", "Save", event, outcome, serverMs, 1);
+    }
+
+    @Test
+    void latest_isNullUntilSomethingIsRecorded() {
+        Assertions.assertNull(new RecentInteractions(10).latest());
+    }
+
+    @Test
+    void latest_fromAnotherRequestReplacesThePrevious() {
+        RecentInteractions buffer = new RecentInteractions(10);
+        buffer.recordLatest(1, latest("click", "success", 3), false);
+        buffer.recordLatest(2, latest("dblclick", "success", 2), false);
+
+        LatestInteraction last = buffer.latest();
+        Assertions.assertEquals("dblclick", last.event());
+        Assertions.assertEquals(2, last.serverMs());
+        Assertions.assertEquals(1, last.invocations());
+    }
+
+    @Test
+    void latest_fromTheSameRequestAddsUpAndKeepsTheUserEvent() {
+        RecentInteractions buffer = new RecentInteractions(10);
+        buffer.recordLatest(1, latest("click", "error", 3), false);
+        // A property sync in the same request is not what the user did.
+        buffer.recordLatest(1, latest("value", "success", 1.5), true);
+
+        LatestInteraction last = buffer.latest();
+        Assertions.assertEquals("click", last.event());
+        Assertions.assertEquals(4.5, last.serverMs());
+        Assertions.assertEquals(2, last.invocations());
+        Assertions.assertEquals("error", last.outcome(),
+                "a failure anywhere in the request is the request's outcome");
+    }
 }

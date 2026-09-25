@@ -3,10 +3,14 @@
 //
 // Dev-mode Vaadin Copilot panel for observability-kit. Injected per UI by
 // ObservabilityDevToolsClient via Page.executeJs (development mode only).
-// Registers a Copilot plugin with two sections: the insights the server built
-// from the retained interactions, queries and browser errors, ranked so the
-// worst is first; and below them, collapsed, the live vaadin.* Micrometer
-// meters grouped by the route they were recorded on. Both come from
+// Registers a Copilot plugin with four tabs. Three read the live vaadin.*
+// Micrometer meters: the vitals, a handful of figures read against common
+// budgets with a preview of how they would feel over a real network; the last
+// click, broken down into network, server and render time, above the slowest
+// things this session; and the key metrics pinned above every meter, grouped
+// by the route it was recorded on. The fourth holds the insights the server
+// built from the retained interactions, queries and browser errors, ranked so
+// the worst is first. Meters and insights come from
 // ObservabilityDevToolsHandler, as answers to two separate commands.
 //
 // A developer opens this panel to find out what is wrong, and a meter is a
@@ -77,6 +81,10 @@
   // refresh round-trips.
   var latest = null;
   var latestInsights = null;
+  // How far the server's clock is ahead of this browser's, from the last
+  // meter snapshot. What lets a browser-side sample be matched to the
+  // server-side interaction it belongs to.
+  var clockSkew = 0;
   // Per-meter ring buffer of recent trend values, keyed by name+tags. Survives
   // panel close/reopen (module scope) so the sparkline keeps its history.
   var history = {};
@@ -86,11 +94,33 @@
   // module scope with the history for the same reason: closing the panel to
   // look at the code and reopening it should not collapse what was being read.
   var expanded = {};
-  // Whether the meter table is unfolded. Null until the first snapshot decides
-  // it: open when there is nothing wrong, folded away when there is, so the
-  // panel opens on the findings without hiding the meters from someone who
-  // came for them.
-  var metricsOpen = null;
+
+  // The panel's four tabs: three views over the meters, each answering a
+  // different question - how does the app feel, where did my last click's
+  // time go, what do the numbers say - and the findings.
+  var TAB_VITALS = 'vitals';
+  var TAB_ANATOMY = 'anatomy';
+  var TAB_METRICS = 'metrics';
+  var TAB_FINDINGS = 'findings';
+  var TABS = [
+    { key: TAB_VITALS, label: 'Vitals' },
+    { key: TAB_ANATOMY, label: 'Last click' },
+    { key: TAB_METRICS, label: 'Metrics' },
+    { key: TAB_FINDINGS, label: 'Findings' }
+  ];
+  // Null until the first insights payload decides it: the findings when there
+  // is something wrong, the vitals when there is not. Once the developer has
+  // picked a tab, that is theirs.
+  var activeTab = null;
+
+  // The user round-trip latency the production preview adds, in ms.
+  var LATENCIES = [0, 30, 80, 200];
+  var prodLatency = 80;
+
+  // The two filters on the full meter list. Both on by default: a registry is
+  // mostly timers nothing has hit yet and heartbeats nobody is asking about.
+  var hideIdle = true;
+  var hideNoise = true;
 
   // ---- findings the developer is not working on right now ----------------
   //
@@ -873,6 +903,787 @@
     );
   }
 
+  // ---- reading the meters as budgets ---------------------------------------
+  //
+  // The vitals, the key metrics and the slowest-things table all ask the same
+  // question of the snapshot: what does this meter, across every tag value it
+  // was recorded with, average - and is that within a common budget. The
+  // budgets are the usual ones (Web Vitals' INP and LCP, and rules of thumb
+  // for the server side), a baseline to read against rather than a rule.
+
+  var TAG_INTERACTION = 'vaadin.interaction';
+  var TAG_REQUEST_TYPE = 'vaadin.request.type';
+  // Requests nobody made on purpose. Filtered out of the full meter list on
+  // request, and never part of a budget.
+  var NOISE_REQUEST_TYPES = ['heartbeat', 'push', 'static'];
+  var NOISE_INTERACTIONS = ['poll'];
+  var CLIENT_REQUEST = 'vaadin.client.request.duration';
+  var CLIENT_RENDER = 'vaadin.client.render.duration';
+  var CLICK_BUDGET_MS = 100;
+  // How far apart, on the server's clock, a browser sample and the server's
+  // record of an interaction may be and still describe the same click.
+  var CLIENT_MATCH_MS = 5000;
+
+  function matches(meter, name, tags) {
+    if (!meter || meter.name !== name) {
+      return false;
+    }
+    var have = meter.tags || {};
+    return Object.keys(tags || {}).every(function (key) {
+      return have[key] === tags[key];
+    });
+  }
+
+  /**
+   * One figure for a meter across all its tag values: the count-weighted mean
+   * for timers and summaries, the sum for gauges and counters. Null when no
+   * meter of that name is registered at all.
+   */
+  function aggregate(meters, name, tags) {
+    var found = false;
+    var count = 0;
+    var total = 0;
+    var value = null;
+    (meters || []).forEach(function (meter) {
+      if (!matches(meter, name, tags)) {
+        return;
+      }
+      found = true;
+      if (typeof meter.mean === 'number') {
+        var n = typeof meter.count === 'number' ? meter.count : 0;
+        count += n;
+        total += meter.mean * n;
+      } else if (typeof meter.value === 'number') {
+        value = (value || 0) + meter.value;
+      } else if (typeof meter.count === 'number') {
+        count += meter.count;
+      }
+    });
+    if (!found) {
+      return null;
+    }
+    return { count: count, mean: count > 0 ? total / count : null, value: value };
+  }
+
+  function meanOf(meters, name, tags) {
+    var stat = aggregate(meters, name, tags);
+    return stat ? stat.mean : null;
+  }
+
+  function hasNumber(value) {
+    return typeof value === 'number' && isFinite(value);
+  }
+
+  // A duration as the cards show it: a decimal while it is small enough for
+  // one to matter, whole milliseconds above that.
+  function ms(value) {
+    if (!hasNumber(value)) {
+      return '—';
+    }
+    return value >= 20 ? String(Math.round(value)) : value.toFixed(1);
+  }
+
+  function budgetText(budget) {
+    return budget >= 1000 ? budget / 1000 + ' s' : budget + ' ms';
+  }
+
+  /**
+   * How a figure reads against its budget. `fast` names the best case for
+   * the one budget where being far under it is worth saying out loud.
+   */
+  function verdict(value, budget, fast) {
+    if (!hasNumber(value)) {
+      return null;
+    }
+    var ratio = value / budget;
+    if (fast && ratio <= 0.25) {
+      return { tone: 'good', label: fast };
+    }
+    if (ratio <= 1) {
+      return { tone: 'good', label: 'Good' };
+    }
+    if (ratio <= 1.5) {
+      return { tone: 'warn', label: 'Slightly slow' };
+    }
+    return { tone: 'bad', label: 'Over budget' };
+  }
+
+  function pill(judged, compact) {
+    if (!judged) {
+      return '';
+    }
+    var label = compact
+      ? (judged.tone === 'good' ? '✓ Good' : '! Over')
+      : judged.label;
+    return '<span class="ok-pill ok-' + judged.tone + '">' + esc(label) + '</span>';
+  }
+
+  // A value on a track scaled to one and a half budgets, with a tick at the
+  // budget, so that being over it is visible without being off the end.
+  function budgetBar(value, budget, judged) {
+    var scale = budget * 1.5;
+    var fill = hasNumber(value) ? Math.min(value / scale, 1) * 100 : 0;
+    return (
+      '<div class="ok-track">' +
+      '<div class="ok-fill' + (judged ? ' ok-' + judged.tone : '') +
+      '" style="width:' + fill.toFixed(1) + '%"></div>' +
+      '<div class="ok-tick" style="left:' + (100 / 1.5).toFixed(1) + '%"></div>' +
+      '</div>'
+    );
+  }
+
+  function tagSpec(tags) {
+    return Object.keys(tags || {})
+      .map(function (key) {
+        return key.replace('vaadin.', '') + '=' + tags[key];
+      })
+      .join(', ');
+  }
+
+  function linkTo(tab, label) {
+    return (
+      '<span class="ok-link" data-action="tab" data-index="' + tab + '">' +
+      esc(label) + '</span>'
+    );
+  }
+
+  /**
+   * The figures the vitals and the key metrics are built from, in the order
+   * they are shown. Each note is HTML, escaped where it interpolates.
+   */
+  var VITALS = [
+    {
+      title: 'Click response',
+      keyTitle: 'Click response time',
+      keyNote: 'Round trip from user action to updated UI.',
+      name: CLIENT_REQUEST,
+      budget: CLICK_BUDGET_MS,
+      scaleLabel: CLICK_BUDGET_MS + ' ms feels instant · ' + CLICK_BUDGET_MS + ' ms INP budget',
+      fast: 'Instant',
+      note: function (meters, stat) {
+        return esc(
+          'Every Vaadin interaction is a server round trip. This is your ' +
+            "app's INP. Avg of " + stat.count + (stat.count === 1 ? ' click.' : ' clicks.')
+        );
+      }
+    },
+    {
+      title: 'Server time per click',
+      keyTitle: 'Server time per event',
+      keyNote: 'Your listener and service code for one interaction.',
+      name: 'vaadin.request.duration',
+      tags: { 'vaadin.interaction': 'rpc' },
+      budget: 50,
+      note: function () {
+        return esc(
+          'Time spent in your listeners and services. The part you own, and ' +
+            'the part that multiplies with users.'
+        );
+      }
+    },
+    {
+      title: 'View navigation',
+      keyTitle: 'View navigation',
+      keyNote: 'Moving to a new route, including creating the view.',
+      name: 'vaadin.request.duration',
+      tags: { 'vaadin.interaction': 'navigation' },
+      budget: 200,
+      note: function (meters) {
+        var lifecycle = meanOf(meters, 'vaadin.navigation');
+        return (
+          esc(
+            'Route change incl. building the view.' +
+              (hasNumber(lifecycle)
+                ? ' ' + ms(lifecycle) + ' ms in the navigation lifecycle.'
+                : '')
+          ) +
+          ' ' +
+          linkTo(TAB_ANATOMY, 'See breakdown')
+        );
+      }
+    },
+    {
+      title: 'Grid data fetch',
+      keyTitle: 'Data fetch per page',
+      keyNote: 'Backend query when a Grid or ComboBox loads rows.',
+      name: 'vaadin.data.fetch.duration',
+      budget: 100,
+      unit: 'ms / page',
+      note: function (meters) {
+        var requested = meanOf(meters, 'vaadin.data.fetch.requested');
+        var rows = meanOf(meters, 'vaadin.data.fetch.rows');
+        var text = "Your data provider's query time.";
+        if (hasNumber(requested) && hasNumber(rows)) {
+          text +=
+            ' Asked for ' + Math.round(requested) + ' rows, got ' +
+            num(rows) + ' back on average.';
+          if (rows < requested / 2) {
+            text += " Dev data is tiny; prod data won't be.";
+          }
+        }
+        return esc(text);
+      }
+    },
+    {
+      title: 'Page load (LCP)',
+      keyTitle: 'Largest Contentful Paint',
+      keyNote: 'Core Web Vital: when the main content becomes visible.',
+      name: 'vaadin.client.web_vitals.lcp',
+      budget: 2500,
+      scaleLabel: '2.5 s Core Web Vitals',
+      note: function (meters) {
+        var fcp = meanOf(meters, 'vaadin.client.web_vitals.fcp');
+        return esc(
+          'When the main content is visible.' +
+            (hasNumber(fcp) ? ' First paint at ' + ms(fcp) + ' ms.' : '')
+        );
+      }
+    },
+    {
+      title: 'Server bootstrap',
+      name: 'vaadin.request.duration',
+      tags: { 'vaadin.request.type': 'bootstrap' },
+      budget: 200,
+      note: function () {
+        return esc(
+          'Creating the session and first UI on the server before anything ' +
+            'is sent.'
+        );
+      }
+    }
+  ];
+
+  // The first five: what the key-metrics list pins above the full one.
+  var KEY_METRICS = VITALS.filter(function (def) {
+    return !!def.keyTitle;
+  });
+  var VITAL_CLICK = VITALS[0];
+  var VITAL_NAVIGATION = VITALS[2];
+
+  function vitalCard(def, meters) {
+    var stat = aggregate(meters, def.name, def.tags);
+    var value = stat ? stat.mean : null;
+    var judged = verdict(value, def.budget, def.fast);
+    return (
+      '<div class="ok-card' + (judged && judged.tone !== 'good' ? ' ok-card-warn' : '') + '">' +
+      '<div class="ok-card-head"><span>' + esc(def.title) + '</span>' + pill(judged) + '</div>' +
+      '<div class="ok-big ok-mono">' + esc(ms(value)) +
+      '<span class="ok-unit">' + esc(def.unit || 'ms') + '</span></div>' +
+      budgetBar(value, def.budget, judged) +
+      '<div class="ok-scale"><span>0</span><span>' +
+      esc(def.scaleLabel || budgetText(def.budget) + ' budget') +
+      '</span></div>' +
+      '<div class="ok-note">' +
+      (hasNumber(value) ? def.note(meters, stat) : esc('No samples yet.')) +
+      '</div>' +
+      '</div>'
+    );
+  }
+
+  function previewTile(title, measured, budget, within) {
+    if (!hasNumber(measured)) {
+      return (
+        '<div class="ok-tile"><div class="ok-note ok-flush">' + esc(title) + '</div>' +
+        '<div class="ok-mid ok-mono">—</div>' +
+        '<div class="ok-note ok-flush">No samples yet.</div></div>'
+      );
+    }
+    var total = measured + prodLatency;
+    return (
+      '<div class="ok-tile"><div class="ok-note ok-flush">' + esc(title) + '</div>' +
+      '<div class="ok-mid ok-mono">' + esc(ms(total)) + '<span class="ok-unit">ms</span></div>' +
+      '<div class="ok-note ok-flush">' +
+      esc(total <= budget ? within : 'Over the ' + budget + ' ms INP budget') +
+      '</div></div>'
+    );
+  }
+
+  /**
+   * What the two figures a user feels most would be with a real network in
+   * between. The estimate is the honest one: measured time plus one round
+   * trip, with nothing said about load.
+   */
+  function prodPreview(meters) {
+    var buttons = LATENCIES.map(function (latency) {
+      return (
+        '<button class="ok-btn' + (latency === prodLatency ? ' on' : '') +
+        '" data-action="latency" data-index="' + latency + '">' +
+        esc(latency === 0 ? 'Localhost' : latency + ' ms') +
+        '</button>'
+      );
+    }).join('');
+    return (
+      '<div class="ok-preview">' +
+      '<div class="ok-card-head"><span>What will this feel like in production?</span></div>' +
+      '<div class="ok-note ok-flush">On localhost the network costs ~0 ms. ' +
+      "Pick a user's round-trip latency:</div>" +
+      '<div class="ok-seg">' + buttons + '</div>' +
+      '<div class="ok-tiles">' +
+      previewTile('Typical click',
+        meanOf(meters, VITAL_CLICK.name, VITAL_CLICK.tags),
+        VITAL_CLICK.budget, 'Still feels instant') +
+      previewTile('View navigation',
+        meanOf(meters, VITAL_NAVIGATION.name, VITAL_NAVIGATION.tags),
+        VITAL_NAVIGATION.budget, 'Within the ' + VITAL_NAVIGATION.budget + ' ms budget') +
+      '</div>' +
+      '<div class="ok-note">Estimate: measured time + one round trip. ' +
+      'Server time also grows with concurrent users.</div>' +
+      '</div>'
+    );
+  }
+
+  function vitalsView(snapshot) {
+    var meters = (snapshot && snapshot.meters) || [];
+    var when = snapshot && snapshot.timestamp ? clockTime(snapshot.timestamp) : '';
+    return (
+      '<div class="ok-sec">' +
+      '<div class="ok-h"><span>How your app feels right now</span>' +
+      '<span class="ok-aside">' + esc('this session' + (when ? ' · updated ' + when : '')) + '</span></div>' +
+      '<div class="ok-sub">Measured from real clicks in your browser and your ' +
+      'server. Baselines are common budgets, not hard rules.</div>' +
+      '<div class="ok-grid">' +
+      VITALS.map(function (def) {
+        return vitalCard(def, meters);
+      }).join('') +
+      '</div>' +
+      prodPreview(meters) +
+      '</div>'
+    );
+  }
+
+  // ---- the anatomy of the last click ---------------------------------------
+
+  // The browser collector's most recent sample of a meter, when it is close
+  // enough in time to the interaction to be the same one. Null without the
+  // collector: client metrics may be off.
+  function browserSample(name, at) {
+    var api = window.__vaadinMicrometer;
+    if (!api || typeof api.latest !== 'function') {
+      return null;
+    }
+    var sample;
+    try {
+      sample = api.latest(name);
+    } catch (e) {
+      return null;
+    }
+    if (!sample || !hasNumber(sample.valueMs)) {
+      return null;
+    }
+    if (hasNumber(at) && hasNumber(sample.ts) &&
+        Math.abs(sample.ts + clockSkew - at) > CLIENT_MATCH_MS) {
+      return null;
+    }
+    return sample.valueMs;
+  }
+
+  function capitalized(text) {
+    var value = String(text || 'interaction');
+    return value.charAt(0).toUpperCase() + value.substring(1);
+  }
+
+  function interactionTitle(last) {
+    var target = simpleName(last.component);
+    if (target && last.caption) {
+      target += ' "' + last.caption + '"';
+    }
+    var where = last.view || (last.route === '' ? 'Root' : last.route);
+    return (
+      capitalized(last.event) +
+      (target ? ' on [' + target + ']' : '') +
+      (where ? ' in [' + where + ']' : '')
+    );
+  }
+
+  function legendItem(color, label, value, note) {
+    return (
+      '<div><div class="ok-legend-label"><span class="ok-dot" style="background:' +
+      color + '"></span>' + esc(label) + '</div>' +
+      '<div class="ok-mid ok-mono ok-small">' +
+      esc(hasNumber(value) ? ms(value) + ' ms' : 'n/a') + '</div>' +
+      '<div class="ok-note ok-flush">' + esc(note) + '</div></div>'
+    );
+  }
+
+  var SEGMENT_NETWORK = '#9db7ea';
+  var SEGMENT_SERVER = '#2f64c7';
+  var SEGMENT_RENDER = '#6c4fbd';
+
+  function segment(color, value, total) {
+    if (!hasNumber(value) || value <= 0 || total <= 0) {
+      return '';
+    }
+    return (
+      '<div style="background:' + color + ';width:' +
+      ((value / total) * 100).toFixed(1) + '%"></div>'
+    );
+  }
+
+  /**
+   * The last interaction, split into the parts a developer can act on: the
+   * wire, their own code and the browser. The server part is the time the
+   * listeners took; the round trip and the render come from the browser
+   * collector, and are left out rather than guessed when it is not there.
+   */
+  function lastInteractionView(last) {
+    if (!last) {
+      return (
+        '<div class="ok-sec"><div class="ok-caps">Your last interaction</div>' +
+        '<div class="ok-note">Click something in the application and it is ' +
+        'broken down here. Needs vaadin.observability.insights together with ' +
+        'errors or requests.</div></div>'
+      );
+    }
+    var server = hasNumber(last.serverMs) ? last.serverMs : null;
+    var roundTrip = browserSample(CLIENT_REQUEST, last.timestamp);
+    var render = browserSample(CLIENT_RENDER, last.timestamp);
+    var network = hasNumber(roundTrip) && hasNumber(server)
+      ? Math.max(0, roundTrip - server)
+      : null;
+    var total = hasNumber(roundTrip)
+      ? roundTrip + (render || 0)
+      : (server || 0) + (render || 0);
+    var judged = verdict(total, CLICK_BUDGET_MS, 'Instant');
+    var parts = (network || 0) + (server || 0) + (render || 0);
+    var invocations = last.invocations || 1;
+    return (
+      '<div class="ok-sec">' +
+      '<div class="ok-caps">Your last interaction' +
+      (last.outcome === 'error' ? ' · failed' : '') + '</div>' +
+      '<div class="ok-title">' + esc(interactionTitle(last)) + '</div>' +
+      '<div class="ok-total ok-mono">' + esc(ms(total)) +
+      '<span class="ok-unit">ms</span>' +
+      (judged
+        ? '<span class="ok-pill ok-' + judged.tone + ' ok-inline">' +
+          esc(judged.label + ' · INP budget ' + CLICK_BUDGET_MS + ' ms') + '</span>'
+        : '') +
+      '</div>' +
+      '<div class="ok-stack">' +
+      segment(SEGMENT_NETWORK, network, parts) +
+      segment(SEGMENT_SERVER, server, parts) +
+      segment(SEGMENT_RENDER, render, parts) +
+      '</div>' +
+      '<div class="ok-legend">' +
+      legendItem(SEGMENT_NETWORK, 'Network & transfer', network,
+        hasNumber(roundTrip)
+          ? '~0 on localhost. This is what grows in prod.'
+          : 'Needs client metrics (vaadin.observability.client).') +
+      legendItem(SEGMENT_SERVER, 'Server (your code)', server,
+        'Listeners, services, DB calls.') +
+      legendItem(SEGMENT_RENDER, 'Browser render', render,
+        'Applying changes to the DOM.') +
+      '</div>' +
+      '<div class="ok-note">' +
+      esc(
+        invocations + (invocations === 1 ? ' event' : ' events') +
+          ' handled in one server round trip. More than one round trip per ' +
+          'click is a common prod latency multiplier.'
+      ) +
+      '</div>' +
+      '</div>'
+    );
+  }
+
+  /**
+   * The rows of "slowest things this session". Each is a server-side cost a
+   * developer can go and look at, with a budget to be read against and a
+   * tip for when it is over it.
+   */
+  var SLOWEST = [
+    {
+      title: 'View navigation',
+      name: 'vaadin.request.duration',
+      tags: { 'vaadin.interaction': 'navigation' },
+      budget: 200,
+      sub: function (meters, mean) {
+        var lifecycle = meanOf(meters, 'vaadin.navigation');
+        if (!hasNumber(lifecycle)) {
+          return '';
+        }
+        return ms(lifecycle) + ' ms lifecycle · ' +
+          ms(Math.max(0, mean - lifecycle)) + ' ms other server work';
+      },
+      tip: function (meters, mean) {
+        var lifecycle = meanOf(meters, 'vaadin.navigation');
+        return hasNumber(lifecycle) && lifecycle < mean / 2
+          ? 'Most of the time is outside the navigation lifecycle. Check the ' +
+              'view constructor and anything loaded eagerly in beforeEnter.'
+          : 'Most of the time is in the navigation lifecycle. Check ' +
+              'beforeEnter, afterNavigation and the observers on the route.';
+      }
+    },
+    {
+      title: 'Grid data fetch',
+      name: 'vaadin.data.fetch.duration',
+      budget: 100,
+      sub: function (meters) {
+        var requested = meanOf(meters, 'vaadin.data.fetch.requested');
+        return hasNumber(requested)
+          ? Math.round(requested) + ' rows requested per page'
+          : 'per page';
+      },
+      tip: function () {
+        return 'Check the query behind the data provider: an index, a join ' +
+          'fetched eagerly, or a count that runs on every page.';
+      }
+    },
+    {
+      title: 'Grid size query',
+      name: 'vaadin.data.count.duration',
+      budget: 100,
+      sub: function () {
+        return 'count queries';
+      },
+      tip: function () {
+        return 'A count runs whenever the filter changes. Consider an estimate ' +
+          'or a lazy data view with an undefined size.';
+      }
+    },
+    {
+      title: 'Initial page request',
+      name: 'vaadin.request.duration',
+      tags: { 'vaadin.request.type': 'bootstrap' },
+      budget: 200,
+      sub: function () {
+        return 'bootstrap';
+      },
+      tip: function () {
+        return 'Check what runs while the session and first UI are created: ' +
+          'UI init listeners, and the first view built with them.';
+      }
+    },
+    {
+      title: 'Component events (RPC)',
+      name: 'vaadin.rpc.duration',
+      budget: 50,
+      sub: function () {
+        return 'clicks, value changes';
+      },
+      tip: function () {
+        return 'A listener is doing slow work on the request thread. Move it ' +
+          'to a background task and push the result.';
+      }
+    },
+    {
+      title: 'Session lock wait',
+      name: 'vaadin.session.lock.wait',
+      budget: 50,
+      sub: function () {
+        return 'requests queued behind one another';
+      },
+      tip: function () {
+        return 'Something holds the session lock for long: a slow listener, ' +
+          'or a background thread inside ui.access.';
+      }
+    },
+    {
+      title: 'Background tasks',
+      name: 'vaadin.executor.task',
+      budget: 100,
+      sub: function () {
+        return 'executor';
+      },
+      tip: function () {
+        return 'Background work is slow. It does not block the user, but ' +
+          'whatever it pushes arrives late.';
+      }
+    }
+  ];
+
+  function slowestRows(meters) {
+    return SLOWEST.map(function (def) {
+      var stat = aggregate(meters, def.name, def.tags);
+      return { def: def, stat: stat };
+    })
+      .filter(function (row) {
+        return row.stat && hasNumber(row.stat.mean) && row.stat.count > 0;
+      })
+      .sort(function (a, b) {
+        return b.stat.mean - a.stat.mean;
+      });
+  }
+
+  function slowestView(meters) {
+    var rows = slowestRows(meters);
+    if (rows.length === 0) {
+      return (
+        '<div class="ok-sec ok-rule"><div class="ok-h"><span>Slowest things this session</span></div>' +
+        '<div class="ok-note">Nothing measured yet.</div></div>'
+      );
+    }
+    var body = rows.map(function (row) {
+      var mean = row.stat.mean;
+      var judged = verdict(mean, row.def.budget);
+      var fill = Math.min(mean / row.def.budget, 1) * 100;
+      var sub = row.def.sub(meters, mean);
+      return (
+        '<tr><td><div>' + esc(row.def.title) + '</div>' +
+        (sub ? '<div class="ok-note ok-flush">' + esc(sub) + '</div>' : '') + '</td>' +
+        '<td class="ok-mono ok-nowrap">' + esc(num(mean, 1) + ' ms') + '</td>' +
+        '<td class="ok-mono">' + esc(row.stat.count) + '</td>' +
+        '<td style="width:90px"><div class="ok-track"><div class="ok-fill' +
+        (judged && judged.tone !== 'good' ? ' ok-warn' : '') +
+        '" style="width:' + fill.toFixed(1) + '%"></div></div></td></tr>'
+      );
+    }).join('');
+
+    var over = rows.filter(function (row) {
+      return row.stat.mean > row.def.budget;
+    })[0];
+    var tip = over
+      ? '<div class="ok-tip"><div class="ok-card-head"><span>' +
+        esc('Tip: ' + over.def.title.toLowerCase() + ' is over its ' +
+          budgetText(over.def.budget) + ' budget') +
+        '</span></div><div class="ok-note ok-flush">' +
+        esc(over.def.tip(meters, over.stat.mean)) + '</div></div>'
+      : '';
+
+    return (
+      '<div class="ok-sec ok-rule">' +
+      '<div class="ok-h"><span>Slowest things this session</span>' +
+      '<span class="ok-aside">sorted by mean time</span></div>' +
+      '<table class="ok-table"><thead><tr><th>What</th><th>Mean</th>' +
+      '<th>Count</th><th>Vs budget</th></tr></thead><tbody>' +
+      body +
+      '</tbody></table>' +
+      tip +
+      '</div>'
+    );
+  }
+
+  // ---- the key metrics -----------------------------------------------------
+
+  function keyMetricsView(meters, total) {
+    var rows = KEY_METRICS.map(function (def) {
+      var value = meanOf(meters, def.name, def.tags);
+      var judged = verdict(value, def.budget);
+      var spec = tagSpec(def.tags);
+      return (
+        '<div class="ok-key">' +
+        '<div><div class="ok-strong">' + esc(def.keyTitle) + '</div>' +
+        '<div class="ok-note ok-flush">' + esc(def.keyNote) + '</div>' +
+        '<div class="ok-note ok-flush ok-mono">' +
+        esc(def.name + (spec ? ' · ' + spec : '')) + '</div></div>' +
+        '<div class="ok-key-value ok-mono">' +
+        esc(hasNumber(value) ? ms(value) + ' ms' : '—') + '</div>' +
+        '<div class="ok-key-badge">' + pill(judged, true) +
+        '<div>' + esc('< ' + budgetText(def.budget)) + '</div></div>' +
+        '</div>'
+      );
+    }).join('');
+    return (
+      '<div class="ok-sec">' +
+      '<div class="ok-h"><span>Key metrics</span><span class="ok-aside">' +
+      esc(KEY_METRICS.length + ' of ' + total + ' · pinned by Vaadin') +
+      '</span></div>' +
+      rows +
+      '</div>'
+    );
+  }
+
+  function isIdle(meter) {
+    return !(
+      (typeof meter.count === 'number' && meter.count > 0) ||
+      (typeof meter.value === 'number' && meter.value !== 0) ||
+      (meter.measurements || []).some(function (m) {
+        return m.value !== 0;
+      })
+    );
+  }
+
+  function isNoise(meter) {
+    var tags = meter.tags || {};
+    return (
+      NOISE_REQUEST_TYPES.indexOf(tags[TAG_REQUEST_TYPE]) >= 0 ||
+      NOISE_INTERACTIONS.indexOf(tags[TAG_INTERACTION]) >= 0
+    );
+  }
+
+  function chip(action, on, label) {
+    return (
+      '<button class="ok-chip' + (on ? ' on' : '') + '" data-action="' + action +
+      '">' + esc((on ? '✓ ' : '') + label) + '</button>'
+    );
+  }
+
+  var STYLE = [
+    '.ok-root{font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;' +
+      '--ok-muted:var(--dev-tools-text-color-secondary,#888);' +
+      '--ok-line:rgba(128,128,128,.25);--ok-blue:var(--lumo-primary-color,#1676f3);' +
+      '--ok-good:#2e7d32;--ok-warn:#d9730d;--ok-bad:#d32f2f}',
+    '.ok-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}',
+    '.ok-tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--ok-line)}',
+    '.ok-tab{font:inherit;background:none;border:0;border-bottom:2px solid transparent;' +
+      'padding:8px 10px;cursor:pointer;color:var(--ok-muted)}',
+    '.ok-tab.on{color:inherit;border-bottom-color:var(--ok-blue);font-weight:600}',
+    '.ok-sec{padding:12px 14px}',
+    '.ok-rule{border-top:1px solid var(--ok-line)}',
+    '.ok-h{display:flex;align-items:baseline;gap:8px;font-weight:600;font-size:14px}',
+    '.ok-aside{margin-left:auto;font-weight:400;font-size:11px;color:var(--ok-muted);white-space:nowrap}',
+    '.ok-sub{color:var(--ok-muted);font-size:12px;margin-top:2px}',
+    '.ok-strong{font-weight:600}',
+    '.ok-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:12px}',
+    '.ok-card{border:1px solid var(--ok-line);border-radius:6px;padding:10px 12px}',
+    '.ok-card-warn{background:rgba(217,115,13,.07);border-color:rgba(217,115,13,.45)}',
+    '.ok-card-head{display:flex;align-items:center;gap:6px;font-weight:600;font-size:12px}',
+    '.ok-pill{margin-left:auto;font-size:10px;font-weight:600;padding:1px 7px;border-radius:9px;white-space:nowrap}',
+    '.ok-pill.ok-inline{margin-left:4px;font-family:system-ui,sans-serif}',
+    '.ok-pill.ok-good{color:var(--ok-good);background:rgba(46,125,50,.13)}',
+    '.ok-pill.ok-warn{color:var(--ok-warn);background:rgba(217,115,13,.15)}',
+    '.ok-pill.ok-bad{color:var(--ok-bad);background:rgba(211,47,47,.13)}',
+    '.ok-big{font-size:20px;font-weight:600;margin:6px 0 4px}',
+    '.ok-mid{font-size:15px;font-weight:600;margin:2px 0}',
+    '.ok-small{font-size:13px}',
+    '.ok-total{font-size:26px;font-weight:600;display:flex;align-items:baseline;gap:4px;margin-top:4px}',
+    '.ok-unit{font-size:11px;font-weight:400;color:var(--ok-muted);margin-left:6px}',
+    '.ok-track{position:relative;height:4px;border-radius:2px;background:rgba(128,128,128,.18)}',
+    '.ok-fill{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--ok-blue)}',
+    // One selector per rule: each is scoped by prefixing the panel's tag.
+    '.ok-fill.ok-warn{background:var(--ok-warn)}',
+    '.ok-fill.ok-bad{background:var(--ok-warn)}',
+    '.ok-tick{position:absolute;top:-3px;width:1px;height:10px;background:var(--ok-muted)}',
+    '.ok-scale{display:flex;justify-content:space-between;font-size:10px;color:var(--ok-muted);margin-top:4px}',
+    '.ok-note{font-size:11px;color:var(--ok-muted);margin-top:8px}',
+    '.ok-flush{margin-top:1px}',
+    '.ok-link{color:var(--ok-blue);text-decoration:underline;cursor:pointer}',
+    '.ok-preview{margin-top:14px;border:1px solid rgba(22,118,243,.25);background:rgba(22,118,243,.06);' +
+      'border-radius:6px;padding:12px}',
+    '.ok-seg{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}',
+    '.ok-btn{font:inherit;font-size:12px;padding:5px 12px;border:1px solid var(--ok-line);border-radius:4px;' +
+      'background:none;color:inherit;cursor:pointer}',
+    '.ok-btn.on{background:var(--ok-blue);border-color:var(--ok-blue);color:#fff;font-weight:600}',
+    '.ok-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}',
+    '.ok-tile{background:rgba(128,128,128,.08);border-radius:4px;padding:8px 10px}',
+    '.ok-caps{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ok-muted)}',
+    '.ok-title{font-weight:600;font-size:15px;margin-top:2px;word-break:break-word}',
+    '.ok-stack{display:flex;height:16px;border-radius:3px;overflow:hidden;margin:12px 0 8px;' +
+      'background:rgba(128,128,128,.12)}',
+    '.ok-legend{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:11px}',
+    '.ok-legend-label{font-weight:600}',
+    '.ok-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}',
+    '.ok-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}',
+    '.ok-table th{text-align:left;font-weight:400;font-size:10px;letter-spacing:.06em;text-transform:uppercase;' +
+      'color:var(--ok-muted);padding:4px 6px;border-bottom:1px solid var(--ok-line)}',
+    '.ok-table td{padding:8px 6px;border-bottom:1px solid var(--ok-line);vertical-align:middle}',
+    '.ok-nowrap{white-space:nowrap}',
+    '.ok-tip{margin-top:12px;border:1px solid rgba(217,115,13,.45);background:rgba(217,115,13,.07);' +
+      'border-radius:6px;padding:10px 12px}',
+    '.ok-key{display:grid;grid-template-columns:1fr auto 76px;gap:10px;align-items:center;' +
+      'padding:9px 0;border-bottom:1px solid var(--ok-line)}',
+    '.ok-key-value{font-size:14px;white-space:nowrap}',
+    '.ok-key-badge{text-align:right;font-size:10px;color:var(--ok-muted)}',
+    '.ok-chips{display:flex;gap:6px;margin-left:auto}',
+    '.ok-chip{font:inherit;font-size:11px;padding:2px 9px;border-radius:10px;border:1px solid var(--ok-line);' +
+      'background:none;color:var(--ok-muted);cursor:pointer}',
+    '.ok-chip.on{border-color:var(--ok-blue);color:var(--ok-blue);background:rgba(22,118,243,.08)}',
+    '.ok-footer{display:flex;justify-content:space-between;padding:10px 14px;' +
+      'border-top:1px solid var(--ok-line);font-size:11px;color:var(--ok-muted)}'
+  ]
+    .map(function (rule) {
+      return PANEL_TAG + ' ' + rule;
+    })
+    .join('');
+
   // Which findings have already been announced, keyed by the same grouping key
   // the rows are identified by, so one problem notifies once however many times
   // it recurs or however often the payload is polled.
@@ -976,6 +1787,9 @@
         return true;
       }
       latest = data;
+      if (data && typeof data.timestamp === 'number') {
+        clockSkew = data.timestamp - Date.now();
+      }
       recordHistory(latest.meters);
     } else if (command === COMMAND_INSIGHTS_DATA) {
       if (
@@ -1058,12 +1872,23 @@
         return;
       }
       var action = target.getAttribute('data-action');
-      if (action === 'toggle-metrics') {
-        // Against what is on screen, not against the variable: it starts null,
-        // which renders as open, so negating it would leave the section open
-        // and swallow the first click - while still counting as a decision and
-        // disabling the fold the first payload is supposed to make.
-        metricsOpen = metricsOpen === false;
+      if (action === 'tab') {
+        activeTab = target.getAttribute('data-index');
+        this.renderTabs();
+        return;
+      }
+      if (action === 'latency') {
+        prodLatency = Number(target.getAttribute('data-index')) || 0;
+        this.renderVitals();
+        return;
+      }
+      if (action === 'toggle-idle') {
+        hideIdle = !hideIdle;
+        this.renderMeters();
+        return;
+      }
+      if (action === 'toggle-noise') {
+        hideNoise = !hideNoise;
         this.renderMeters();
         return;
       }
@@ -1114,15 +1939,78 @@
     render() {
       if (!this._insightsEl) {
         this.innerHTML =
-          '<div style="font:13px sans-serif">' +
-          '<div data-region="insights"></div>' +
+          '<style>' + STYLE + '</style>' +
+          '<div class="ok-root">' +
+          '<div data-region="tabs"></div>' +
+          '<div data-region="vitals"></div>' +
+          '<div data-region="anatomy"></div>' +
+          '<div data-region="metrics-tab">' +
+          '<div data-region="key"></div>' +
           '<div data-region="metrics"></div>' +
+          '</div>' +
+          '<div data-region="insights"></div>' +
+          '<div data-region="footer"></div>' +
           '</div>';
-        this._insightsEl = this.querySelector('[data-region="insights"]');
+        this._tabsEl = this.querySelector('[data-region="tabs"]');
+        this._vitalsEl = this.querySelector('[data-region="vitals"]');
+        this._anatomyEl = this.querySelector('[data-region="anatomy"]');
+        this._metricsTabEl = this.querySelector('[data-region="metrics-tab"]');
+        this._keyEl = this.querySelector('[data-region="key"]');
         this._metersEl = this.querySelector('[data-region="metrics"]');
+        this._insightsEl = this.querySelector('[data-region="insights"]');
+        this._footerEl = this.querySelector('[data-region="footer"]');
       }
       this.renderInsights();
       this.renderMeters();
+      this.renderVitals();
+      this.renderAnatomy();
+      this.renderTabs();
+    }
+
+    // Every tab is kept rendered and only the chosen one shown, so switching
+    // is instant and the findings keep the rows the developer opened.
+    renderTabs() {
+      var current = activeTab || TAB_VITALS;
+      var live = this._liveCount || 0;
+      var total = ((latest && latest.meters) || []).length;
+      this._tabsEl.innerHTML =
+        '<div class="ok-tabs">' +
+        TABS.map(function (tab) {
+          var label =
+            tab.key === TAB_FINDINGS && live > 0
+              ? tab.label + ' (' + live + ')'
+              : tab.label;
+          return (
+            '<button class="ok-tab' + (tab.key === current ? ' on' : '') +
+            '" data-action="tab" data-index="' + tab.key + '">' +
+            esc(label) +
+            '</button>'
+          );
+        }).join('') +
+        '</div>';
+      this._vitalsEl.hidden = current !== TAB_VITALS;
+      this._anatomyEl.hidden = current !== TAB_ANATOMY;
+      this._metricsTabEl.hidden = current !== TAB_METRICS;
+      this._insightsEl.hidden = current !== TAB_FINDINGS;
+
+      var footer = current === TAB_VITALS || current === TAB_ANATOMY;
+      this._footerEl.hidden = !footer;
+      this._footerEl.innerHTML = footer
+        ? '<div class="ok-footer">' +
+          linkTo(TAB_METRICS, '‹ All metrics (' + total + (total === 1 ? ' meter)' : ' meters)')) +
+          '<span>' + esc(latest && latest.timestamp ? 'updated ' + clockTime(latest.timestamp) : '') +
+          '</span></div>'
+        : '';
+    }
+
+    renderVitals() {
+      this._vitalsEl.innerHTML = vitalsView(latest);
+    }
+
+    renderAnatomy() {
+      this._anatomyEl.innerHTML =
+        lastInteractionView(latest && latest.lastInteraction) +
+        slowestView((latest && latest.meters) || []);
     }
 
     renderInsights(force) {
@@ -1146,10 +2034,11 @@
         }
       });
 
+      this._liveCount = live.length;
       // Decided by the first payload that reaches the panel, and never again:
-      // once the developer has folded or unfolded the meters, that is theirs.
-      if (metricsOpen === null && latestInsights) {
-        metricsOpen = live.length === 0;
+      // once the developer has picked a tab, that is theirs.
+      if (activeTab === null && latestInsights) {
+        activeTab = live.length > 0 ? TAB_FINDINGS : TAB_VITALS;
       }
 
       // Rewritten only when something actually changed. The panel polls every
@@ -1222,42 +2111,62 @@
           ? hiddenToggle(quiet.length, byHand) +
             (showHidden ? rows(quiet, true) : '')
           : '');
+      // The findings tab carries the count, which this may just have changed.
+      this.renderTabs();
     }
 
     renderMeters() {
-      var meters = ((latest && latest.meters) || []).slice().sort(function (a, b) {
+      var all = ((latest && latest.meters) || []).slice().sort(function (a, b) {
         return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
       });
-      var when = latest && latest.timestamp ? clockTime(latest.timestamp) : '';
-      var open = metricsOpen !== false;
+      this._keyEl.innerHTML = keyMetricsView(all, all.length);
+
+      var idle = 0;
+      var noise = 0;
+      var meters = all.filter(function (meter) {
+        if (hideNoise && isNoise(meter)) {
+          noise++;
+          return false;
+        }
+        if (hideIdle && isIdle(meter)) {
+          idle++;
+          return false;
+        }
+        return true;
+      });
+      var hidden = [];
+      if (idle > 0) {
+        hidden.push(idle + ' idle');
+      }
+      if (noise > 0) {
+        hidden.push(noise + ' as noise');
+      }
 
       var header =
-        '<div data-action="toggle-metrics" style="display:flex;align-items:center;gap:6px;' +
-        'padding:8px 12px;cursor:pointer;border-top:1px solid rgba(128,128,128,.25);' +
-        'color:#888">' +
-        '<span style="width:12px;text-align:center">' +
-        (open ? '▾' : '▸') +
-        '</span>' +
-        '<span>Metrics</span>' +
-        '<span style="margin-left:auto">' +
+        '<div class="ok-sec ok-rule" style="padding-bottom:0">' +
+        '<div class="ok-h"><span>All meters</span>' +
+        '<span class="ok-chips">' +
+        chip('toggle-idle', hideIdle, 'Hide idle') +
+        chip('toggle-noise', hideNoise, 'Hide heartbeat & static') +
+        '</span></div>' +
+        '<div class="ok-sub">' +
         esc(
-          meters.length +
-            (meters.length === 1 ? ' meter' : ' meters') +
-            (when ? ' · updated ' + when : '')
+          'Showing ' + meters.length + ' of ' + all.length +
+            (all.length === 1 ? ' meter' : ' meters') +
+            (hidden.length ? ' · ' + hidden.join(', ') + ' hidden' : '')
         ) +
-        '</span>' +
+        '</div>' +
         '</div>';
-
-      if (!open) {
-        this._metersEl.innerHTML = header;
-        return;
-      }
 
       if (meters.length === 0) {
         this._metersEl.innerHTML =
           header +
-          '<div style="padding:0 12px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
-          'No Vaadin meters yet. Interact with the application to generate metrics.' +
+          '<div class="ok-sec ok-note">' +
+          esc(
+            all.length === 0
+              ? 'No Vaadin meters yet. Interact with the application to generate metrics.'
+              : 'Every meter is filtered out. Turn a filter off to see them.'
+          ) +
           '</div>';
         return;
       }
@@ -1269,7 +2178,7 @@
         .join('');
 
       this._metersEl.innerHTML =
-        header + '<div style="padding:0 12px 12px">' + body + '</div>';
+        header + '<div style="padding:0 14px 12px">' + body + '</div>';
     }
   }
 
@@ -1319,10 +2228,10 @@
         // position is set - so it would open off-screen. Give it an explicit
         // on-screen position and size.
         position: {
-          top: 80,
+          top: 60,
           left: 80,
-          width: 720,
-          height: 460
+          width: 540,
+          height: 720
         },
         toolbarOptions: {
           iconKey: 'barChart',

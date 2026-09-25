@@ -25,6 +25,7 @@ import com.vaadin.flow.internal.JacksonUtils;
 import com.vaadin.observability.micrometer.devtools.ObservabilityDevToolsHandler;
 import com.vaadin.observability.micrometer.insights.CapturedClientError;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
+import com.vaadin.observability.micrometer.insights.LatestInteraction;
 import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
@@ -119,6 +120,39 @@ class ObservabilityDevToolsHandlerTest {
         // insights whether or not it is: answering with both would put the
         // whole registry on the wire for a watch that never reads it.
         Assertions.assertEquals(List.of(COMMAND_METRICS), devTools.commands);
+    }
+
+    @Test
+    void refresh_carriesTheLatestInteractionWithTheMeters() {
+        ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
+        RecentInteractions interactions = new RecentInteractions(10);
+        interactions.recordLatest(1, new LatestInteraction(
+                Instant.ofEpochMilli(1000), "orders", "OrderView",
+                "com.example.SaveButton", "Save", "click",
+                CapturedInteraction.OUTCOME_SUCCESS, 4.5, 1), false);
+        ObservabilityKit.setRecentInteractions(interactions);
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> last = (Map<String, Object>) devTools.payloads
+                .get(COMMAND_METRICS).get("lastInteraction");
+        Assertions.assertEquals(1000L, last.get("timestamp"));
+        Assertions.assertEquals("OrderView", last.get("view"));
+        Assertions.assertEquals("Save", last.get("caption"));
+        Assertions.assertEquals(4.5, last.get("serverMs"));
+    }
+
+    @Test
+    void refresh_withNoInteractionBuffer_sendsNoLatestInteraction() {
+        ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        Assertions.assertTrue(devTools.payloads.get(COMMAND_METRICS)
+                .containsKey("lastInteraction"));
+        Assertions.assertNull(devTools.payloads.get(COMMAND_METRICS)
+                .get("lastInteraction"));
     }
 
     @Test

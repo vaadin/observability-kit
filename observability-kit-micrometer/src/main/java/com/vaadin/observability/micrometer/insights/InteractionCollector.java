@@ -16,7 +16,9 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
@@ -237,7 +239,9 @@ public class InteractionCollector {
     }
 
     void invocationEnded(RpcInvocationEndedEvent event) {
-        long durationMs = elapsedMs();
+        long durationNanos = elapsedNanos();
+        long durationMs = durationNanos < 0 ? -1
+                : TimeUnit.NANOSECONDS.toMillis(durationNanos);
         Component component = target.get();
         String before = valueAtStart.get();
         startNanos.remove();
@@ -247,6 +251,9 @@ public class InteractionCollector {
         errored.remove();
         try {
             rememberIfChanged(event, component, before);
+            if (durationNanos >= 0) {
+                recordLatest(event, component, durationNanos, failed);
+            }
         } catch (RuntimeException e) {
             // Best-effort: collection never interferes with the request.
         }
@@ -277,11 +284,16 @@ public class InteractionCollector {
     }
 
     private long elapsedMs() {
+        long nanos = elapsedNanos();
+        return nanos < 0 ? -1 : TimeUnit.NANOSECONDS.toMillis(nanos);
+    }
+
+    private long elapsedNanos() {
         Long start = startNanos.get();
         if (start == null) {
             return -1;
         }
-        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+        return System.nanoTime() - start;
     }
 
     private CapturedInteraction errorInteraction(
@@ -343,6 +355,38 @@ public class InteractionCollector {
     private static String location(UI ui) {
         return ui == null ? null
                 : ui.getInternals().getActiveViewLocation().getPath();
+    }
+
+    /** The simple class name of the active navigation target, if any. */
+    private static String view(UI ui) {
+        if (ui == null) {
+            return null;
+        }
+        List<HasElement> chain = ui.getInternals()
+                .getActiveRouterTargetsChain();
+        return chain.isEmpty() ? null : chain.get(0).getClass().getSimpleName();
+    }
+
+    /**
+     * Keeps the invocation as the latest interaction for the development-mode
+     * panel. Development mode only: the caption is read off the screen, and
+     * nothing outside that panel asks for it.
+     */
+    private void recordLatest(AbstractRpcInvocationEvent event,
+            Component component, long durationNanos, boolean failed) {
+        if (!screenDetail) {
+            return;
+        }
+        UI ui = event.getUI();
+        VaadinRequest request = VaadinRequest.getCurrent();
+        buffer.recordLatest(
+                request == null ? 0 : System.identityHashCode(request),
+                new LatestInteraction(Instant.now(), route(ui), view(ui),
+                        typeOf(component), caption(component), event.getName(),
+                        failed ? CapturedInteraction.OUTCOME_ERROR
+                                : CapturedInteraction.OUTCOME_SUCCESS,
+                        durationNanos / 1_000_000.0, 1),
+                RPC_TYPE_PROPERTY_SYNC.equals(event.getType()));
     }
 
     private static Optional<String> firstApplicationFrame(

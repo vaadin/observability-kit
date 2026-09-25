@@ -201,8 +201,9 @@ function harness(pathname) {
     if (!dispatch(command, data)) unclaimed++;
   }
 
-  const insightsHtml = () => panel.regions['[data-region="insights"]'].innerHTML;
-  const metricsHtml = () => panel.regions['[data-region="metrics"]'].innerHTML;
+  const region = (name) => panel.regions[`[data-region="${name}"]`];
+  const insightsHtml = () => region('insights').innerHTML;
+  const metricsHtml = () => region('metrics').innerHTML;
 
   function clickIn(html, needle) {
     const found = html.indexOf(needle);
@@ -245,6 +246,11 @@ function harness(pathname) {
     meters: (data) => deliver('observability-kit-metrics', data),
     insightsHtml,
     metricsHtml,
+    region,
+    html: (name) => region(name).innerHTML,
+    // The tab on screen: the one region of the four that is not hidden.
+    shownTab: () =>
+      ['vitals', 'anatomy', 'metrics-tab', 'insights'].filter((name) => !region(name).hidden),
     clickIn,
     commands: () => sent.map((message) => message.command),
     unclaimed: () => unclaimed
@@ -379,9 +385,10 @@ check('and it is the new one', app.announced[2].message, 'Observability: failing
 // takes 'log' from both - so a relayed announcement is logged twice.
 check('an announcement is written straight to the log', app.commands().includes('observability-kit-announce'), false);
 
-// 3. The meters folded themselves away when the first payload turned out to
+// 3. The panel opened on the findings when the first payload turned out to
 // have findings in it, which is the panel opening on what is wrong.
-check('findings fold the meter section', app.metricsHtml().includes('▸'), true);
+check('findings open the findings tab', app.shownTab(), ['insights']);
+check('and the tab counts them', app.html('tabs').includes('Findings (4)'), true);
 
 // 4. Copilot replays a message no panel claimed, so the snapshot pushed at
 // connect time arrives after the first polls have been answered. Taking it
@@ -435,8 +442,8 @@ app.meters({
     meter('vaadin.request.duration', { route: '' })
   ]
 });
-check('the meters are collapsed while findings are showing', app.metricsHtml().includes('vaadin.rpc.duration'), false);
-check('the metrics header is what unfolds them', app.clickIn(app.metricsHtml(), '<span>Metrics</span>').action, 'toggle-metrics');
+check('the metrics tab is what shows them', app.clickIn(app.html('tabs'), '>Metrics<').action, 'tab');
+check('and it is shown', app.shownTab(), ['metrics-tab']);
 const groupOrder = ['orders/:orderId', 'Root', 'dashboard', 'Route not resolved', 'General'].map((name) =>
   app.metricsHtml().indexOf(name)
 );
@@ -513,19 +520,111 @@ check('active instrumentation with nothing to report says so', app.insightsHtml(
 // few seconds.
 check('every server message was claimed on the event bus', app.unclaimed(), 0);
 
-// 14. A panel opened before anything has arrived renders the meter section
-// unfolded, so the first click on its header has to fold it rather than agree
-// with what is already on screen.
+// 14. A panel opened before anything has arrived shows the vitals, and a tab
+// picked before the first payload is the developer's: a payload with findings
+// in it arriving afterwards does not switch tabs on their behalf.
 {
   const waiting = harness('/orders/17');
   waiting.open();
-  check('the meters start unfolded', waiting.metricsHtml().includes('▾'), true);
-  waiting.clickIn(waiting.metricsHtml(), '<span>Metrics</span>');
-  check('the first click folds them', waiting.metricsHtml().includes('▸'), true);
-  // And that decision is the developer's: a payload arriving afterwards does
-  // not re-fold or re-open on their behalf.
-  waiting.insights(payload([]));
-  check('a later payload leaves the fold alone', waiting.metricsHtml().includes('▸'), true);
+  check('the panel starts on the vitals', waiting.shownTab(), ['vitals']);
+  waiting.clickIn(waiting.html('tabs'), '>Last click<');
+  check('a tab click switches tabs', waiting.shownTab(), ['anatomy']);
+  waiting.insights(payload([FAILING_SAVE]));
+  check('a later payload leaves the choice alone', waiting.shownTab(), ['anatomy']);
+  check('while still counting the findings', waiting.html('tabs').includes('Findings (1)'), true);
+}
+
+// 14b. The vitals read the meters against budgets, across every tag value a
+// meter was recorded with.
+const timer = (name, tags, mean, count) => ({ name, type: 'TIMER', tags, mean, count, max: mean, unit: 'ms' });
+const summary = (name, tags, mean, count) => ({ name, type: 'DISTRIBUTION_SUMMARY', tags, mean, count, max: mean });
+const SESSION_METERS = [
+  // Two routes, weighted by count: (10*3 + 20*1) / 4 = 12.5.
+  timer('vaadin.client.request.duration', { route: '/orders' }, 10, 3),
+  timer('vaadin.client.request.duration', { route: '/customers' }, 20, 1),
+  timer('vaadin.request.duration', { 'vaadin.interaction': 'rpc', 'vaadin.request.type': 'uidl' }, 4.5, 4),
+  timer('vaadin.request.duration', { 'vaadin.interaction': 'navigation', 'vaadin.request.type': 'uidl' }, 260, 2),
+  timer('vaadin.request.duration', { 'vaadin.interaction': 'poll', 'vaadin.request.type': 'heartbeat' }, 1, 30),
+  timer('vaadin.navigation', { route: 'orders', outcome: 'success' }, 48, 2),
+  timer('vaadin.data.fetch.duration', { route: 'orders' }, 67, 2),
+  summary('vaadin.data.fetch.requested', { route: 'orders' }, 50, 2),
+  summary('vaadin.data.fetch.rows', { route: 'orders' }, 1, 2),
+  timer('vaadin.rpc.duration', { type: 'event' }, 0, 0)
+];
+{
+  const vitals = harness('/orders');
+  vitals.open();
+  vitals.meters({ timestamp: Date.now(), meters: SESSION_METERS });
+  const html = vitals.html('vitals');
+  check('the click response is the count-weighted mean', html.includes('12.5<span'), true);
+  check('far under its budget reads as instant', html.includes('>Instant<'), true);
+  check('a navigation 30% over reads as slightly slow', html.includes('>Slightly slow<'), true);
+  check('the navigation note carries the lifecycle', html.includes('48 ms in the navigation lifecycle'), true);
+  check('tiny dev data is called out', html.includes('Dev data is tiny'), true);
+  check('a vital with no meter says so', html.includes('No samples yet.'), true);
+
+  // The production preview: measured time plus one round trip.
+  check('the preview starts at 80 ms', html.includes('93<span'), true);
+  vitals.clickIn(vitals.html('vitals'), '>200 ms<');
+  check('picking a latency re-estimates the click', vitals.html('vitals').includes('213<span'), true);
+  check('and says it is over budget', vitals.html('vitals').includes('Over the 100 ms INP budget'), true);
+
+  // The slowest table leaves out what nothing has hit, and tips on the worst
+  // one over its budget.
+  const anatomy = vitals.html('anatomy');
+  check('the slowest table sorts by mean', anatomy.indexOf('View navigation') < anatomy.indexOf('Grid data fetch'), true);
+  check('it splits navigation into lifecycle and the rest', anatomy.includes('48 ms lifecycle · 212 ms other server work'), true);
+  check('an idle meter is not a row', anatomy.includes('Component events'), false);
+  check('the tip names what is over budget', anatomy.includes('Tip: view navigation is over its 200 ms budget'), true);
+  check('with no interaction yet it says what to do', anatomy.includes('Click something in the application'), true);
+
+  // The key metrics, and the filters on the full list.
+  check('the key metrics are pinned', vitals.html('key').includes('5 of 10 · pinned by Vaadin'), true);
+  check('an over-budget key metric is flagged', vitals.html('key').includes('! Over'), true);
+  check('heartbeats and idle meters are filtered by default', vitals.metricsHtml().includes('Showing 8 of 10 meters · 1 idle, 1 as noise hidden'), true);
+  vitals.clickIn(vitals.metricsHtml(), 'Hide heartbeat');
+  check('the noise filter can be turned off', vitals.metricsHtml().includes('Showing 9 of 10 meters · 1 idle hidden'), true);
+}
+
+// 14c. The last click, split into the wire, the server and the browser. The
+// round trip and the render come from the browser collector.
+{
+  const click = harness('/orders');
+  const now = Date.now();
+  click.win.__vaadinMicrometer = {
+    latest: (name) =>
+      name === 'vaadin.client.request.duration'
+        ? { valueMs: 12.9, ts: now }
+        : name === 'vaadin.client.render.duration'
+          ? { valueMs: 4.5, ts: now }
+          : null
+  };
+  click.open();
+  click.meters({
+    timestamp: now,
+    meters: SESSION_METERS,
+    lastInteraction: {
+      timestamp: now - 20,
+      route: 'orders',
+      view: 'OrderView',
+      component: 'com.vaadin.flow.component.button.Button',
+      caption: 'Save <now>',
+      event: 'click',
+      outcome: 'success',
+      serverMs: 4.5,
+      invocations: 1
+    }
+  });
+  const html = click.html('anatomy');
+  check('the title names the component, caption and view, escaped', html.includes('Click on [Button &quot;Save &lt;now&gt;&quot;] in [OrderView]'), true);
+  check('the total is the round trip plus the render', html.includes('17.4<span'), true);
+  check('the network is the round trip less the server', html.includes('8.4 ms'), true);
+  check('a click is judged against the INP budget', html.includes('Instant · INP budget 100 ms'), true);
+
+  // A browser sample from long before the interaction is some other click.
+  click.win.__vaadinMicrometer.latest = (name) => ({ valueMs: 99, ts: now - 60000 });
+  click.panel.render();
+  check('a stale browser sample is not used', click.html('anatomy').includes('Needs client metrics'), true);
 }
 
 // 15. A typed parameter carries its regex after the modifier, which is where
