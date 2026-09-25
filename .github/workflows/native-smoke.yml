@@ -56,10 +56,14 @@ jobs:
           mkdir -p ~/.vaadin/
           echo '{"username":"'$(echo $TB_LICENSE | cut -d / -f1)'","proKey":"'$(echo $TB_LICENSE | cut -d / -f2)'"}' > ~/.vaadin/proKey
 
-      # Install the kit modules (micrometer, spring, starter) to the local repo.
-      # skipITs keeps the observability-kit-tests reactor out of this build.
+      # Install the kit modules (micrometer, spring, starter) and the shared test
+      # base (with the observability-kit-tests parent POM) to the local repo, so
+      # the later single-module builds resolve them from these sources instead
+      # of from a published snapshot of the same version.
       - name: Install kit modules
-        run: mvn -B -ntp -DskipTests -DskipITs install -pl observability-kit-starter -am
+        run: >
+          mvn -B -ntp -DskipTests install -am
+          -pl observability-kit-starter,observability-kit-tests/observability-kit-tests-common
 
       # Build the test app as a native image (production frontend + Spring AOT +
       # native-image). `package` stops before the integration-test phase, so the
@@ -67,7 +71,7 @@ jobs:
       - name: Build native image
         run: >
           mvn -B -ntp -Pproduction,native -DskipTests package
-          -pl observability-kit-tests/observability-kit-tests-common,observability-kit-tests/observability-kit-tests-starter
+          -pl observability-kit-tests/observability-kit-tests-starter
 
       - name: Start native server
         working-directory: observability-kit-tests/observability-kit-tests-starter
