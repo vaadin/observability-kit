@@ -44,6 +44,7 @@ public class VaadinObservabilityEndpoint {
         }
         return new InsightsService(ObservabilityKit.getRecentInteractions(),
                 ObservabilityKit.getRecentQueries(),
-                ObservabilityKit.getRecentClientErrors()).payload();
+                ObservabilityKit.getRecentClientErrors(),
+                ObservabilityKit.getRetainedStateGrowth()).payload();
     }
 }

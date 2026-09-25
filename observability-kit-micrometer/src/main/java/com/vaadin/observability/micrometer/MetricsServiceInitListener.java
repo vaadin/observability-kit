@@ -347,6 +347,12 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             service.addUIInitListener(uiStateBinder);
             service.addSessionDestroyListener(uiStateBinder);
             uiStateBinder.register(service.getEventBus());
+            if (settings.isInsights()
+                    && settings.getUiStateGrowthSamples() > 0) {
+                // A view collection that keeps growing is reported by class
+                // and field, which a low-cardinality gauge cannot carry.
+                ObservabilityKit.setRetainedStateGrowth(uiStateBinder::growing);
+            }
         }
 
         if (settings.isErrors()) {

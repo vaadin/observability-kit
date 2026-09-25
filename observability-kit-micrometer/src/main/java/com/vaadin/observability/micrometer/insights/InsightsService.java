@@ -38,6 +38,10 @@ import org.jspecify.annotations.Nullable;
  * collector rather than the interaction buffer, and are the one insight kind
  * that can describe a failure the server never saw — and the one whose grouping
  * key is partly the browser's to choose, hence the cap.</li>
+ * <li>{@code growing-view-state}: collections views hold in their own fields
+ * that keep growing across measurements of their UI, grouped by field. These
+ * come from the UI state measurement rather than a buffer, so they describe the
+ * UIs open now rather than past events.</li>
  * </ul>
  * The output is a stable, AI-agent-readable contract: an agent with access to
  * the application codebase can open {@code evidence.applicationFrame} (or the
@@ -110,6 +114,8 @@ public class InsightsService {
 
     private final @Nullable RecentClientErrors clientErrors;
 
+    private final @Nullable RetainedStateGrowth growth;
+
     /**
      * @param buffer
      *            the interactions recorded so far, or {@code null} when the kit
@@ -147,9 +153,31 @@ public class InsightsService {
     public InsightsService(@Nullable RecentInteractions buffer,
             @Nullable RecentQueries queries,
             @Nullable RecentClientErrors clientErrors) {
+        this(buffer, queries, clientErrors, null);
+    }
+
+    /**
+     * @param buffer
+     *            retained interactions, or {@code null} when the interaction
+     *            collector was not registered
+     * @param queries
+     *            retained data provider queries, or {@code null} when the query
+     *            collector was not registered
+     * @param clientErrors
+     *            retained browser errors, or {@code null} when the in-browser
+     *            collector was not registered
+     * @param growth
+     *            the view collections currently growing, or {@code null} when
+     *            UI state measurement does not read them
+     */
+    public InsightsService(@Nullable RecentInteractions buffer,
+            @Nullable RecentQueries queries,
+            @Nullable RecentClientErrors clientErrors,
+            @Nullable RetainedStateGrowth growth) {
         this.queries = queries;
         this.buffer = buffer;
         this.clientErrors = clientErrors;
+        this.growth = growth;
     }
 
     public Map<String, Object> payload() {
@@ -160,8 +188,7 @@ public class InsightsService {
         // consumer cannot act on the second one without being told.
         payload.put("instrumentation",
                 buffer == null && queries == null && clientErrors == null
-                        ? "inactive"
-                        : "active");
+                        && growth == null ? "inactive" : "active");
         List<Map<String, Object>> insights = new ArrayList<>();
         if (buffer != null) {
             insights.addAll(insights());
@@ -171,6 +198,9 @@ public class InsightsService {
         }
         if (clientErrors != null) {
             insights.addAll(clientErrorInsights());
+        }
+        if (growth != null) {
+            insights.addAll(growingStateInsights());
         }
         payload.put("insights", insights);
         return payload;
@@ -352,6 +382,111 @@ public class InsightsService {
                     return example;
                 }).toList());
         return insight;
+    }
+
+    /**
+     * Insights for view collections that keep growing: one per field, so the
+     * same view accumulating in a hundred tabs is one finding with a hundred
+     * occurrences. The largest first, since that is where the heap goes.
+     */
+    private List<Map<String, Object>> growingStateInsights() {
+        return groups(growth.snapshot(), state -> true, GrowingViewState::field)
+                .stream()
+                .map(group -> group.stream().sorted(Comparator
+                        .comparingInt(GrowingViewState::elements).reversed())
+                        .toList())
+                .sorted(Comparator
+                        .comparingInt((List<GrowingViewState> group) -> group
+                                .get(0).elements())
+                        .reversed())
+                .map(InsightsService::growingStateInsight).toList();
+    }
+
+    private static Map<String, Object> growingStateInsight(
+            List<GrowingViewState> group) {
+        // Sorted largest first, so the head is the worst occurrence.
+        GrowingViewState largest = group.get(0);
+        String field = simpleField(largest.field());
+
+        Map<String, Object> insight = new LinkedHashMap<>();
+        insight.put("type", "growing-view-state");
+        insight.put("severity", "warning");
+        insight.put("category", "capacity");
+        insight.put("summary",
+                text("%s keeps growing: %,d elements, up from %,d over %d "
+                        + "measurements without ever shrinking (%d UI%s). "
+                        + "Its component tree does not grow with it, so this "
+                        + "is heap no UI state gauge accounts for.", field,
+                        largest.elements(), largest.firstElements(),
+                        largest.growthSamples(), group.size(),
+                        group.size() == 1 ? "" : "s"));
+
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("route", largest.route());
+        evidence.put("view", largest.viewClass());
+        evidence.put("field", largest.field());
+        evidence.put("elements", largest.elements());
+        evidence.put("firstElements", largest.firstElements());
+        evidence.put("growthSamples", largest.growthSamples());
+        evidence.put("occurrences", group.size());
+        evidence.put("firstSeen",
+                group.stream().map(GrowingViewState::firstSeen)
+                        .min(Comparator.naturalOrder()).orElseThrow()
+                        .toString());
+        evidence.put("lastSeen", group.stream().map(GrowingViewState::lastGrew)
+                .max(Comparator.naturalOrder()).orElseThrow().toString());
+        evidence.put("measures",
+                "elements is the size of the collection in the field, plus the "
+                        + "sizes of collections nested directly inside it; "
+                        + "growthSamples counts the measurements of the UI "
+                        + "that found it larger than the one before, and none "
+                        + "since firstElements found it smaller. UIs are "
+                        + "measured as their users interact, so an idle "
+                        + "user's figures are as of their last interaction");
+        insight.put("evidence", evidence);
+
+        insight.put("replay", List.of(
+                largest.route() == null
+                        ? text("Open a view using %s", simpleName(
+                                largest.viewClass()))
+                        : text("Open route '%s'", largest.route()),
+                "Repeat the interaction that updates the view — a refresh, a "
+                        + "filter, a poll — without navigating away",
+                text("Expect %s to hold more elements after each repetition",
+                        field)));
+
+        insight.put("suggestion",
+                text("Inspect %s. A view that adds what it loads to a field "
+                        + "instead of replacing it holds every earlier result "
+                        + "for as long as the tab is open, so its cost grows "
+                        + "with how long a user keeps it rather than with what "
+                        + "is on screen. An AI agent with codebase access "
+                        + "should open that field, find what adds to it, and "
+                        + "keep only what the view still needs — the latest "
+                        + "result, or a bounded window of them.",
+                        largest.field()));
+
+        insight.put("examples",
+                group.stream().limit(EXAMPLES_PER_INSIGHT).map(state -> {
+                    Map<String, Object> example = new LinkedHashMap<>();
+                    example.put("at", state.lastGrew().toString());
+                    example.put("elements", state.elements());
+                    example.put("firstElements", state.firstElements());
+                    example.put("growthSamples", state.growthSamples());
+                    example.put("sessionId", state.sessionId());
+                    example.put("uiId", state.uiId());
+                    return example;
+                }).toList());
+        return insight;
+    }
+
+    /** {@code SimpleClass.field} from {@code com.example.SimpleClass.field}. */
+    private static String simpleField(String field) {
+        int dot = field.lastIndexOf('.');
+        if (dot < 0) {
+            return field;
+        }
+        return simpleName(field.substring(0, dot)) + field.substring(dot);
     }
 
     /**

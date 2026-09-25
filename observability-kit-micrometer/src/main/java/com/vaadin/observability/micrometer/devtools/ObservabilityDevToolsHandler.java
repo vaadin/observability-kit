@@ -29,6 +29,8 @@ import com.vaadin.base.devserver.DevToolsInterface;
 import com.vaadin.base.devserver.DevToolsMessageHandler;
 import com.vaadin.observability.micrometer.ObservabilityKit;
 import com.vaadin.observability.micrometer.insights.InsightsService;
+import com.vaadin.observability.micrometer.insights.LatestInteraction;
+import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
 /**
  * Dev-mode bridge between the live Micrometer {@link MeterRegistry} and the
@@ -83,7 +85,34 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("timestamp", System.currentTimeMillis());
         payload.put("meters", snapshot());
+        payload.put("lastInteraction", lastInteraction());
         devToolsInterface.send(COMMAND_METRICS, payload);
+    }
+
+    /**
+     * The latest interaction, for the panel's "your last interaction" view.
+     * Carried with the meters rather than the insights, because the insights
+     * payload is the documented endpoint's and this is not a finding.
+     */
+    private static Map<String, Object> lastInteraction() {
+        RecentInteractions interactions = ObservabilityKit
+                .getRecentInteractions();
+        LatestInteraction latest = interactions == null ? null
+                : interactions.latest();
+        if (latest == null) {
+            return null;
+        }
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("timestamp", latest.timestamp().toEpochMilli());
+        entry.put("route", latest.route());
+        entry.put("view", latest.view());
+        entry.put("component", latest.component());
+        entry.put("caption", latest.caption());
+        entry.put("event", latest.event());
+        entry.put("outcome", latest.outcome());
+        entry.put("serverMs", latest.serverMs());
+        entry.put("invocations", latest.invocations());
+        return entry;
     }
 
     /**
@@ -104,7 +133,8 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
         devToolsInterface.send(COMMAND_INSIGHTS_DATA,
                 new InsightsService(ObservabilityKit.getRecentInteractions(),
                         ObservabilityKit.getRecentQueries(),
-                        ObservabilityKit.getRecentClientErrors()).payload());
+                        ObservabilityKit.getRecentClientErrors(),
+                        ObservabilityKit.getRetainedStateGrowth()).payload());
     }
 
     private List<Map<String, Object>> snapshot() {

@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.List;
+
 /**
  * What one UI's server-side state looked like at the moment it was measured by
  * {@link UiStateSampler}.
@@ -35,7 +37,14 @@ package com.vaadin.observability.micrometer;
  *            off by a clock adjustment. A UI is measured while its own session
  *            lock is held, so a sample of an idle user's UI is as old as their
  *            last interaction
+ * @param retained
+ *            the collections the UI's views held in their own fields, see
+ *            {@link RetainedCollections}; empty when that measurement is off
  */
 record UiStateSample(int nodes, int components, int views, int staleViews,
-        long sampledAtNanos) {
+        long sampledAtNanos, List<RetainedCollection> retained) {
+
+    UiStateSample {
+        retained = List.copyOf(retained);
+    }
 }

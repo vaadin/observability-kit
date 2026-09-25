@@ -52,6 +52,11 @@
 
   var buffer = [];
 
+  // The most recent sample per meter name, value and time only. Read by the
+  // development-mode Copilot panel, which breaks the user's last interaction
+  // down into round trip and render; flushing does not clear it.
+  var latestSamples = {};
+
   // The batch handed to the server and not yet answered for, if any. It stays
   // in the persisted copy until the answer arrives, since the send is
   // asynchronous and a tab that closes while it is in flight takes the request
@@ -168,6 +173,7 @@
     }
     offlineBaseline.set(sample, offlineElapsed());
     buffer.push(sample);
+    latestSamples[name] = { valueMs: valueMs, ts: sample.ts };
     if (offline()) {
       // Only worth the write while the samples are at risk: a reload during an
       // outage would otherwise lose exactly the reports that explain it.
@@ -1267,6 +1273,10 @@
     flush: flush,
     bufferSize: function () {
       return buffer.length;
+    },
+    latest: function (name) {
+      var sample = latestSamples[name];
+      return sample ? { valueMs: sample.valueMs, ts: sample.ts } : null;
     }
   };
 })();
