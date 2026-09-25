@@ -349,11 +349,19 @@
   // Renders a meter's value cell from the type-aware fields sent by the server.
   function formatMeterValue(meter) {
     var unit = meter.unit ? ' ' + meter.unit : '';
-    // Timer / DistributionSummary: cumulative mean is the stable figure; count
-    // gives weight; max is shown only when non-zero (it decays to 0 between
-    // polls in SimpleMeterRegistry).
+    // Timer / DistributionSummary: the max decays over the registry's window
+    // while the meter's own mean is cumulative, so the mean shown is the one
+    // the server took over that same window. When the window saw no samples
+    // the cumulative mean is shown instead, and says so - otherwise a burst
+    // that has aged out of the max would still be in the mean, and the row
+    // would read as mean > max. Count gives weight; max is shown only when
+    // non-zero (it decays to 0 once the window is empty).
     if (typeof meter.mean === 'number') {
-      var parts = ['mean ' + num(meter.mean) + unit];
+      var parts = [
+        typeof meter.recentMean === 'number'
+          ? 'mean ' + num(meter.recentMean) + unit
+          : 'mean ' + num(meter.mean) + unit + ' (all time)'
+      ];
       if (typeof meter.max === 'number' && meter.max > 0) {
         parts.push('max ' + num(meter.max) + unit);
       }
@@ -371,9 +379,44 @@
     // Unknown meter type fallback.
     return (meter.measurements || [])
       .map(function (m) {
-        return m.statistic + ': ' + num(m.value, 3);
+        return statisticLabel(m.statistic) + ': ' + num(m.value, 3);
       })
       .join(', ');
+  }
+
+  // Micrometer's statistic names are enum constants: 'ACTIVE_TASKS' reads as
+  // 'Active tasks' here.
+  function statisticLabel(statistic) {
+    var words = String(statistic).toLowerCase().split('_').join(' ');
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  }
+
+  // The line under the metrics header saying what a timer's mean covers. Only
+  // shown when a meter has a mean at all.
+  function meanNote(meters, windowSeconds) {
+    var hasMean = meters.some(function (meter) {
+      return typeof meter.mean === 'number';
+    });
+    if (!hasMean) {
+      return '';
+    }
+    var window =
+      typeof windowSeconds === 'number' && windowSeconds > 0
+        ? windowSeconds % 60 === 0
+          ? windowSeconds / 60 + (windowSeconds === 60 ? ' minute' : ' minutes')
+          : windowSeconds + ' seconds'
+        : 'few minutes';
+    return (
+      '<div style="margin-top:6px;font-size:11px;color:var(--dev-tools-text-color-secondary,#888)">' +
+      esc(
+        'Mean and max cover the last ' +
+          window +
+          '; n counts every sample since startup. ' +
+          "A mean marked 'all time' is shown when the panel saw no samples " +
+          'in that window, and includes everything since startup.'
+      ) +
+      '</div>'
+    );
   }
 
   var SEVERITY_WEIGHT = { error: 0, warning: 1 };
@@ -1269,7 +1312,11 @@
         .join('');
 
       this._metersEl.innerHTML =
-        header + '<div style="padding:0 12px 12px">' + body + '</div>';
+        header +
+        '<div style="padding:0 12px 12px">' +
+        meanNote(meters, latest.recentWindowSeconds) +
+        body +
+        '</div>';
     }
   }
 

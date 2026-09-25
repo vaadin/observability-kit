@@ -8,12 +8,14 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -119,6 +121,38 @@ class ObservabilityDevToolsHandlerTest {
         // insights whether or not it is: answering with both would put the
         // whole registry on the wire for a watch that never reads it.
         Assertions.assertEquals(List.of(COMMAND_METRICS), devTools.commands);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> meterNamed(String name) {
+        return ((List<Map<String, Object>>) devTools.payloads
+                .get(COMMAND_METRICS).get("meters")).stream()
+                .filter(meter -> name.equals(meter.get("name"))).findFirst()
+                .orElseThrow();
+    }
+
+    @Test
+    void timer_recentMeanIsOverTheSamplesSinceTheLastPoll() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilityKit.setActiveMeterRegistry(registry);
+        Timer timer = registry.timer("vaadin.rpc.duration");
+        timer.record(Duration.ofSeconds(1));
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+        // One poll has nothing to compare with: the cumulative mean is all
+        // there is, and the panel labels it as such.
+        Assertions.assertFalse(
+                meterNamed("vaadin.rpc.duration").containsKey("recentMean"));
+        Assertions.assertEquals(120L, devTools.payloads.get(COMMAND_METRICS)
+                .get("recentWindowSeconds"));
+
+        timer.record(Duration.ofMillis(10));
+        timer.record(Duration.ofMillis(30));
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        Map<String, Object> meter = meterNamed("vaadin.rpc.duration");
+        Assertions.assertEquals(20.0, (double) meter.get("recentMean"), 0.001);
+        Assertions.assertEquals(1040.0 / 3, (double) meter.get("mean"), 0.001);
     }
 
     @Test

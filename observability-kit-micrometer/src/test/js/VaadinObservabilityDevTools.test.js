@@ -596,4 +596,38 @@ check('every server message was claimed on the event bus', app.unclaimed(), 0);
   check('with the ellipsis last', message.endsWith('…'), true);
 }
 
+// 19. A timer's mean is the one over the window its max decays over, so a
+// burst that has aged out of the max does not leave the row reading mean >
+// max. Without samples in the window the cumulative mean is shown, labelled.
+// Raw statistics of an unknown meter type read as words, not enum constants.
+{
+  const timers = harness('/reports');
+  timers.open();
+  timers.meters({
+    timestamp: loaded + 1000,
+    recentWindowSeconds: 120,
+    meters: [
+      { name: 'vaadin.rpc.duration', type: 'TIMER', tags: {}, count: 30, mean: 800, recentMean: 12, max: 40, unit: 'ms' },
+      { name: 'vaadin.request.duration', type: 'TIMER', tags: {}, count: 5, mean: 900, unit: 'ms' },
+      {
+        name: 'vaadin.session.lock',
+        type: 'LONG_TASK_TIMER',
+        tags: {},
+        measurements: [
+          { statistic: 'ACTIVE_TASKS', value: 1 },
+          { statistic: 'DURATION', value: 2 },
+          { statistic: 'MAX', value: 3 }
+        ]
+      }
+    ]
+  });
+  const html = timers.metricsHtml();
+  check('the windowed mean is the one shown', html.includes('mean 12 ms · max 40 ms'), true);
+  check('the cumulative mean is not shown beside it', html.includes('mean 800'), false);
+  check('a mean without window samples says it is all time', html.includes('mean 900 ms (all time)'), true);
+  check('the note says what the mean covers', html.includes('Mean and max cover the last 2 minutes'), true);
+  check('statistics read as words', html.includes('Active tasks: 1, Duration: 2, Max: 3'), true);
+  check('not as enum constants', html.includes('ACTIVE_TASKS'), false);
+}
+
 process.exit(failures === 0 ? 0 : 1);
