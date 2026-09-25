@@ -317,9 +317,9 @@ reporting the values of the most recent occurrence.
 
 Add the Spring module to your Vaadin Spring application, import the
 configuration, and provide a `MeterRegistry` bean. The module does not bring
-`vaadin-spring` or Spring Framework itself (`spring-context`, and `spring-web`
-for the HTTP observation hooks); they come from your application, and importing
-`org.springframework:spring-framework-bom` keeps their versions aligned:
+Spring Framework itself (`spring-context`, and `spring-web` for the HTTP
+observation hooks); it comes from your application, and importing
+`org.springframework:spring-framework-bom` keeps the versions aligned:
 
 ```xml
 <dependency>
