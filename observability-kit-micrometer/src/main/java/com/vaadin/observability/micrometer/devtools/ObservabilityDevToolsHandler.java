@@ -9,15 +9,18 @@
 package com.vaadin.observability.micrometer.devtools;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.FunctionCounter;
 import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.LongTaskTimer;
 import io.micrometer.core.instrument.Measurement;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -58,6 +61,13 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
     /** Only meters under this prefix are exposed to the panel. */
     private static final String METER_PREFIX = "vaadin.";
 
+    /**
+     * Readings kept across polls to give timers and summaries a mean over the
+     * window their max covers. One per handler, and there is one handler per
+     * dev-tools server.
+     */
+    private final RecentMeans recentMeans = new RecentMeans();
+
     @Override
     public void handleConnect(DevToolsInterface devToolsInterface) {
         // Push an initial pair; the panel also pulls on demand.
@@ -80,9 +90,17 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
     }
 
     private void sendSnapshot(DevToolsInterface devToolsInterface) {
+        long now = System.currentTimeMillis();
+        MeterRegistry bound = ObservabilityKit.getActiveMeterRegistry();
+        MeterSource source = bound == null ? null : MeterSource.of(bound);
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("timestamp", System.currentTimeMillis());
-        payload.put("meters", snapshot());
+        payload.put("timestamp", now);
+        payload.put("recentWindowSeconds", RecentMeans.WINDOW.toSeconds());
+        // Tells the panel that n, mean and totals are the registry's last
+        // publishing interval, so it does not call them "since startup".
+        payload.put("perInterval", source != null && source.perInterval());
+        payload.put("meters",
+                source == null ? List.of() : snapshot(source, now));
         devToolsInterface.send(COMMAND_METRICS, payload);
     }
 
@@ -107,17 +125,15 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
                         ObservabilityKit.getRecentClientErrors()).payload());
     }
 
-    private List<Map<String, Object>> snapshot() {
+    private List<Map<String, Object>> snapshot(MeterSource source, long now) {
         List<Map<String, Object>> meters = new ArrayList<>();
-        MeterRegistry registry = ObservabilityKit.getActiveMeterRegistry();
-        if (registry == null) {
-            return meters;
-        }
-        for (Meter meter : registry.getMeters()) {
+        Set<Meter.Id> live = new HashSet<>();
+        for (Meter meter : source.registry().getMeters()) {
             Meter.Id id = meter.getId();
             if (!id.getName().startsWith(METER_PREFIX)) {
                 continue;
             }
+            live.add(id);
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("name", id.getName());
             entry.put("type", id.getType().name());
@@ -127,15 +143,32 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
                 tags.put(tag.getKey(), tag.getValue());
             }
             entry.put("tags", tags);
+            // What the meter measures, in the words of whoever registered it:
+            // "held by the largest single session" is what stops a .max gauge
+            // from being read as a peak.
+            if (id.getDescription() != null) {
+                entry.put("description", id.getDescription());
+            }
 
             // Emit derived, interpretable values per meter type rather than raw
-            // statistics. For timers the cumulative mean is the stable, useful
-            // figure (TOTAL_TIME is an ever-growing sum and the SimpleMeter
-            // registry's MAX decays to 0 between polls).
+            // statistics. For timers and summaries the max decays over the
+            // registry's distributionStatisticExpiry while a cumulative mean()
+            // does not, so the two can disagree to the point of mean > max.
+            // recentMean is taken over the same window as the max; mean stays
+            // the cumulative figure for when the window saw no samples.
             if (meter instanceof Timer timer) {
                 entry.put("count", timer.count());
                 entry.put("mean", timer.mean(TimeUnit.MILLISECONDS));
+                putRecentMean(entry, source, id, timer.count(),
+                        timer.totalTime(TimeUnit.MILLISECONDS), now);
                 entry.put("max", timer.max(TimeUnit.MILLISECONDS));
+                entry.put("unit", "ms");
+            } else if (meter instanceof LongTaskTimer tasks) {
+                // The tasks running right now. Its raw DURATION is the sum of
+                // their elapsed times in the registry's base unit, seconds for
+                // most, which read as milliseconds beside the timers.
+                entry.put("active", tasks.activeTasks());
+                entry.put("longest", tasks.max(TimeUnit.MILLISECONDS));
                 entry.put("unit", "ms");
             } else if (meter instanceof Counter counter) {
                 entry.put("count", (long) counter.count());
@@ -143,9 +176,14 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
                 entry.put("count", (long) counter.count());
             } else if (meter instanceof Gauge gauge) {
                 entry.put("value", gauge.value());
+                if (id.getBaseUnit() != null) {
+                    entry.put("unit", id.getBaseUnit());
+                }
             } else if (meter instanceof DistributionSummary summary) {
                 entry.put("count", summary.count());
                 entry.put("mean", summary.mean());
+                putRecentMean(entry, source, id, summary.count(),
+                        summary.totalAmount(), now);
                 entry.put("max", summary.max());
                 if (id.getBaseUnit() != null) {
                     entry.put("unit", id.getBaseUnit());
@@ -163,6 +201,30 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
             }
             meters.add(entry);
         }
+        recentMeans.retainOnly(live);
         return meters;
+    }
+
+    /**
+     * Adds {@code recentMean} when the last {@link RecentMeans#WINDOW} saw any
+     * samples. Left out rather than sent as zero otherwise: a zero would read
+     * as "instant", where the truth is "nothing happened".
+     * <p>
+     * A step registry's count and total already cover only its last interval,
+     * and drop back at every boundary, so differencing them across polls means
+     * nothing: its own mean is the recent one.
+     */
+    private void putRecentMean(Map<String, Object> entry, MeterSource source,
+            Meter.Id id, long count, double total, long now) {
+        if (source.perInterval()) {
+            if (count > 0) {
+                entry.put("recentMean", total / count);
+            }
+            return;
+        }
+        double recentMean = recentMeans.record(id, count, total, now);
+        if (!Double.isNaN(recentMean)) {
+            entry.put("recentMean", recentMean);
+        }
     }
 }
