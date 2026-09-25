@@ -763,5 +763,47 @@ function err(message, stack) {
       timing(all), [['request', '/orders/17', 180]]);
   }
 
+  // 9. Loading the module is not attaching the element. The module is in the
+  //    bundle of every application with the kit, client metrics or not, so
+  //    only the element the server attaches may start the collector; and a
+  //    module evaluated a second time must not define the element again.
+  {
+    let defined = null;
+    let defines = 0;
+    const registry = {
+      get: (tag) => (tag === 'vaadin-metrics-collector' ? defined : undefined),
+      define: (tag, type) => { defines++; defined = type; }
+    };
+    const win = {
+      handlers: {},
+      addEventListener(name, cb) { (this.handlers[name] = this.handlers[name] || []).push(cb); },
+      location: { pathname: '/x', href: 'https://app.example.com/x' },
+      sessionStorage: { store: {}, getItem(k) { return this.store[k] === undefined ? null : this.store[k]; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } }
+    };
+    const load = () => new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', 'customElements', 'HTMLElement', src)(
+      win,
+      { querySelector: () => null, addEventListener() {}, visibilityState: 'visible' },
+      { getEntriesByType: () => [], now: () => 0 },
+      function () { throw new Error('unsupported'); },
+      {},
+      () => 0,
+      () => 0,
+      registry,
+      class {}
+    );
+
+    load();
+    check('loading the module defines the element', defines, 1);
+    check('but installs nothing', win.__vaadinMicrometerInstalled, undefined);
+    check('and listens to nothing', Object.keys(win.handlers), []);
+
+    load();
+    check('a second load does not define the element again', defines, 1);
+
+    new defined().connectedCallback();
+    check('attaching the element installs the collector', win.__vaadinMicrometerInstalled, true);
+    check('which then listens for errors', (win.handlers.error || []).length > 0, true);
+  }
+
   process.exit(failures === 0 ? 0 : 1);
 })();
