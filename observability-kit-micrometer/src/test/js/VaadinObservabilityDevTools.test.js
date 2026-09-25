@@ -630,4 +630,85 @@ check('every server message was claimed on the event bus', app.unclaimed(), 0);
   check('not as enum constants', html.includes('ACTIVE_TASKS'), false);
 }
 
+// 20. The rest of the row kinds say what their figure covers: running tasks
+// rather than raw long-task statistics, a '.max' gauge as the largest right
+// now, a counter with what this page has seen it add, a sub-millisecond mean
+// with its digits, and the meter's own description on hover.
+{
+  const rows = harness('/reports');
+  rows.open();
+  const snapshot = (at, errors, running) => ({
+    timestamp: loaded + at,
+    recentWindowSeconds: 120,
+    meters: [
+      { name: 'vaadin.navigation.active', type: 'LONG_TASK_TIMER', tags: {}, active: running, longest: 120.5, unit: 'ms' },
+      { name: 'vaadin.session.uis.max', type: 'GAUGE', tags: {}, value: 3, description: 'Most UIs (browser tabs) held open by one session' },
+      { name: 'vaadin.errors', type: 'COUNTER', tags: {}, count: errors },
+      { name: 'vaadin.rpc.duration', type: 'TIMER', tags: {}, count: 9, mean: 5, recentMean: 0.034, max: 0.05, unit: 'ms' }
+    ]
+  });
+  rows.meters(snapshot(1000, 3, 0));
+  check('a long task timer with nothing running says so', rows.metricsHtml().includes('>idle<'), true);
+  check('an unchanged counter is just its total', rows.metricsHtml().includes('>3<'), true);
+
+  rows.meters(snapshot(4000, 5, 2));
+  const html = rows.metricsHtml();
+  check('running tasks and the longest of them', html.includes('2 running · longest 120.5 ms'), true);
+  check('a .max gauge is the largest right now', html.includes('3 (largest now)'), true);
+  check('the description is on the name', html.includes('title="Most UIs (browser tabs) held open by one session"'), true);
+  check('a counter says what this page saw it add', html.includes('5 · +2 since page load'), true);
+  check('a sub-millisecond mean keeps its digits', html.includes('mean 0.034 ms'), true);
+  check('the counter sparkline plots what each poll added', html.includes('<title>2 to 2 per poll over 3 s of polling</title>'), false);
+  check('and needs two additions to draw', html.includes('per poll over'), false);
+  check('the note explains counters', html.includes('Counts are totals since startup'), true);
+
+  rows.meters(snapshot(7000, 6, 2));
+  check('the counter sparkline is titled with its range and span', rows.metricsHtml().includes('<title>1 to 2 per poll over 6 s of polling</title>'), true);
+
+  // A silence longer than a few polls is a gap, not a line across it, and
+  // the counter does not plot the whole gap's additions as one poll's.
+  rows.meters(snapshot(60000, 50, 2));
+  check('what a gap added is not plotted', rows.metricsHtml().includes('44 per poll'), false);
+  check('the span covers the gap', rows.metricsHtml().includes('<title>0 to 2 running over 59 s of polling</title>'), true);
+  const svg = rows.metricsHtml().split('<svg').find((part) => part.includes('running over'));
+  check('the gap breaks the line into a line and a lone point', [svg.split('<polyline').length - 1, svg.split('<circle').length - 1], [1, 1]);
+}
+
+// 22. The sparkline's scale starts at zero: a mean moving from 10.0 to 10.4 ms
+// is a ripple near the top, not the full height of the drawing.
+{
+  const ripple = harness('/reports');
+  ripple.open();
+  [10, 10.4, 10.2].forEach((mean, i) =>
+    ripple.meters({
+      timestamp: loaded + 1000 + i * 3000,
+      meters: [{ name: 'vaadin.rpc.duration', type: 'TIMER', tags: {}, count: 9 + i, mean: 9, recentMean: mean, unit: 'ms' }]
+    })
+  );
+  const points = ripple.metricsHtml().split('points="')[1].split('"')[0].split(' ');
+  const ys = points.map((p) => Number(p.split(',')[1]));
+  check('every point sits in the top of the drawing', ys.every((y) => y < 3), true);
+}
+
+// 21. A registry that reports per publishing interval: n and mean are its last
+// interval, so neither is called 'since startup' or 'all time'.
+{
+  const step = harness('/reports');
+  step.open();
+  step.meters({
+    timestamp: loaded + 1000,
+    recentWindowSeconds: 120,
+    perInterval: true,
+    meters: [
+      { name: 'vaadin.rpc.duration', type: 'TIMER', tags: {}, count: 5, mean: 8, recentMean: 8, max: 20, unit: 'ms' },
+      { name: 'vaadin.request.duration', type: 'TIMER', tags: {}, count: 0, mean: 0, unit: 'ms' }
+    ]
+  });
+  const html = step.metricsHtml();
+  check('n is the last interval', html.includes('mean 8 ms · max 20 ms · n=5 last interval'), true);
+  check('an empty interval has no samples rather than an all-time mean', html.includes('no samples · n=0 last interval'), true);
+  check('nothing claims to be all time', html.includes('all time'), false);
+  check('the note says the registry reports per interval', html.includes('reports per publishing interval'), true);
+}
+
 process.exit(failures === 0 ? 0 : 1);

@@ -14,9 +14,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
+import io.micrometer.core.instrument.Clock;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.LongTaskTimer;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.core.instrument.step.StepMeterRegistry;
+import io.micrometer.core.instrument.step.StepRegistryConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -153,6 +160,97 @@ class ObservabilityDevToolsHandlerTest {
         Map<String, Object> meter = meterNamed("vaadin.rpc.duration");
         Assertions.assertEquals(20.0, (double) meter.get("recentMean"), 0.001);
         Assertions.assertEquals(1040.0 / 3, (double) meter.get("mean"), 0.001);
+    }
+
+    @Test
+    void longTaskTimer_sendsTheRunningTasksInMilliseconds() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilityKit.setActiveMeterRegistry(registry);
+        LongTaskTimer.Sample running = LongTaskTimer
+                .builder("vaadin.navigation.active").register(registry).start();
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+        running.stop();
+
+        Map<String, Object> meter = meterNamed("vaadin.navigation.active");
+        Assertions.assertEquals(1, meter.get("active"));
+        Assertions.assertEquals("ms", meter.get("unit"));
+        Assertions.assertTrue(meter.containsKey("longest"));
+        Assertions.assertFalse(meter.containsKey("measurements"));
+    }
+
+    @Test
+    void gauge_sendsItsUnitAndDescription() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilityKit.setActiveMeterRegistry(registry);
+        Gauge.builder("vaadin.ui.state.sample.age.max", () -> 4)
+                .baseUnit("seconds").description("Age of the stalest sample")
+                .register(registry);
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        Map<String, Object> meter = meterNamed(
+                "vaadin.ui.state.sample.age.max");
+        Assertions.assertEquals("seconds", meter.get("unit"));
+        Assertions.assertEquals("Age of the stalest sample",
+                meter.get("description"));
+    }
+
+    @Test
+    void compositeWithAStepChild_isReadFromTheCumulativeOne() {
+        CompositeMeterRegistry composite = new CompositeMeterRegistry();
+        composite.add(stepRegistry());
+        composite.add(new SimpleMeterRegistry());
+        ObservabilityKit.setActiveMeterRegistry(composite);
+        Timer timer = composite.timer("vaadin.rpc.duration");
+        timer.record(Duration.ofMillis(10));
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        Assertions.assertEquals(false,
+                devTools.payloads.get(COMMAND_METRICS).get("perInterval"));
+        // The step child has not completed an interval, so it would say 0.
+        Assertions.assertEquals(1L,
+                meterNamed("vaadin.rpc.duration").get("count"));
+    }
+
+    @Test
+    void stepRegistryOnly_isSentAsPerInterval() {
+        StepMeterRegistry step = stepRegistry();
+        ObservabilityKit.setActiveMeterRegistry(step);
+        step.timer("vaadin.rpc.duration");
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        Assertions.assertEquals(true,
+                devTools.payloads.get(COMMAND_METRICS).get("perInterval"));
+        // Nothing in the last interval: no recent mean rather than a zero.
+        Assertions.assertFalse(
+                meterNamed("vaadin.rpc.duration").containsKey("recentMean"));
+    }
+
+    private static StepMeterRegistry stepRegistry() {
+        StepRegistryConfig config = new StepRegistryConfig() {
+            @Override
+            public String prefix() {
+                return "test";
+            }
+
+            @Override
+            public String get(String key) {
+                return null;
+            }
+        };
+        return new StepMeterRegistry(config, Clock.SYSTEM) {
+            @Override
+            protected void publish() {
+            }
+
+            @Override
+            protected TimeUnit getBaseTimeUnit() {
+                return TimeUnit.MILLISECONDS;
+            }
+        };
     }
 
     @Test

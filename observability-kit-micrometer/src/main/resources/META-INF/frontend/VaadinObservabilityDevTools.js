@@ -77,10 +77,20 @@
   // refresh round-trips.
   var latest = null;
   var latestInsights = null;
-  // Per-meter ring buffer of recent trend values, keyed by name+tags. Survives
-  // panel close/reopen (module scope) so the sparkline keeps its history.
+  // Per-meter ring buffer of recent trend points ({v, at}; v null marks a gap),
+  // keyed by name+tags. Survives panel close/reopen (module scope) so the
+  // sparkline keeps its history.
   var history = {};
   var HISTORY_MAX = 20;
+  // When the last snapshot was recorded. Meters are only polled while the
+  // panel is open, so a longer silence than a few polls is a gap in the
+  // sparkline rather than a straight line drawn across it.
+  var lastHistoryAt = null;
+  // A counter's value at the previous snapshot, to plot what it added per poll
+  // instead of a total that only ever climbs; and at the first snapshot this
+  // page saw, for the '+N since page load' beside the total.
+  var lastCount = {};
+  var firstCount = {};
 
   // Which insight rows the developer has opened, keyed by insightKey. At
   // module scope with the history for the same reason: closing the panel to
@@ -227,6 +237,11 @@
     if (Number.isInteger(value)) {
       return String(value);
     }
+    // Fixed decimals would print 0.03 ms as '0.0 ms'; below one, keep two
+    // significant digits instead.
+    if (Math.abs(value) < 1) {
+      return String(Number(value.toPrecision(2)));
+    }
     return value.toFixed(decimals == null ? 1 : decimals);
   }
 
@@ -268,16 +283,24 @@
     return meter.name + '|' + formatTags(meter.tags);
   }
 
-  // The single scalar plotted in the sparkline for this meter.
+  function isCounter(meter) {
+    return meter.type === 'COUNTER' || meter.type === 'FUNCTION_COUNTER';
+  }
+
+  // The single scalar plotted in the sparkline for this meter, or null for a
+  // poll with nothing to plot. The same figure the value cell shows, so the
+  // two cannot disagree: the windowed mean, not the cumulative one, and a gap
+  // where the window saw no samples rather than a zero that reads "instant".
+  // Counters are handled by recordHistory, which plots what each poll added.
   function trendValue(meter) {
     if (typeof meter.mean === 'number') {
-      return meter.mean;
+      return typeof meter.recentMean === 'number' ? meter.recentMean : null;
+    }
+    if (typeof meter.active === 'number') {
+      return meter.active;
     }
     if (typeof meter.value === 'number') {
       return meter.value;
-    }
-    if (typeof meter.count === 'number') {
-      return meter.count;
     }
     if (meter.measurements && meter.measurements.length) {
       return meter.measurements[0].value;
@@ -285,49 +308,111 @@
     return null;
   }
 
-  // Append this poll's trend value to each meter's ring buffer, and drop
+  // Append this poll's trend point to each meter's ring buffer, and drop
   // history for meters no longer reported so the map can't grow unbounded.
-  function recordHistory(meters) {
+  function recordHistory(meters, timestamp) {
+    var at = typeof timestamp === 'number' ? timestamp : Date.now();
+    var gap = lastHistoryAt !== null && at - lastHistoryAt > 3 * REFRESH_INTERVAL_MS;
+    lastHistoryAt = at;
     var live = {};
     (meters || []).forEach(function (meter) {
       var key = meterKey(meter);
       live[key] = true;
-      var v = trendValue(meter);
-      if (typeof v !== 'number' || !isFinite(v)) {
-        return;
-      }
       var buf = history[key] || (history[key] = []);
-      buf.push(v);
-      if (buf.length > HISTORY_MAX) {
+      if (gap && buf.length > 0) {
+        buf.push({ v: null, at: at });
+      }
+      var v;
+      if (isCounter(meter)) {
+        if (!(key in firstCount)) {
+          firstCount[key] = meter.count;
+        }
+        // What was added across a gap is not one poll's worth: it would draw
+        // as a spike that never happened.
+        v = key in lastCount && !gap ? meter.count - lastCount[key] : null;
+        lastCount[key] = meter.count;
+      } else {
+        v = trendValue(meter);
+      }
+      buf.push({ v: typeof v === 'number' && isFinite(v) ? v : null, at: at });
+      while (buf.length > HISTORY_MAX) {
         buf.shift();
       }
     });
     Object.keys(history).forEach(function (key) {
       if (!live[key]) {
         delete history[key];
+        delete lastCount[key];
+        delete firstCount[key];
       }
     });
   }
 
-  // Inline SVG sparkline for a series of values.
-  function sparkline(values) {
-    if (!values || values.length < 2) {
+  // Inline SVG sparkline for a meter's trend points. The scale starts at zero,
+  // so a mean going from 10.0 to 10.4 ms is a ripple rather than the full
+  // height; a null point breaks the line. The tooltip says what the range and
+  // the time span are, since the drawing has no axes.
+  function sparkline(points, unit) {
+    var values = (points || [])
+      .map(function (p) {
+        return p.v;
+      })
+      .filter(function (v) {
+        return v !== null;
+      });
+    if (values.length < 2) {
       return '';
     }
     var w = 84;
     var h = 18;
     var pad = 2;
-    var min = Math.min.apply(null, values);
-    var max = Math.max.apply(null, values);
-    var range = max - min || 1;
-    var n = values.length;
-    var pts = values
-      .map(function (v, i) {
-        var x = pad + (i / (n - 1)) * (w - 2 * pad);
-        var y = h - pad - ((v - min) / range) * (h - 2 * pad);
-        return x.toFixed(1) + ',' + y.toFixed(1);
+    var lo = Math.min(0, Math.min.apply(null, values));
+    var hi = Math.max(0, Math.max.apply(null, values));
+    var range = hi - lo || 1;
+    var n = points.length;
+    var segments = [];
+    var current = [];
+    points.forEach(function (p, i) {
+      if (p.v === null) {
+        if (current.length) {
+          segments.push(current);
+        }
+        current = [];
+        return;
+      }
+      var x = pad + (i / (n - 1)) * (w - 2 * pad);
+      var y = h - pad - ((p.v - lo) / range) * (h - 2 * pad);
+      current.push(x.toFixed(1) + ',' + y.toFixed(1));
+    });
+    if (current.length) {
+      segments.push(current);
+    }
+    var marks = segments
+      .map(function (pts) {
+        if (pts.length === 1) {
+          var xy = pts[0].split(',');
+          return (
+            '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="1" fill="currentColor"/>'
+          );
+        }
+        return (
+          '<polyline points="' +
+          pts.join(' ') +
+          '" fill="none" stroke="currentColor" stroke-width="1.25" ' +
+          'stroke-linejoin="round" stroke-linecap="round"/>'
+        );
       })
-      .join(' ');
+      .join('');
+    var suffix = unit ? ' ' + unit : '';
+    var seconds = Math.round((points[n - 1].at - points[0].at) / 1000);
+    var title =
+      num(Math.min.apply(null, values)) +
+      ' to ' +
+      num(Math.max.apply(null, values)) +
+      suffix +
+      ' over ' +
+      seconds +
+      ' s of polling';
     return (
       '<svg width="' +
       w +
@@ -338,16 +423,18 @@
       ' ' +
       h +
       '" style="display:block;color:var(--lumo-primary-color,#1676f3)">' +
-      '<polyline points="' +
-      pts +
-      '" fill="none" stroke="currentColor" stroke-width="1.25" ' +
-      'stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<title>' +
+      esc(title) +
+      '</title>' +
+      marks +
       '</svg>'
     );
   }
 
   // Renders a meter's value cell from the type-aware fields sent by the server.
-  function formatMeterValue(meter) {
+  // `perInterval` says the registry's counts and means cover its last
+  // publishing interval, not everything since startup.
+  function formatMeterValue(meter, perInterval) {
     var unit = meter.unit ? ' ' + meter.unit : '';
     // Timer / DistributionSummary: the max decays over the registry's window
     // while the meter's own mean is cumulative, so the mean shown is the one
@@ -360,21 +447,47 @@
       var parts = [
         typeof meter.recentMean === 'number'
           ? 'mean ' + num(meter.recentMean) + unit
-          : 'mean ' + num(meter.mean) + unit + ' (all time)'
+          : perInterval
+            ? 'no samples'
+            : 'mean ' + num(meter.mean) + unit + ' (all time)'
       ];
       if (typeof meter.max === 'number' && meter.max > 0) {
         parts.push('max ' + num(meter.max) + unit);
       }
       if (typeof meter.count === 'number') {
-        parts.push('n=' + meter.count);
+        parts.push('n=' + meter.count + (perInterval ? ' last interval' : ''));
       }
       return parts.join(' · ');
     }
-    if (typeof meter.value === 'number') {
-      return num(meter.value, 3);
+    // LongTaskTimer: the tasks running right now. Its longest is the longest
+    // still running, not a historical peak, so it goes with the count.
+    if (typeof meter.active === 'number') {
+      if (meter.active === 0) {
+        return 'idle';
+      }
+      return (
+        meter.active +
+        ' running · longest ' +
+        num(typeof meter.longest === 'number' ? meter.longest : 0) +
+        unit
+      );
     }
+    // Gauge: a reading taken now. A '.max' gauge is the largest current one -
+    // the largest UI, the busiest session - and falls when that one goes away,
+    // so it is not read as a peak.
+    if (typeof meter.value === 'number') {
+      var reading = num(meter.value, 3) + unit;
+      var dot = meter.name.lastIndexOf('.');
+      return meter.name.substring(dot + 1) === 'max' ? reading + ' (largest now)' : reading;
+    }
+    // Counter: a total since startup, which says nothing about whether it is
+    // still moving; what this page has seen it add does.
     if (typeof meter.count === 'number') {
-      return String(meter.count);
+      var key = meterKey(meter);
+      var added = key in firstCount ? meter.count - firstCount[key] : 0;
+      return added > 0
+        ? meter.count + ' · +' + added + ' since page load'
+        : String(meter.count);
     }
     // Unknown meter type fallback.
     return (meter.measurements || [])
@@ -391,30 +504,46 @@
     return words.charAt(0).toUpperCase() + words.slice(1);
   }
 
-  // The line under the metrics header saying what a timer's mean covers. Only
-  // shown when a meter has a mean at all.
-  function meanNote(meters, windowSeconds) {
+  // The note under the metrics header saying what the figures cover, for the
+  // kinds of meter actually on show. Empty when there are none of them.
+  function meterNotes(meters, snapshot) {
     var hasMean = meters.some(function (meter) {
       return typeof meter.mean === 'number';
     });
-    if (!hasMean) {
-      return '';
-    }
-    var window =
-      typeof windowSeconds === 'number' && windowSeconds > 0
-        ? windowSeconds % 60 === 0
-          ? windowSeconds / 60 + (windowSeconds === 60 ? ' minute' : ' minutes')
-          : windowSeconds + ' seconds'
-        : 'few minutes';
-    return (
-      '<div style="margin-top:6px;font-size:11px;color:var(--dev-tools-text-color-secondary,#888)">' +
-      esc(
+    var hasCounter = meters.some(isCounter);
+    var sentences = [];
+    if (hasMean && snapshot.perInterval) {
+      sentences.push(
+        "This application's registry reports per publishing interval: " +
+          'mean, max and n cover its last interval, not everything since startup.'
+      );
+    } else if (hasMean) {
+      var windowSeconds = snapshot.recentWindowSeconds;
+      var window =
+        typeof windowSeconds === 'number' && windowSeconds > 0
+          ? windowSeconds % 60 === 0
+            ? windowSeconds / 60 + (windowSeconds === 60 ? ' minute' : ' minutes')
+            : windowSeconds + ' seconds'
+          : 'few minutes';
+      sentences.push(
         'Mean and max cover the last ' +
           window +
           '; n counts every sample since startup. ' +
           "A mean marked 'all time' is shown when the panel saw no samples " +
           'in that window, and includes everything since startup.'
-      ) +
+      );
+    }
+    if (hasCounter) {
+      sentences.push(
+        'Counts are totals since startup; their sparklines show what each poll added.'
+      );
+    }
+    if (sentences.length === 0) {
+      return '';
+    }
+    return (
+      '<div style="margin-top:6px;font-size:11px;color:var(--dev-tools-text-color-secondary,#888)">' +
+      esc(sentences.join(' ')) +
       '</div>'
     );
   }
@@ -892,16 +1021,26 @@
           (tagText
             ? '<div style="color:#888;font-size:11px">' + esc(tagText) + '</div>'
             : '');
+        var perInterval = !!(latest && latest.perInterval);
         return (
           '<tr style="border-bottom:1px solid rgba(128,128,128,.15)">' +
-          '<td style="padding:5px 8px;vertical-align:top;word-break:break-word">' +
+          '<td style="padding:5px 8px;vertical-align:top;word-break:break-word"' +
+          (meter.description ? ' title="' + esc(meter.description) + '"' : '') +
+          '>' +
           nameCell +
           '</td>' +
           '<td style="padding:5px 8px;vertical-align:top;white-space:nowrap;font-variant-numeric:tabular-nums">' +
-          esc(formatMeterValue(meter)) +
+          esc(formatMeterValue(meter, perInterval)) +
           '</td>' +
           '<td style="padding:5px 8px;vertical-align:middle;width:84px">' +
-          sparkline(history[meterKey(meter)]) +
+          sparkline(
+            history[meterKey(meter)],
+            isCounter(meter)
+              ? 'per poll'
+              : typeof meter.active === 'number'
+                ? 'running'
+                : meter.unit
+          ) +
           '</td>' +
           '</tr>'
         );
@@ -1019,7 +1158,7 @@
         return true;
       }
       latest = data;
-      recordHistory(latest.meters);
+      recordHistory(latest.meters, latest.timestamp);
     } else if (command === COMMAND_INSIGHTS_DATA) {
       if (
         latestInsights &&
@@ -1314,7 +1453,7 @@
       this._metersEl.innerHTML =
         header +
         '<div style="padding:0 12px 12px">' +
-        meanNote(meters, latest.recentWindowSeconds) +
+        meterNotes(meters, latest) +
         body +
         '</div>';
     }
