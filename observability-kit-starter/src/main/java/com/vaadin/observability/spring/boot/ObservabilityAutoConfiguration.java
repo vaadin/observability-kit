@@ -28,6 +28,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Role;
 import org.springframework.core.Ordered;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
@@ -77,26 +78,6 @@ public class ObservabilityAutoConfiguration {
     }
 
     /**
-     * Registers the prototype {@link SpringResyncDetectionFilter}, which
-     * observes UIDL message resends and client-requested resynchronizations by
-     * inspecting UIDL request bodies. Runs at highest precedence so it wraps
-     * the request before any other filter consumes the body, and gated by
-     * {@code vaadin.observability.resync} (default {@code true}).
-     */
-    @Bean
-    @ConditionalOnBean(MeterRegistry.class)
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "vaadin.observability", name = "resync", havingValue = "true", matchIfMissing = true)
-    FilterRegistrationBean<SpringResyncDetectionFilter> resyncDetectionFilter(
-            MeterRegistry registry) {
-        FilterRegistrationBean<SpringResyncDetectionFilter> registration = new FilterRegistrationBean<>(
-                new SpringResyncDetectionFilter(registry));
-        registration.addUrlPatterns("/*");
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
-        return registration;
-    }
-
-    /**
      * Wraps {@link DataSource} beans to record {@code vaadin.db.fetch.rows}.
      * Opt-in via {@code vaadin.observability.database=true} since it reaches
      * outside the Vaadin runtime and adds a small per-row cost. Declared as an
@@ -113,6 +94,32 @@ public class ObservabilityAutoConfiguration {
             ObjectProvider<ObservabilitySettings> settings) {
         return new DataSourceFetchMetricsBeanPostProcessor(meterRegistry,
                 observationRegistry, settings);
+    }
+
+    /**
+     * Registers the prototype {@link SpringResyncDetectionFilter}, which
+     * observes UIDL message resends and client-requested resynchronizations by
+     * inspecting UIDL request bodies. Runs at highest precedence so it wraps
+     * the request before any other filter consumes the body, and gated by
+     * {@code vaadin.observability.resync} (default {@code true}). Only active
+     * when {@code spring-web} is on the classpath.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(OncePerRequestFilter.class)
+    static class ResyncDetectionFilterConfiguration {
+
+        @Bean
+        @ConditionalOnBean(MeterRegistry.class)
+        @ConditionalOnMissingBean
+        @ConditionalOnProperty(prefix = "vaadin.observability", name = "resync", havingValue = "true", matchIfMissing = true)
+        FilterRegistrationBean<SpringResyncDetectionFilter> resyncDetectionFilter(
+                MeterRegistry registry) {
+            FilterRegistrationBean<SpringResyncDetectionFilter> registration = new FilterRegistrationBean<>(
+                    new SpringResyncDetectionFilter(registry));
+            registration.addUrlPatterns("/*");
+            registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+            return registration;
+        }
     }
 
     /**
