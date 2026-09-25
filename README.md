@@ -7,8 +7,9 @@ records everything into your application's `MeterRegistry`, so it shows up in
 whatever backend you already use (Prometheus, OTLP, Graphite, …). Tracing spans
 are emitted through the Micrometer Observation API.
 
-It is a drop-in: with Spring Boot you **add one dependency and you're done** — no
-code, no annotations, no configuration required.
+It is a drop-in: with Spring Boot you **add the starter next to Spring Boot's
+Micrometer support and you're done** — no code, no annotations, no
+configuration required.
 
 > Observability Kit is a commercial Vaadin product. See [License](#license).
 
@@ -16,7 +17,8 @@ code, no annotations, no configuration required.
 
 - Java 21 or newer
 - Vaadin 25.3 or newer (Flow 25.3+)
-- A Micrometer `MeterRegistry` — the Spring Boot starter provides one out of the box
+- A Micrometer `MeterRegistry` — with Spring Boot, `spring-boot-starter-micrometer-metrics`
+  (included in `spring-boot-starter-actuator`) provides one out of the box
 - Spring Boot 4 (only for the `observability-kit-starter`; plain-Spring and
   standalone setups are also supported)
 
@@ -82,7 +84,7 @@ flowchart LR
 
 ## Getting started (Spring Boot)
 
-Add the starter:
+Add the starter and Spring Boot's Micrometer support:
 
 ```xml
 <dependency>
@@ -90,10 +92,20 @@ Add the starter:
     <artifactId>observability-kit-starter</artifactId>
     <version>5.0-SNAPSHOT</version>
 </dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-micrometer-metrics</artifactId>
+</dependency>
 ```
 
-That's the whole setup. On startup the kit auto-configures a `MeterRegistry`
-(through Spring Boot's Micrometer support) and wires the Vaadin instrumentation
+The starter does not bring Spring or Spring Boot dependencies of its own; the
+versions come from your application (the Spring Boot parent or BOM).
+`spring-boot-starter-actuator`, used below to export the metrics, already
+includes `spring-boot-starter-micrometer-metrics`, so you can declare that
+instead.
+
+That's the whole setup. On startup Spring Boot auto-configures a `MeterRegistry`
+and the kit wires the Vaadin instrumentation
 onto it. Sessions, UIs, navigation, request handling, errors and client-side
 timing all start recording automatically.
 
@@ -315,8 +327,9 @@ reporting the values of the most recent occurrence.
 
 ### Plain Spring (without Spring Boot)
 
-Add the Spring module, import the configuration, and provide a `MeterRegistry`
-bean:
+Add the Spring module next to your application's Spring Framework dependencies
+(`spring-context`, and `spring-web` for the HTTP observation hooks), import the
+configuration, and provide a `MeterRegistry` bean:
 
 ```xml
 <dependency>

@@ -52,9 +52,9 @@ class ObservabilityAutoConfigurationTest {
 
     /**
      * Real-starter behavior: with Boot's Micrometer metrics auto-configuration
-     * on the classpath (as the starter pulls it in) and no manually supplied
-     * registry, a {@link MeterRegistry} is wired out of the box and our
-     * listener activates on top of it.
+     * on the classpath (as the application declares it) and no manually
+     * supplied registry, a {@link MeterRegistry} is wired out of the box and
+     * our listener activates on top of it.
      */
     @Test
     void metricsAutoConfigurationPresent_wiresRegistryAndListener() {
