@@ -89,6 +89,10 @@
   // panel close/reopen (module scope) so the sparkline keeps its history.
   var history = {};
   var HISTORY_MAX = 20;
+  // The same for each key metric's aggregate across its tag values, keyed by
+  // its title: a key metric is one figure over many meters, so no single
+  // meter's history is its trend.
+  var keyHistory = {};
 
   // Which insight rows the developer has opened, keyed by insightKey. At
   // module scope with the history for the same reason: closing the panel to
@@ -335,6 +339,22 @@
     Object.keys(history).forEach(function (key) {
       if (!live[key]) {
         delete history[key];
+      }
+    });
+  }
+
+  // Append this poll's aggregate to each key metric's ring buffer. A key metric
+  // with no samples yet adds nothing, so its line starts with its first one.
+  function recordKeyHistory(meters) {
+    KEY_METRICS.forEach(function (def) {
+      var v = meanOf(meters, def.name, def.tags);
+      if (!hasNumber(v)) {
+        return;
+      }
+      var buf = keyHistory[def.keyTitle] || (keyHistory[def.keyTitle] = []);
+      buf.push(v);
+      if (buf.length > HISTORY_MAX) {
+        buf.shift();
       }
     });
   }
@@ -1129,12 +1149,18 @@
       keyTitle: 'Largest Contentful Paint',
       keyNote: 'Core Web Vital: when the main content becomes visible.',
       name: 'vaadin.client.web_vitals.lcp',
+      // The card is about the page in front of the developer, so it reads
+      // this browser's own LCP; the server's cumulative mean blends every
+      // reload into one figure and stays with the key metrics.
+      current: function () {
+        return browserSample('vaadin.client.web_vitals.lcp');
+      },
       budget: 2500,
       scaleLabel: '2.5 s Core Web Vitals',
-      note: function (meters) {
-        var fcp = meanOf(meters, 'vaadin.client.web_vitals.fcp');
+      note: function () {
+        var fcp = browserSample('vaadin.client.web_vitals.fcp');
         return esc(
-          'When the main content is visible.' +
+          'When the main content of this page load became visible.' +
             (hasNumber(fcp) ? ' First paint at ' + ms(fcp) + ' ms.' : '')
         );
       }
@@ -1143,11 +1169,13 @@
       title: 'Server bootstrap',
       name: 'vaadin.request.duration',
       tags: { 'vaadin.request.type': 'bootstrap' },
+      // This page's own bootstrap, for the same reason as LCP above.
+      current: documentServerMs,
       budget: 200,
       note: function () {
         return esc(
           'Creating the session and first UI on the server before anything ' +
-            'is sent.'
+            'was sent, for this page load.'
         );
       }
     }
@@ -1160,9 +1188,36 @@
   var VITAL_INTERACTION = VITALS[0];
   var VITAL_NAVIGATION = VITALS[2];
 
+  // How long the server took to answer the request for the page this panel
+  // runs in: request sent to first byte back, off the browser's navigation
+  // timing. In development the server is local, so the wire adds next to
+  // nothing and this is the bootstrap request's server time. Null when the
+  // browser keeps no navigation entry.
+  function documentServerMs() {
+    var nav;
+    try {
+      nav = window.performance.getEntriesByType('navigation')[0];
+    } catch (e) {
+      return null;
+    }
+    if (!nav || !(nav.requestStart > 0) || !(nav.responseStart >= nav.requestStart)) {
+      return null;
+    }
+    return nav.responseStart - nav.requestStart;
+  }
+
+  // A vital card judges the page currently open where it has a figure for it,
+  // and the server's count-weighted mean everywhere else.
+  function vitalValue(def, stat) {
+    if (def.current) {
+      return def.current();
+    }
+    return stat ? stat.mean : null;
+  }
+
   function vitalCard(def, meters) {
     var stat = aggregate(meters, def.name, def.tags);
-    var value = stat ? stat.mean : null;
+    var value = vitalValue(def, stat);
     var judged = verdict(value, def.budget, def.fast);
     return (
       '<div class="ok-card' + (judged && judged.tone !== 'good' ? ' ok-card-warn' : '') + '">' +
@@ -1555,6 +1610,8 @@
 
   function keyMetricsView(meters, total) {
     var rows = KEY_METRICS.map(function (def) {
+      // Always the server's figure, and its trend: the key metrics are the
+      // session so far, where the vital cards are the page open right now.
       var value = meanOf(meters, def.name, def.tags);
       var judged = verdict(value, def.budget);
       var spec = tagSpec(def.tags);
@@ -1564,6 +1621,7 @@
         '<div class="ok-note ok-flush">' + esc(def.keyNote) + '</div>' +
         '<div class="ok-note ok-flush ok-mono">' +
         esc(def.name + (spec ? ' · ' + spec : '')) + '</div></div>' +
+        '<div class="ok-key-trend">' + sparkline(keyHistory[def.keyTitle]) + '</div>' +
         '<div class="ok-key-value ok-mono">' +
         esc(hasNumber(value) ? ms(value) + ' ms' : '—') + '</div>' +
         '<div class="ok-key-badge">' + pill(judged, true) +
@@ -1668,7 +1726,7 @@
     '.ok-nowrap{white-space:nowrap}',
     '.ok-tip{margin-top:12px;border:1px solid rgba(217,115,13,.45);background:rgba(217,115,13,.07);' +
       'border-radius:6px;padding:10px 12px}',
-    '.ok-key{display:grid;grid-template-columns:1fr auto 76px;gap:10px;align-items:center;' +
+    '.ok-key{display:grid;grid-template-columns:1fr 84px auto 76px;gap:10px;align-items:center;' +
       'padding:9px 0;border-bottom:1px solid var(--ok-line)}',
     '.ok-key-value{font-size:14px;white-space:nowrap}',
     '.ok-key-badge{text-align:right;font-size:10px;color:var(--ok-muted)}',
@@ -1791,6 +1849,7 @@
         clockSkew = data.timestamp - Date.now();
       }
       recordHistory(latest.meters);
+      recordKeyHistory(latest.meters);
     } else if (command === COMMAND_INSIGHTS_DATA) {
       if (
         latestInsights &&

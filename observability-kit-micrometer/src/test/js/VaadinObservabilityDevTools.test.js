@@ -586,6 +586,56 @@ const SESSION_METERS = [
   check('the noise filter can be turned off', vitals.metricsHtml().includes('Showing 9 of 10 meters · 1 idle hidden'), true);
 }
 
+// 14b2. The LCP and bootstrap cards are this page load, read off the browser;
+// the key metrics stay with the server's cumulative mean and its trend.
+{
+  const lcp = harness('/orders');
+  lcp.win.performance = {
+    getEntriesByType: (type) =>
+      type === 'navigation' ? [{ requestStart: 10, responseStart: 172 }] : []
+  };
+  lcp.win.__vaadinMicrometer = {
+    latest: (name) =>
+      name === 'vaadin.client.web_vitals.lcp'
+        ? { valueMs: 3100, ts: Date.now() - 600000 }
+        : name === 'vaadin.client.web_vitals.fcp'
+          ? { valueMs: 800, ts: Date.now() - 600000 }
+          : null
+  };
+  lcp.open();
+  lcp.meters({
+    timestamp: Date.now(),
+    meters: SESSION_METERS.concat([
+      timer('vaadin.client.web_vitals.lcp', { route: '/orders' }, 900, 5),
+      timer('vaadin.client.web_vitals.fcp', { route: '/orders' }, 400, 5),
+      timer('vaadin.request.duration', { 'vaadin.request.type': 'bootstrap' }, 55, 4)
+    ])
+  });
+  const html = lcp.html('vitals');
+  check('the LCP card shows the browser sample, however old', html.includes('3100<span'), true);
+  check('not the server mean', html.includes('900<span'), false);
+  check('the first paint comes from the browser too', html.includes('First paint at 800 ms.'), true);
+  check('the bootstrap card is this page load', html.includes('162<span'), true);
+  check('not the bootstrap mean', html.includes('55<span'), false);
+  check('the LCP key metric is the server mean', lcp.html('key').includes('900 ms'), true);
+  check('one poll is no trend yet', lcp.html('key').includes('<polyline'), false);
+
+  lcp.meters({
+    timestamp: Date.now(),
+    meters: SESSION_METERS.concat([
+      timer('vaadin.client.web_vitals.lcp', { route: '/orders' }, 1100, 6)
+    ])
+  });
+  check('a second poll draws the key metric trend', lcp.html('key').includes('<polyline'), true);
+
+  lcp.win.__vaadinMicrometer = { latest: () => null };
+  lcp.win.performance = { getEntriesByType: () => [] };
+  lcp.meters({ timestamp: Date.now(), meters: SESSION_METERS });
+  const empty = lcp.html('vitals');
+  check('without a browser sample LCP has none', empty.includes('When the main content'), false);
+  check('without navigation timing bootstrap has none', empty.includes('for this page load.'), false);
+}
+
 // 14c. The last interaction, split into the wire, the server and the browser. The
 // round trip and the render come from the browser collector.
 {
