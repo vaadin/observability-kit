@@ -104,7 +104,7 @@ jobs:
           set -o pipefail
           # Everything up to the last slash is a prefix like feature/, fix/ or
           # chore/ and is dropped, leaving the branch name itself as the
-          # qualifier: fix/my-thing -> 5.0.my-thing-SNAPSHOT.
+          # qualifier: fix/my-thing -> 25.4.my-thing-SNAPSHOT.
           qualifier=$(printf '%s' "${_HEAD_REF##*/}" | sed -E 's/[^A-Za-z0-9.-]+/-/g; s/^[.-]+//; s/[.-]+$//')
           if [ -z "$qualifier" ]; then
             echo "🚫 Branch name \`$_HEAD_REF\` has no character a Maven version can carry" \
