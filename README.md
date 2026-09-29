@@ -397,7 +397,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.resync` | `true` | Observe UIDL message resends and client-requested resynchronizations. |
 | `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route, report the SQL queries behind each [slow data query insight](#what-a-slow-data-query-cost-in-the-database), and (when tracing is on) emit a span per query (Spring Boot starter only). |
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
-| `vaadin.observability.database-span-limit` | `100` | Most `vaadin.db.query` spans under any one parent span (request, RPC, data fetch). Queries past it are still timed and counted but get no span; the parent carries how many as `vaadin.db.queries.unspanned`. `0` spans no queries. See [N+1 loads and the span limit](#n1-loads-and-the-span-limit). |
+| `vaadin.observability.database-span-limit` | `100` | Most `vaadin.db.query` spans under any one parent span (request, RPC, data fetch). Queries past it are still timed and counted but get no span; the parent carries how many as `vaadin.db.queries.unspanned`. `0` spans no query that has a parent span. See [N+1 loads and the span limit](#n1-loads-and-the-span-limit). |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the HTTP session id as the `vaadin.session.id` attribute of the `vaadin.request.*` span. Span-only; it never becomes a metric tag. |
 | `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. In development mode a retained interaction also carries the caption of its component and the state its view was in — see [Replay steps that replay](#replay-steps-that-replay). |
@@ -1031,12 +1031,17 @@ So at most `vaadin.observability.database-span-limit` (default `100`) query
 spans are started under any one parent span — a Vaadin request, an RPC, or a
 data provider fetch. Past that, a query:
 
-- still counts toward the `vaadin.db.query` timer, so DB time per view is not
+- still gets its `vaadin.db.query` observation, so it counts toward the same
+  timer (with any tags your `ObservationFilter`s or
+  `management.observations.key-values.*` add) and an `ObservationPredicate`
+  that disables the observation applies to it too — DB time per view is not
   under-reported for exactly the load that is slow;
 - still counts toward the query and row totals of the
   [slow data query insight](#what-a-slow-data-query-cost-in-the-database);
-- gets no span of its own. Instead the parent span carries
-  `vaadin.db.queries.unspanned` with the number left out.
+- gets no span of its own: the starter registers a tracing handler ahead of
+  Spring Boot's default one that takes these observations and makes no span.
+  Instead the parent span carries `vaadin.db.queries.unspanned` with the
+  number left out.
 
 In a trace, an N+1 load therefore looks like a request or fetch span with
 `vaadin.db.queries.unspanned` set, the first 100 query spans under it (most

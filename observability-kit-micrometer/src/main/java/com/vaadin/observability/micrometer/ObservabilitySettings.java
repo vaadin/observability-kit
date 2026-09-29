@@ -176,7 +176,8 @@ public final class ObservabilitySettings {
      * {@code vaadin.db.queries.unspanned}. A query with no parent span is not
      * limited.
      *
-     * @return the most query spans per parent span, {@code 0} for none
+     * @return the most query spans per parent span, {@code 0} for none under a
+     *         parent span
      */
     public int getDatabaseSpanLimit() {
         return databaseSpanLimit;

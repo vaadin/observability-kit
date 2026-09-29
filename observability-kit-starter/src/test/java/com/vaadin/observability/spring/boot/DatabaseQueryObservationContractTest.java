@@ -59,8 +59,8 @@ class DatabaseQueryObservationContractTest {
         observations.observationConfig().observationHandler(recorder);
 
         // Statement capture on, rows known: the maximal attribute surface.
-        DatabaseQuerySpans spans = new DatabaseQuerySpans(observations, null,
-                true, 100);
+        DatabaseQuerySpans spans = new DatabaseQuerySpans(observations, true,
+                100);
         spans.start("select 1").stop(5);
 
         Observation.Context ctx = recorder.stopped;
@@ -81,8 +81,8 @@ class DatabaseQueryObservationContractTest {
         RecordingHandler recorder = new RecordingHandler();
         ObservationRegistry observations = ObservationRegistry.create();
         observations.observationConfig().observationHandler(recorder);
-        DatabaseQuerySpans spans = new DatabaseQuerySpans(observations, null,
-                false, 1);
+        DatabaseQuerySpans spans = new DatabaseQuerySpans(observations, false,
+                1);
 
         Observation parent = Observation.start("vaadin.data.fetch",
                 observations);

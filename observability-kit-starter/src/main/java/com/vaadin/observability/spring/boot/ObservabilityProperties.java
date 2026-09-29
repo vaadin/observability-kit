@@ -201,7 +201,8 @@ public class ObservabilityProperties {
      * Maximum number of {@code vaadin.db.query} spans under any one parent
      * span; queries past it are timed and counted but not spanned.
      *
-     * @return the most query spans per parent span, {@code 0} for none
+     * @return the most query spans per parent span, {@code 0} for none under a
+     *         parent span
      */
     public int getDatabaseSpanLimit() {
         return databaseSpanLimit;
