@@ -88,7 +88,7 @@ Add the starter:
 <dependency>
     <groupId>com.vaadin</groupId>
     <artifactId>observability-kit-starter</artifactId>
-    <version>5.0-SNAPSHOT</version>
+    <version>25.4-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -322,7 +322,7 @@ bean:
 <dependency>
     <groupId>com.vaadin</groupId>
     <artifactId>observability-kit-spring</artifactId>
-    <version>5.0-SNAPSHOT</version>
+    <version>25.4-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -348,7 +348,7 @@ from a `ServletContextListener` — so the registry is in place before the
 <dependency>
     <groupId>com.vaadin</groupId>
     <artifactId>observability-kit-micrometer</artifactId>
-    <version>5.0-SNAPSHOT</version>
+    <version>25.4-SNAPSHOT</version>
 </dependency>
 ```
 
