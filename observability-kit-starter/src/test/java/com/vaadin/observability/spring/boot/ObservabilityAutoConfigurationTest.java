@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
 import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
@@ -201,7 +202,24 @@ class ObservabilityAutoConfigurationTest {
                             DataSourceFetchMetricsBeanPostProcessor.class);
                     assertThat(context.getBean(DataSource.class))
                             .isInstanceOf(RowCountingDataSource.class);
+                    assertThat(context)
+                            .hasSingleBean(UnspannedQueryTracingHandler.class);
                 });
+    }
+
+    /**
+     * Without Micrometer Tracing there are no spans to keep queries out of, so
+     * the handler that does it is not registered.
+     */
+    @Test
+    void databaseMonitoringWithoutTracing_noUnspannedQueryHandler() {
+        contextRunner
+                .withClassLoader(
+                        new FilteredClassLoader("io.micrometer.tracing"))
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withPropertyValues("vaadin.observability.database=true")
+                .run(context -> assertThat(context)
+                        .doesNotHaveBean(UnspannedQueryTracingHandler.class));
     }
 
     /**
@@ -255,6 +273,18 @@ class ObservabilityAutoConfigurationTest {
                     assertThat(settings.isErrors()).isTrue();
                     assertThat(settings.isRequests()).isTrue();
                 });
+    }
+
+    @Test
+    void databaseSpanLimit_isBoundFromProperties() {
+        contextRunner
+                .withBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new)
+                .withPropertyValues(
+                        "vaadin.observability.database-span-limit=25")
+                .run(context -> assertThat(
+                        context.getBean(ObservabilitySettings.class)
+                                .getDatabaseSpanLimit())
+                        .isEqualTo(25));
     }
 
     /**

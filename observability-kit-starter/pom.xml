@@ -42,6 +42,13 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-micrometer-metrics</artifactId>
         </dependency>
+        <!-- Keeps queries past the span limit out of the trace; only engaged
+             when the application itself uses Micrometer Tracing. -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing</artifactId>
+            <optional>true</optional>
+        </dependency>
         <!-- SpringResyncDetectionFilter extends OncePerRequestFilter and is
              registered unconditionally; no longer brought in transitively by
              vaadin-spring. -->

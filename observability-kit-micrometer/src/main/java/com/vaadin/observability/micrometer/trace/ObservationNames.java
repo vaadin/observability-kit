@@ -161,6 +161,14 @@ public final class ObservationNames {
      * may be sensitive.
      */
     public static final String KEY_DB_STATEMENT = "db.statement";
+
+    /**
+     * Span-only key on the span a query ran under: how many of its queries got
+     * no {@link #DB_QUERY} span of their own because the span limit was
+     * reached. With the default limit, its presence is the mark of an N+1 load;
+     * with a limit of {@code 0} every parent that runs a query has it.
+     */
+    public static final String KEY_DB_QUERIES_UNSPANNED = "vaadin.db.queries.unspanned";
     /**
      * High-cardinality span attribute: the human-readable invocation name (DOM
      * event name, invoked method name, navigation location, ...). Span-only; it
