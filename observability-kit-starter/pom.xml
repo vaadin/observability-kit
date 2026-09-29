@@ -8,7 +8,7 @@
     <parent>
         <groupId>com.vaadin</groupId>
         <artifactId>observability-kit</artifactId>
-        <version>5.0-SNAPSHOT</version>
+        <version>25.4-SNAPSHOT</version>
     </parent>
 
     <artifactId>observability-kit-starter</artifactId>
@@ -42,12 +42,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-micrometer-metrics</artifactId>
         </dependency>
+<<<<<<< HEAD
         <!-- SpringResyncDetectionFilter extends OncePerRequestFilter; provided
              by the application's Spring MVC setup at runtime. -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-web</artifactId>
             <optional>true</optional>
+=======
+        <!-- SpringResyncDetectionFilter extends OncePerRequestFilter and is
+             registered unconditionally; no longer brought in transitively by
+             vaadin-spring. -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+>>>>>>> origin/main
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
