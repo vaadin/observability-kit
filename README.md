@@ -314,8 +314,12 @@ reporting the values of the most recent occurrence.
 
 ### Plain Spring (without Spring Boot)
 
-Add the Spring module, import the configuration, and provide a `MeterRegistry`
-bean:
+Add the Spring module to your Vaadin Spring application, import the
+configuration, and provide a `MeterRegistry` bean. The module brings
+`vaadin-spring`. Declare Spring Framework (`spring-context`, and `spring-web`
+for the HTTP observation hooks) in your application and import
+`org.springframework:spring-framework-bom`, so your application decides the
+Spring version:
 
 ```xml
 <dependency>
@@ -396,6 +400,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.resync` | `true` | Count client message resends, client-requested resynchronizations and unexpected message ids. |
 | `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route, report the SQL queries behind each [slow data query insight](#what-a-slow-data-query-cost-in-the-database), and (when tracing is on) emit a span per query (Spring Boot starter only). |
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
+| `vaadin.observability.database-span-limit` | `100` | Most `vaadin.db.query` spans under any one parent span (request, RPC, data fetch). Queries past it are still timed and counted but get no span; the parent carries how many as `vaadin.db.queries.unspanned`. `0` spans no query that has a parent span. See [N+1 loads and the span limit](#n1-loads-and-the-span-limit). |
 | `vaadin.observability.traces` | `true` | Emit tracing spans via the Observation API. |
 | `vaadin.observability.traces-session-id` | `false` | Include the HTTP session id as the `vaadin.session.id` attribute of the `vaadin.request.*` span. Span-only; it never becomes a metric tag. |
 | `vaadin.observability.insights` | `true` | Retain failed and over-budget user interactions, and the detail of errors browsers reported, so the insights endpoint can backtrack a user report to a replicable interaction. Requires `errors` for failures and `requests` for slow interactions; browser errors additionally require `client`. In development mode a retained interaction also carries the caption of its component and the state its view was in — see [Replay steps that replay](#replay-steps-that-replay). |
@@ -405,6 +410,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.client-rate-per-session` | `100` | Maximum client-side samples accepted per session (throttling guard). |
 | `vaadin.observability.ui-state-sample-interval` | `10000` | Minimum milliseconds between two measurements of the same UI. One measurement walks that UI's whole component tree under its session lock, so this is the knob that bounds the cost of the feature. |
 | `vaadin.observability.ui-state-bytes-per-node` | `0` | Bytes per state-tree node used for `vaadin.ui.state.size`; `0` publishes no byte figure. |
+| `vaadin.observability.ui-state-growth-samples` | `5` | Measurements a collection held in a view field has to grow in, without shrinking, before it is reported as growing (see [State outside the tree](#state-outside-the-tree)); `0` does not read view collections at all. |
 
 For plain Spring the same keys are read via `@Value`; for standalone use, build an
 `ObservabilitySettings` with the matching builder methods:
@@ -437,6 +443,9 @@ ObservabilitySettings.builder()
 | `vaadin.ui.state.sample.age.max` | Gauge | Age in seconds of the stalest per-UI measurement in the aggregate (opt-in). |
 | `vaadin.session.state.nodes.max` | Gauge | State-tree nodes held by the largest single session (opt-in, see `vaadin.observability.ui-state`). |
 | `vaadin.session.uis.max` | Gauge | Most UIs (browser tabs) held open by one session (opt-in, see `vaadin.observability.ui-state`). |
+| `vaadin.ui.state.retained.elements` | Gauge | Elements held in the collection fields of views across all UIs — state the state tree does not contain (opt-in, with `ui-state`). |
+| `vaadin.ui.state.retained.elements.max` | Gauge | Elements held by the largest single view field (opt-in, with `ui-state`). |
+| `vaadin.ui.state.retained.growing` | Gauge | View fields whose collection keeps growing across measurements without shrinking. Normally zero (opt-in, with `ui-state`). |
 | `vaadin.navigation` | Timer | Navigation duration (tagged by `route`, `outcome`). See [Navigation outcomes](#navigation-outcomes) for what a navigation that never completes is recorded as. |
 | `vaadin.request.duration` | Timer | Server-side request handling time, tagged by `vaadin.request.type`. See [Request types](#request-types). |
 | `vaadin.rpc.duration` | Timer | Server-side RPC invocation time (tagged by `type`). |
@@ -580,6 +589,52 @@ vaadin.observability.ui-state-bytes-per-node=96
 
 Divided into the heap headroom, that is an estimate of how many more tabs the
 instance can hold.
+
+### State outside the tree
+
+The tree gauges cannot see what a view keeps in its own fields. A view that
+appends each refresh to a `List` — to show what changed since the last one, say
+— grows on the heap every time while its component tree, and every gauge above,
+stays flat. Only the heap shows it, and the heap cannot say which view is to
+blame.
+
+So with `ui-state` on, each measurement also reads the collections views hold:
+the instance fields of every route target and router layout in the tree, and
+their superclasses up to the first Flow class, whose declared type is a
+`Collection`, a `Map` or an array. A field's size includes the collections
+nested directly inside it, so a `List<List<T>>` that gains a whole result set
+per refresh grows by that result set. The kit publishes the totals as
+`vaadin.ui.state.retained.elements` and `vaadin.ui.state.retained.elements.max`.
+
+It then follows each field of each view instance from one measurement of its UI
+to the next. A field that has grown at `ui-state-growth-samples` measurements
+(default 5) without shrinking in between is counted in
+`vaadin.ui.state.retained.growing`. A measurement that finds the size unchanged
+neither counts nor breaks the run, because measurements follow interactions, not
+the code that adds to the field. The gauge is normally zero, so it can be
+alerted on directly:
+
+```yaml
+- alert: VaadinViewStateGrowing
+  expr: max(vaadin_ui_state_retained_growing) > 0
+  for: 10m
+  annotations:
+    summary: A view keeps accumulating state; see /actuator/vaadin/observability
+```
+
+Which view and field is growing is not a tag, since that would add a series per
+view class. The insights endpoint reports it instead, as a
+`growing-view-state` insight: one per field, naming the class and field (for
+example `SpendingOverviewView.oldData`), how large it is in the worst UI, what
+it started from, and how many open UIs show the same growth.
+
+What is deliberately not read: only `java.util` implementations are asked for
+their size, because another collection may do work to answer (a lazy JPA
+association loads itself on `size()`), and nothing reachable from an element is
+followed. These count what a field holds, not how many bytes that is. Some
+collections legitimately grow for a while, like a chat log or rows a user keeps
+adding; raise `ui-state-growth-samples` if they report too early, or set it to
+`0` to turn the collection reading off.
 
 ## Error metrics
 
@@ -1016,6 +1071,36 @@ The span does not include the SQL text by default. Set
 `vaadin.observability.database-statement=true` to attach the parameterized
 statement as `db.statement` — useful for pinpointing the offending query, but
 opt-in because SQL is higher cardinality and can be sensitive.
+
+### N+1 loads and the span limit
+
+An N+1 load — one query for a list, then one more per row, typically an eager
+or lazily touched JPA relation — issues tens of thousands of queries for a
+single click. A span for each would overflow the tracing exporter's queue
+(OpenTelemetry's `BatchSpanProcessor` holds 2048 by default), and the exporter
+then drops spans from every request, not just the one at fault.
+
+So at most `vaadin.observability.database-span-limit` (default `100`) query
+spans are started under any one parent span — a Vaadin request, an RPC, or a
+data provider fetch. Past that, a query:
+
+- still gets its `vaadin.db.query` observation, so it counts toward the same
+  timer (with any tags your `ObservationFilter`s or
+  `management.observations.key-values.*` add) and an `ObservationPredicate`
+  that disables the observation applies to it too — DB time per view is not
+  under-reported for exactly the load that is slow;
+- still counts toward the query and row totals of the
+  [slow data query insight](#what-a-slow-data-query-cost-in-the-database);
+- gets no span of its own: the starter registers a tracing handler ahead of
+  Spring Boot's default one that takes these observations and makes no span.
+  Instead the parent span carries `vaadin.db.queries.unspanned` with the
+  number left out.
+
+In a trace, an N+1 load therefore looks like a request or fetch span with
+`vaadin.db.queries.unspanned` set, the first 100 query spans under it (most
+with `db.rows=1`), and one query with a large `db.rows` near their start. A query
+with no enclosing span, such as one on an application thread with no
+observation, has nothing to count against and is not limited.
 
 ## Tracing
 
