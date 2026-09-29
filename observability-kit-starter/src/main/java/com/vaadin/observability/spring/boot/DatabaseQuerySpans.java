@@ -9,6 +9,7 @@
 package com.vaadin.observability.spring.boot;
 
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
@@ -27,35 +28,95 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * The route is read from {@link VaadinTelemetryContext}; the row count is added
  * when the span stops. The SQL text is attached only when statement capture is
  * enabled, since it is higher cardinality and may be sensitive.
+ * <p>
+ * <b>Span limit.</b> An N+1 load issues one query per row, and a span per query
+ * turns one click into tens of thousands of spans: the tracing exporter's queue
+ * overflows and drops spans from every request, not only the one at fault. So
+ * at most {@code spanLimit} query spans are started under any one parent span.
+ * The count lives on the parent's observation context, so it covers exactly
+ * that span's lifetime and needs no reset. A query past the limit still gets
+ * its observation, so filters, predicates and the meter handler treat it like
+ * any other and the {@code vaadin.db.query} timer does not under-report exactly
+ * the load that is slow; but its context is an {@link UnspannedQueryContext},
+ * which {@link UnspannedQueryTracingHandler} claims ahead of the tracer so no
+ * span is made. The parent carries the number left out as
+ * {@link ObservationNames#KEY_DB_QUERIES_UNSPANNED}. A query with no current
+ * observation has no parent to count against and is not limited.
  */
 final class DatabaseQuerySpans {
 
+    /** Context key of the parent's {@link Budget}. */
+    private static final Object BUDGET_KEY = Budget.class;
+
     private final ObservationRegistry observationRegistry;
     private final boolean captureStatement;
+    private final int spanLimit;
 
+    /**
+     * @param observationRegistry
+     *            the registry query observations are started in
+     * @param captureStatement
+     *            whether to attach the SQL to the span
+     * @param spanLimit
+     *            the most query spans under one parent span
+     */
     DatabaseQuerySpans(ObservationRegistry observationRegistry,
-            boolean captureStatement) {
+            boolean captureStatement, int spanLimit) {
         this.observationRegistry = observationRegistry;
         this.captureStatement = captureStatement;
+        this.spanLimit = spanLimit;
+    }
+
+    /** Query spans started, and left out, under one parent span. */
+    private static final class Budget {
+        private final AtomicLong started = new AtomicLong();
+        private final AtomicLong unspanned = new AtomicLong();
     }
 
     /**
-     * Starts a query span, tagging the current route and (when enabled) the
-     * SQL. The caller must {@link QuerySpan#stop(long) stop} it when the result
-     * set closes.
+     * The context of a query past the span limit: timed and filtered like any
+     * query observation, but claimed by {@link UnspannedQueryTracingHandler} so
+     * the tracer makes no span for it.
+     */
+    static final class UnspannedQueryContext extends Observation.Context {
+    }
+
+    /**
+     * Starts a query span, tagging the current route and (when enabled) the SQL
+     * — or, when the parent span has used up its limit, an observation that
+     * gets no span. The caller must {@link QuerySpan#stop(long) stop} it when
+     * the result set closes.
      *
      * @param sql
      *            the SQL being executed, may be {@code null}
      * @return the in-flight span handle
      */
     QuerySpan start(String sql) {
-        Observation observation = Observation
-                .createNotStarted(ObservationNames.DB_QUERY,
+        Observation parent = observationRegistry.getCurrentObservation();
+        boolean spanned = true;
+        if (parent != null) {
+            Budget budget = parent.getContext().computeIfAbsent(BUDGET_KEY,
+                    key -> new Budget());
+            if (budget.started.incrementAndGet() > spanLimit) {
+                // Written on every query past the limit rather than once when
+                // the parent stops, which is not something to hook: the
+                // tracing handler reads it off the context at that point, so
+                // the last write is the one exported.
+                parent.highCardinalityKeyValue(
+                        ObservationNames.KEY_DB_QUERIES_UNSPANNED,
+                        Long.toString(budget.unspanned.incrementAndGet()));
+                spanned = false;
+            }
+        }
+        Observation observation = (spanned
+                ? Observation.createNotStarted(ObservationNames.DB_QUERY,
                         observationRegistry)
+                : Observation.createNotStarted(ObservationNames.DB_QUERY,
+                        UnspannedQueryContext::new, observationRegistry))
                 .contextualName(ObservationNames.DB_QUERY)
                 .lowCardinalityKeyValue(ObservationNames.KEY_ROUTE,
                         VaadinTelemetryContext.currentRoute());
-        if (captureStatement && sql != null) {
+        if (spanned && captureStatement && sql != null) {
             observation.highCardinalityKeyValue(
                     ObservationNames.KEY_DB_STATEMENT, sql);
         }
