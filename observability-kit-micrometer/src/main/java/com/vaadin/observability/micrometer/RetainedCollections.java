@@ -43,8 +43,10 @@ import org.slf4j.LoggerFactory;
  * asked for their size. Any other collection may do work to answer — a lazy JPA
  * association loads itself from the database on {@code size()} — and a
  * measurement must never be what issues a query or changes what the view holds.
- * Nothing reachable from an element is followed either: this counts what a
- * field holds, not how much heap that is.
+ * For the same reason the {@link java.util.Collections} wrappers are not read:
+ * they answer by asking the collection they wrap. Nothing reachable from an
+ * element is followed either: this counts what a field holds, not how much heap
+ * that is.
  * <p>
  * <strong>Threading:</strong> called during the state-tree walk, so under the
  * view's session lock. A collection that a background thread changes without
@@ -64,6 +66,12 @@ final class RetainedCollections {
 
     /** Package prefix of the collections trusted to answer without work. */
     private static final String JAVA_UTIL_PACKAGE = "java.util.";
+
+    /**
+     * Name prefix of the {@link java.util.Collections} views, which delegate to
+     * a collection that may not be trusted.
+     */
+    private static final String COLLECTIONS_WRAPPER_PREFIX = "java.util.Collections$";
 
     /**
      * The collection-typed fields of a class, found once per class: a tree
@@ -171,10 +179,17 @@ final class RetainedCollections {
 
     /**
      * Whether a collection can be asked for its size without doing work: only
-     * the JDK's own implementations are known to answer from memory.
+     * the JDK's own implementations are known to answer from memory. The
+     * {@link java.util.Collections} wrappers are not: an unmodifiable,
+     * synchronized or checked view passes {@code size()} and iteration on to
+     * whatever it wraps, which may be a lazy association. The empty and
+     * singleton ones among them never grow, so nothing is lost by leaving them
+     * out.
      */
     private static boolean isTrusted(Object value) {
-        return value.getClass().getName().startsWith(JAVA_UTIL_PACKAGE);
+        String name = value.getClass().getName();
+        return name.startsWith(JAVA_UTIL_PACKAGE)
+                && !name.startsWith(COLLECTIONS_WRAPPER_PREFIX);
     }
 
     private static List<Field> collectionFields(Class<?> type) {

@@ -10,6 +10,7 @@ package com.vaadin.observability.micrometer;
 
 import java.util.AbstractList;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -119,6 +120,24 @@ class UiStateMetricsBinderTest {
         private final LazyList lazy = new LazyList();
 
         LazyLayout() {
+            super(ElementFactory.createDiv());
+        }
+    }
+
+    /**
+     * A layout exposing a lazy collection through JDK wrappers, the way a
+     * getter returning {@code Collections.unmodifiableList(entity.getItems())}
+     * would.
+     */
+    private static class WrappedLazyLayout extends Component
+            implements RouterLayout {
+
+        private final LazyList lazy = new LazyList();
+        private final List<String> wrapped = Collections.unmodifiableList(lazy);
+        private final List<List<String>> nested = new ArrayList<>(
+                List.of(Collections.synchronizedList(lazy)));
+
+        WrappedLazyLayout() {
             super(ElementFactory.createDiv());
         }
     }
@@ -625,6 +644,21 @@ class UiStateMetricsBinderTest {
 
         assertEquals(0, view.lazy.sizeCalls);
         assertEquals(0.0, gauge(MeterNames.UI_STATE_RETAINED_ELEMENTS), 0.0);
+    }
+
+    @Test
+    void aJdkWrapperAroundAnUntrustedCollectionIsNeverAskedForItsSize() {
+        // Collections.unmodifiableList and friends pass size() and iteration
+        // on to what they wrap, so they are no safer than the lazy list.
+        Tab tab = tab(mock(VaadinSession.class));
+        WrappedLazyLayout view = new WrappedLazyLayout();
+        tab.navigateTo(view);
+
+        binder.uiInit(new UIInitEvent(tab.ui(), mock(VaadinService.class)));
+
+        assertEquals(0, view.lazy.sizeCalls);
+        // Only the outer ArrayList is counted: one element, the wrapper.
+        assertEquals(1.0, gauge(MeterNames.UI_STATE_RETAINED_ELEMENTS), 0.0);
     }
 
     @Test
