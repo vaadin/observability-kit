@@ -28,6 +28,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Role;
 import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
@@ -113,6 +114,23 @@ public class ObservabilityAutoConfiguration {
             ObjectProvider<ObservabilitySettings> settings) {
         return new DataSourceFetchMetricsBeanPostProcessor(meterRegistry,
                 observationRegistry, settings);
+    }
+
+    /**
+     * Keeps the queries past {@code vaadin.observability.database-span-limit}
+     * out of the trace. Ordered first so Spring Boot's first-matching tracing
+     * handler group hands those queries to it rather than to the tracer.
+     */
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(name = "io.micrometer.tracing.handler.TracingObservationHandler")
+    @ConditionalOnProperty(prefix = "vaadin.observability", name = "database", havingValue = "true")
+    static class UnspannedQueryTracingConfiguration {
+
+        @Bean
+        @Order(Ordered.HIGHEST_PRECEDENCE)
+        UnspannedQueryTracingHandler unspannedQueryTracingHandler() {
+            return new UnspannedQueryTracingHandler();
+        }
     }
 
     /**
