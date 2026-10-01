@@ -928,8 +928,9 @@
   // The vitals, the key metrics and the slowest-things table all ask the same
   // question of the snapshot: what does this meter, across every tag value it
   // was recorded with, average - and is that within a common budget. The
-  // budgets are the usual ones (Web Vitals' INP and LCP, and rules of thumb
-  // for the server side), a baseline to read against rather than a rule.
+  // budgets are the usual ones (Web Vitals' LCP, INP's 200 ms "good" bound for
+  // the round trip, and rules of thumb for the server side), a baseline to
+  // read against rather than a rule.
 
   var TAG_INTERACTION = 'vaadin.interaction';
   var TAG_REQUEST_TYPE = 'vaadin.request.type';
@@ -939,7 +940,12 @@
   var NOISE_INTERACTIONS = ['poll'];
   var CLIENT_REQUEST = 'vaadin.client.request.duration';
   var CLIENT_RENDER = 'vaadin.client.render.duration';
-  var INTERACTION_BUDGET_MS = 100;
+  // Web Vitals' "good" INP. The round trip is only part of what INP measures
+  // -- it leaves out input delay and the paint -- so it is held to the whole
+  // budget as an upper bound, not presented as the INP itself.
+  var INTERACTION_BUDGET_MS = 200;
+  // Under this a response reads as immediate (RAIL's 100 ms).
+  var INSTANT_MS = 100;
   // How far apart, on the server's clock, a browser sample and the server's
   // record of an interaction may be and still describe the same interaction.
   var CLIENT_MATCH_MS = 5000;
@@ -1078,12 +1084,12 @@
       keyNote: 'Round trip from user action to updated UI.',
       name: CLIENT_REQUEST,
       budget: INTERACTION_BUDGET_MS,
-      scaleLabel: INTERACTION_BUDGET_MS + ' ms feels instant · ' + INTERACTION_BUDGET_MS + ' ms INP budget',
+      scaleLabel: INSTANT_MS + ' ms feels instant · ' + INTERACTION_BUDGET_MS + ' ms good INP',
       fast: 'Instant',
       note: function (meters, stat) {
         return esc(
-          'Every Vaadin interaction is a server round trip. This is your ' +
-            "app's INP. Avg of " + stat.count + (stat.count === 1 ? ' interaction.' : ' interactions.')
+          'Every Vaadin interaction is a server round trip, and INP can be no ' +
+            'faster than it. Avg of ' + stat.count + (stat.count === 1 ? ' interaction.' : ' interactions.')
         );
       }
     },
@@ -1248,7 +1254,7 @@
       '<div class="ok-tile"><div class="ok-note ok-flush">' + esc(title) + '</div>' +
       '<div class="ok-mid ok-mono">' + esc(ms(total)) + '<span class="ok-unit">ms</span></div>' +
       '<div class="ok-note ok-flush">' +
-      esc(total <= budget ? within : 'Over the ' + budget + ' ms INP budget') +
+      esc(total <= budget ? within : 'Over the ' + budget + ' ms budget') +
       '</div></div>'
     );
   }
@@ -1410,7 +1416,7 @@
       '<span class="ok-unit">ms</span>' +
       (judged
         ? '<span class="ok-pill ok-' + judged.tone + ' ok-inline">' +
-          esc(judged.label + ' · INP budget ' + INTERACTION_BUDGET_MS + ' ms') + '</span>'
+          esc(judged.label + ' · good INP ≤ ' + INTERACTION_BUDGET_MS + ' ms') + '</span>'
         : '') +
       '</div>' +
       '<div class="ok-stack">' +

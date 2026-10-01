@@ -558,6 +558,8 @@ const SESSION_METERS = [
   const html = vitals.html('vitals');
   check('the interaction response is the count-weighted mean', html.includes('12.5<span'), true);
   check('far under its budget reads as instant', html.includes('>Instant<'), true);
+  check('the round trip is held to the good INP bound', html.includes('100 ms feels instant · 200 ms good INP'), true);
+  check('and is not passed off as the INP itself', html.includes("app's INP"), false);
   check('a navigation 30% over reads as slightly slow', html.includes('>Slightly slow<'), true);
   check('the navigation note carries the lifecycle', html.includes('48 ms in the navigation lifecycle'), true);
   check('tiny dev data is called out', html.includes('Dev data is tiny'), true);
@@ -567,7 +569,7 @@ const SESSION_METERS = [
   check('the preview starts at 80 ms', html.includes('93<span'), true);
   vitals.clickIn(vitals.html('vitals'), '>200 ms<');
   check('picking a latency re-estimates the interaction', vitals.html('vitals').includes('213<span'), true);
-  check('and says it is over budget', vitals.html('vitals').includes('Over the 100 ms INP budget'), true);
+  check('and says it is over budget', vitals.html('vitals').includes('Over the 200 ms budget'), true);
 
   // The slowest table leaves out what nothing has hit, and tips on the worst
   // one over its budget.
@@ -669,7 +671,7 @@ const SESSION_METERS = [
   check('the title names the component, caption and view, escaped', html.includes('Click on [Button &quot;Save &lt;now&gt;&quot;] in [OrderView]'), true);
   check('the total is the round trip plus the render', html.includes('17.4<span'), true);
   check('the network is the round trip less the server', html.includes('8.4 ms'), true);
-  check('an interaction is judged against the INP budget', html.includes('Instant · INP budget 100 ms'), true);
+  check('an interaction is judged against the good INP bound', html.includes('Instant · good INP ≤ 200 ms'), true);
 
   // A browser sample from long before the interaction is some other click.
   click.win.__vaadinMicrometer.latest = (name) => ({ valueMs: 99, ts: now - 60000 });
