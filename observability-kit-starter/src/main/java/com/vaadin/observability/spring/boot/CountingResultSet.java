@@ -54,14 +54,21 @@ final class CountingResultSet implements ResultSet {
     private final ResultSet delegate;
     private final DatabaseQuerySpans.QuerySpan span;
     private final DatabaseFetchMetrics metrics;
+    /**
+     * The proxied statement that produced this result set, returned by
+     * {@link #getStatement()} so that closing it through the result set still
+     * reaches the proxy and stops its span.
+     */
+    private final Statement statement;
     private long rows;
     private boolean recorded;
 
     CountingResultSet(ResultSet delegate, DatabaseQuerySpans.QuerySpan span,
-            DatabaseFetchMetrics metrics) {
+            DatabaseFetchMetrics metrics, Statement statement) {
         this.delegate = delegate;
         this.span = span;
         this.metrics = metrics;
+        this.statement = statement;
     }
 
     @Override
@@ -666,7 +673,7 @@ final class CountingResultSet implements ResultSet {
 
     @Override
     public Statement getStatement() throws SQLException {
-        return delegate.getStatement();
+        return statement != null ? statement : delegate.getStatement();
     }
 
     @Override

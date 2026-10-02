@@ -22,6 +22,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 import com.vaadin.observability.micrometer.DatabaseActivity;
@@ -82,7 +84,8 @@ final class RowCountingDataSource implements DataSource {
                 new ConnectionHandler(connection));
     }
 
-    private Statement wrapStatement(Statement statement, String sql) {
+    private Statement wrapStatement(Statement statement, String sql,
+            ConnectionHandler owner) {
         if (statement == null) {
             return null;
         }
@@ -91,17 +94,19 @@ final class RowCountingDataSource implements DataSource {
                 : statement instanceof PreparedStatement
                         ? PreparedStatement.class
                         : Statement.class;
+        StatementHandler handler = new StatementHandler(statement, sql, owner);
+        owner.openStatements.add(handler);
         return (Statement) Proxy.newProxyInstance(
                 Statement.class.getClassLoader(), new Class<?>[] { iface },
-                new StatementHandler(statement, sql));
+                handler);
     }
 
     private ResultSet wrapResultSet(ResultSet resultSet,
-            DatabaseQuerySpans.QuerySpan span) {
+            DatabaseQuerySpans.QuerySpan span, Statement statement) {
         if (resultSet == null) {
             return null;
         }
-        return new CountingResultSet(resultSet, span, metrics);
+        return new CountingResultSet(resultSet, span, metrics, statement);
     }
 
     /**
@@ -118,6 +123,15 @@ final class RowCountingDataSource implements DataSource {
 
     private final class ConnectionHandler implements InvocationHandler {
         private final Connection connection;
+        /**
+         * Statements created here and not yet closed through their proxy.
+         * Closing a connection implicitly closes its statements and result sets
+         * inside the driver (or pool), where our proxies never see it, so their
+         * in-flight spans are stopped from here. Bounded by what the driver
+         * itself holds open for this connection.
+         */
+        private final Set<StatementHandler> openStatements = ConcurrentHashMap
+                .newKeySet();
 
         ConnectionHandler(Connection connection) {
             this.connection = connection;
@@ -126,17 +140,33 @@ final class RowCountingDataSource implements DataSource {
         @Override
         public Object invoke(Object proxy, Method method, Object[] args)
                 throws Throwable {
+            String name = method.getName();
+            if (name.equals("close") || name.equals("abort")) {
+                try {
+                    return RowCountingDataSource.invoke(connection, method,
+                            args);
+                } finally {
+                    stopOpenStatements();
+                }
+            }
             Object result = RowCountingDataSource.invoke(connection, method,
                     args);
             if (result instanceof Statement statement) {
                 // prepareStatement/prepareCall carry the SQL up front; plain
                 // createStatement does not (its SQL arrives at executeQuery).
-                String sql = method.getName().startsWith("prepare")
-                        && args != null && args.length > 0
-                        && args[0] instanceof String s ? s : null;
-                return wrapStatement(statement, sql);
+                String sql = name.startsWith("prepare") && args != null
+                        && args.length > 0 && args[0] instanceof String s ? s
+                                : null;
+                return wrapStatement(statement, sql, this);
             }
             return result;
+        }
+
+        private void stopOpenStatements() {
+            for (StatementHandler statement : openStatements) {
+                statement.stopPending();
+            }
+            openStatements.clear();
         }
     }
 
@@ -144,17 +174,20 @@ final class RowCountingDataSource implements DataSource {
         private final Statement statement;
         /** SQL from prepareStatement/prepareCall, null for plain statements. */
         private final String preparedSql;
+        private final ConnectionHandler owner;
         /**
          * Span for the in-flight query, not yet stopped. Stopped when its
          * result set closes, when the statement is re-executed (the driver
          * implicitly closes the prior result set), or by the close() leak
-         * guard.
+         * guards of this statement and of its connection.
          */
         private DatabaseQuerySpans.QuerySpan pending;
 
-        StatementHandler(Statement statement, String preparedSql) {
+        StatementHandler(Statement statement, String preparedSql,
+                ConnectionHandler owner) {
             this.statement = statement;
             this.preparedSql = preparedSql;
+            this.owner = owner;
         }
 
         @Override
@@ -203,7 +236,7 @@ final class RowCountingDataSource implements DataSource {
             switch (name) {
             case "executeQuery" -> {
                 if (result instanceof ResultSet resultSet) {
-                    return wrapResultSet(resultSet, pending);
+                    return wrapResultSet(resultSet, pending, (Statement) proxy);
                 }
                 // No result set (unusual) — don't leak the span.
                 stopPending();
@@ -217,12 +250,13 @@ final class RowCountingDataSource implements DataSource {
             }
             case "getResultSet" -> {
                 if (result instanceof ResultSet resultSet) {
-                    return wrapResultSet(resultSet, pending);
+                    return wrapResultSet(resultSet, pending, (Statement) proxy);
                 }
             }
             case "close" -> {
                 // Result set never closed: stop the span so it isn't orphaned.
                 stopPending();
+                owner.openStatements.remove(this);
             }
             default -> {
                 // getGeneratedKeys() and other ResultSet-returning methods are
