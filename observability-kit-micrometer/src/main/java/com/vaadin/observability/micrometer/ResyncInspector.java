@@ -11,6 +11,8 @@ package com.vaadin.observability.micrometer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
+import java.util.concurrent.ConcurrentSkipListMap;
+
 import io.micrometer.core.instrument.MeterRegistry;
 
 import com.vaadin.flow.shared.ApplicationConstants;
@@ -23,8 +25,8 @@ import com.vaadin.flow.shared.ApplicationConstants;
  * This class is deliberately framework-agnostic (servlet API only) so it can
  * back both the portable {@link ResyncDetectionFilter} and Spring-specific
  * filters. It holds no state of its own; the {@code clientId} history lives in
- * the session, keyed by UI id, so it is bounded by and cleaned up with the
- * session.
+ * one session attribute, keyed by UI id and capped at {@link #MAX_TRACKED_UIS}
+ * UIs, so it is bounded within a session and cleaned up with it.
  */
 public final class ResyncInspector {
 
@@ -41,8 +43,25 @@ public final class ResyncInspector {
      */
     public static final int MAX_INSPECTED_BODY_BYTES = 1024 * 1024;
 
-    private static final String LAST_CLIENT_ID_ATTR_PREFIX = ResyncInspector.class
-            .getName() + ".lastClientId.";
+    /**
+     * The most UIs per session whose {@code clientId} is remembered. The UI id
+     * comes from the request, and nothing at servlet level sees a UI close, so
+     * without a bound every tab ever opened in a session — or every made-up id
+     * a client sends — would stay in it. Past the bound the lowest UI id is
+     * dropped: Flow hands ids out in increasing order, so that is the oldest
+     * tab, most likely closed. Forgetting a live one only means its next resend
+     * goes uncounted.
+     */
+    static final int MAX_TRACKED_UIS = 32;
+
+    /**
+     * One session attribute for all UIs: a {@link ConcurrentSkipListMap} of UI
+     * id to the last {@code clientId} seen, updated in place. A JDK type, so
+     * the session stays serializable without a kit class in it, and safe to
+     * serialize while another request changes it.
+     */
+    private static final String LAST_CLIENT_IDS_ATTR = ResyncInspector.class
+            .getName() + ".lastClientIds";
 
     private final ResyncDetector detector;
 
@@ -102,25 +121,73 @@ public final class ResyncInspector {
      * @param session
      *            the HTTP session holding per-UI state, or {@code null}
      * @param uiId
-     *            the UI id used to key the session attribute
+     *            the UI id the {@code clientId} is remembered under; one that
+     *            is not a non-negative integer names no UI, so nothing is
+     *            remembered for it
      * @param mutex
      *            the monitor to guard the read-modify-write on
      */
     public void inspect(String body, HttpSession session, String uiId,
             Object mutex) {
-        String attr = LAST_CLIENT_ID_ATTR_PREFIX + uiId;
+        int ui = parseUiId(uiId);
+        boolean remember = session != null && ui >= 0;
         synchronized (mutex) {
             int previous = ResyncDetector.NO_CLIENT_ID;
-            if (session != null
-                    && session.getAttribute(attr) instanceof Integer stored) {
-                previous = stored;
+            if (remember) {
+                ConcurrentSkipListMap<Integer, Integer> lastClientIds = lastClientIds(
+                        session);
+                if (lastClientIds != null) {
+                    previous = lastClientIds.getOrDefault(ui,
+                            ResyncDetector.NO_CLIENT_ID);
+                }
             }
 
             ResyncDetector.Result result = detector.inspect(body, previous);
 
-            if (session != null) {
-                session.setAttribute(attr, result.lastClientId());
+            if (remember) {
+                remember(session, ui, result.lastClientId());
             }
+        }
+    }
+
+    /**
+     * Stores the {@code clientId} into the session's map in place. Requests for
+     * different UIs may hold different locks (a container can hand out a new
+     * session object per request), so each one only touches its own entry of
+     * the shared map instead of writing back a copy that would undo another
+     * UI's concurrent update. The map is re-read here rather than reused from
+     * before the inspection, so only two requests creating the first map of a
+     * session can still lose one entry.
+     */
+    private static void remember(HttpSession session, int ui, int clientId) {
+        ConcurrentSkipListMap<Integer, Integer> lastClientIds = lastClientIds(
+                session);
+        if (lastClientIds == null) {
+            lastClientIds = new ConcurrentSkipListMap<>();
+        }
+        lastClientIds.put(ui, clientId);
+        while (lastClientIds.size() > MAX_TRACKED_UIS) {
+            lastClientIds.pollFirstEntry();
+        }
+        // Also for the stored instance: a replicating container only sees a
+        // change made through setAttribute.
+        session.setAttribute(LAST_CLIENT_IDS_ATTR, lastClientIds);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ConcurrentSkipListMap<Integer, Integer> lastClientIds(
+            HttpSession session) {
+        return session.getAttribute(
+                LAST_CLIENT_IDS_ATTR) instanceof ConcurrentSkipListMap<?, ?> map
+                        ? (ConcurrentSkipListMap<Integer, Integer>) map
+                        : null;
+    }
+
+    private static int parseUiId(String uiId) {
+        try {
+            return uiId == null ? -1 : Integer.parseInt(uiId);
+        } catch (NumberFormatException notAUiId) {
+            return -1;
         }
     }
 }

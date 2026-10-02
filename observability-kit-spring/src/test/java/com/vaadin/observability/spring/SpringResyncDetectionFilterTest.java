@@ -11,6 +11,7 @@ package com.vaadin.observability.spring;
 import jakarta.servlet.FilterChain;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Assertions;
@@ -23,8 +24,8 @@ import com.vaadin.observability.micrometer.ResyncInspector;
 
 class SpringResyncDetectionFilterTest {
 
-    private static final String LAST_CLIENT_ID_ATTR = ResyncInspector.class
-            .getName() + ".lastClientId.0";
+    private static final String LAST_CLIENT_IDS_ATTR = ResyncInspector.class
+            .getName() + ".lastClientIds";
 
     private final SpringResyncDetectionFilter filter = new SpringResyncDetectionFilter(
             new SimpleMeterRegistry());
@@ -39,8 +40,7 @@ class SpringResyncDetectionFilterTest {
 
         filter.doFilter(request, new MockHttpServletResponse(), readBody);
 
-        Assertions.assertEquals(0,
-                request.getSession().getAttribute(LAST_CLIENT_ID_ATTR));
+        Assertions.assertEquals(Map.of(0, 0), lastClientIds(request));
     }
 
     @Test
@@ -63,8 +63,7 @@ class SpringResyncDetectionFilterTest {
 
         filter.doFilter(request, new MockHttpServletResponse(), readBody);
 
-        Assertions.assertEquals(0,
-                request.getSession().getAttribute(LAST_CLIENT_ID_ATTR));
+        Assertions.assertEquals(Map.of(0, 0), lastClientIds(request));
     }
 
     @Test
@@ -80,8 +79,11 @@ class SpringResyncDetectionFilterTest {
 
         Assertions.assertEquals(body,
                 new String(seenByFlow[0], StandardCharsets.UTF_8));
-        Assertions.assertNull(
-                request.getSession().getAttribute(LAST_CLIENT_ID_ATTR));
+        Assertions.assertNull(lastClientIds(request));
+    }
+
+    private static Object lastClientIds(MockHttpServletRequest request) {
+        return request.getSession().getAttribute(LAST_CLIENT_IDS_ATTR);
     }
 
     private static MockHttpServletRequest uidl(String body) {
