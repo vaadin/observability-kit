@@ -15,6 +15,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinRequest;
@@ -68,6 +70,9 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * reflects them.
  */
 final class RequestMetricsBinder implements VaadinRequestInterceptor {
+
+    private static final Logger LOGGER = LoggerFactory
+            .getLogger(RequestMetricsBinder.class);
 
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
@@ -200,7 +205,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // enriches an observation the framework emits anyway (its uri tag on
         // http.server.requests is a metric, not a span), and it defaults to a
         // no-op for standalone deployments.
-        hooks.requestType(request, requestType(request));
+        callHook(() -> hooks.requestType(request, requestType(request)));
         if (useObservation()) {
             String type = requestType(request);
             if (!settings.isRequests()) {
@@ -354,7 +359,24 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // deployments, and deliberately not gated on the traces or errors
         // settings: this corrects the status of an observation the framework
         // emits anyway, rather than emitting new telemetry.
-        hooks.error(request, exception);
+        callHook(() -> hooks.error(request, exception));
+    }
+
+    /**
+     * Runs a call into the framework-level HTTP observation. The hooks are
+     * overridable integration code, and this interceptor still has cleanup to
+     * do after them — closing its scope and stopping its observation, which
+     * would otherwise stay current on the pooled thread — so a failing hook is
+     * logged and skipped rather than allowed to cut that short. Telemetry must
+     * never break the request it observes either.
+     */
+    private static void callHook(Runnable hook) {
+        try {
+            hook.run();
+        } catch (RuntimeException e) {
+            LOGGER.debug("HTTP observation hook failed; continuing without it",
+                    e);
+        }
     }
 
     @Override
@@ -383,7 +405,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             // exists to carry it — so root-span error monitoring still sees
             // the failure. Cannot double-mark: handleException sets
             // interceptorError.
-            hooks.error(request, handledError);
+            callHook(() -> hooks.error(request, handledError));
         }
         String outcome = wasError ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
@@ -416,12 +438,14 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             // on traces: the uri tag this feeds is a metric. Template-only
             // resolution: the concrete-location fallback would feed literal
             // paths (orders/17, orders/18, ...) into a bounded budget.
-            String route = routes.templateForActiveRoute(ui);
-            if (!MeterNames.ROUTE_UNKNOWN.equals(route)) {
-                // A blank template is the root route: for a UIDL request a
-                // view is always active, so blank cannot mean "no view".
-                hooks.route(request, route);
-            }
+            callHook(() -> {
+                String route = routes.templateForActiveRoute(ui);
+                if (!MeterNames.ROUTE_UNKNOWN.equals(route)) {
+                    // A blank template is the root route: for a UIDL request
+                    // a view is always active, so blank cannot mean "no view".
+                    hooks.route(request, route);
+                }
+            });
         }
         // Resolve the interaction once, for whichever path records: a UIDL
         // request takes the listener's marker (defaulting to the generic
