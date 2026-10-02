@@ -16,6 +16,26 @@ import com.vaadin.observability.micrometer.insights.RecentInteractions;
  */
 public final class ObservabilitySettings {
 
+    /**
+     * Largest accepted {@link #getInsightsCapacity()}. Each insights buffer is
+     * held in memory for the life of the service, up to three of them, so a
+     * misconfigured value would otherwise retain an unbounded amount.
+     */
+    public static final int MAX_INSIGHTS_CAPACITY = 10_000;
+
+    /**
+     * Largest accepted {@link #getRouteCardinalityLimit()}. The limit caps tag
+     * values that multiply with each other on {@code vaadin.errors}, so it
+     * bounds the series a metrics backend has to hold.
+     */
+    public static final int MAX_ROUTE_CARDINALITY_LIMIT = 1_000;
+
+    /**
+     * Largest accepted {@link #getDatabaseSpanLimit()}: the most query spans
+     * one parent span may carry before the rest are only counted.
+     */
+    public static final int MAX_DATABASE_SPAN_LIMIT = 10_000;
+
     private final boolean sessions;
     private final boolean uis;
     private final boolean uiState;
@@ -382,9 +402,11 @@ public final class ObservabilitySettings {
         }
 
         public Builder databaseSpanLimit(int databaseSpanLimit) {
-            if (databaseSpanLimit < 0) {
+            if (databaseSpanLimit < 0
+                    || databaseSpanLimit > MAX_DATABASE_SPAN_LIMIT) {
                 throw new IllegalArgumentException(
-                        "databaseSpanLimit must be >= 0, got "
+                        "databaseSpanLimit must be between 0 and "
+                                + MAX_DATABASE_SPAN_LIMIT + ", got "
                                 + databaseSpanLimit);
             }
             this.databaseSpanLimit = databaseSpanLimit;
@@ -392,9 +414,11 @@ public final class ObservabilitySettings {
         }
 
         public Builder routeCardinalityLimit(int routeCardinalityLimit) {
-            if (routeCardinalityLimit < 1) {
+            if (routeCardinalityLimit < 1
+                    || routeCardinalityLimit > MAX_ROUTE_CARDINALITY_LIMIT) {
                 throw new IllegalArgumentException(
-                        "routeCardinalityLimit must be >= 1, got "
+                        "routeCardinalityLimit must be between 1 and "
+                                + MAX_ROUTE_CARDINALITY_LIMIT + ", got "
                                 + routeCardinalityLimit);
             }
             this.routeCardinalityLimit = routeCardinalityLimit;
@@ -442,9 +466,11 @@ public final class ObservabilitySettings {
         }
 
         public Builder insightsCapacity(int insightsCapacity) {
-            if (insightsCapacity < 1) {
+            if (insightsCapacity < 1
+                    || insightsCapacity > MAX_INSIGHTS_CAPACITY) {
                 throw new IllegalArgumentException(
-                        "insightsCapacity must be >= 1, got "
+                        "insightsCapacity must be between 1 and "
+                                + MAX_INSIGHTS_CAPACITY + ", got "
                                 + insightsCapacity);
             }
             this.insightsCapacity = insightsCapacity;
