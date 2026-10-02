@@ -10,12 +10,15 @@ package com.vaadin.observability.micrometer;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.locks.Lock;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.RouteConfiguration;
 import com.vaadin.flow.server.RouteRegistry;
+import com.vaadin.flow.server.SessionRouteRegistry;
+import com.vaadin.flow.server.VaadinSession;
 
 /**
  * Maps a Flow navigation target to a low-cardinality tag value suitable for
@@ -93,26 +96,86 @@ public final class RouteTagResolver {
         if (ui == null) {
             return fallback;
         }
-        var internals = ui.getInternals();
+        Class<? extends Component> target = activeTarget(ui);
+        if (target == null) {
+            return fallback;
+        }
+        return tagForTemplate(
+                resolveTemplate(ui, target).orElseGet(target::getSimpleName));
+    }
+
+    /**
+     * The innermost active navigation target of a UI, or {@code null} when it
+     * shows none.
+     */
+    private static Class<? extends Component> activeTarget(UI ui) {
+        // Copied before iterating: the chain is an unmodifiable view over a
+        // live list that navigation mutates in place, and this may run on a
+        // different thread than the one navigating.
+        for (HasElement target : List
+                .copyOf(ui.getInternals().getActiveRouterTargetsChain())) {
+            if (target instanceof Component component) {
+                return component.getClass();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Resolves the route template of a UI's navigation target.
+     * <p>
+     * When the current thread is bound to the UI's session (the request thread,
+     * including {@code requestEnd} where the session is current but no longer
+     * locked), the session registry is read under the session lock, the same
+     * lookup {@link #tagFor(Class)} does. It layers over the application
+     * registry, so it also resolves session-scoped routes. Off the request
+     * thread no session is bound and the lock must not be taken, so the
+     * registry carried by the UI's router is used instead.
+     */
+    private Optional<String> resolveTemplate(UI ui,
+            Class<? extends Component> target) {
+        VaadinSession session = VaadinSession.getCurrent();
+        if (session != null && session == ui.getSession()) {
+            Optional<String> template = sessionTemplate(session, target);
+            if (template.isPresent()) {
+                return template;
+            }
+        }
         RouteRegistry registry = null;
         try {
-            var router = internals.getRouter();
+            var router = ui.getInternals().getRouter();
             registry = router == null ? null : router.getRegistry();
         } catch (RuntimeException ignored) {
             // UIInternals#getRouter reaches through the session, which a
             // detached UI no longer has. Leaving the registry null falls back
             // to the session-scoped lookup, which is itself guarded.
         }
-        // Copied before iterating: the chain is an unmodifiable view over a
-        // live list that navigation mutates in place, and this may run on a
-        // different thread than the one navigating.
-        for (HasElement target : List
-                .copyOf(internals.getActiveRouterTargetsChain())) {
-            if (target instanceof Component component) {
-                return tagFor(component.getClass(), registry);
-            }
+        if (registry == null) {
+            return resolveTemplate(target);
         }
-        return fallback;
+        return RouteConfiguration.forRegistry(registry).getTemplate(target);
+    }
+
+    private static Optional<String> sessionTemplate(VaadinSession session,
+            Class<? extends Component> target) {
+        Lock lock = session.getLockInstance();
+        if (lock == null) {
+            return Optional.empty();
+        }
+        // Taken on the lock instance rather than through session.lock(): the
+        // session's unlock() runs pending access tasks and pushes, which is
+        // not this lookup's business. Re-entrant if the caller holds it.
+        lock.lock();
+        try {
+            return RouteConfiguration
+                    .forRegistry(
+                            SessionRouteRegistry.getSessionRegistry(session))
+                    .getTemplate(target);
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -144,24 +207,31 @@ public final class RouteTagResolver {
     }
 
     /**
-     * Like {@link #tagForActiveRoute(UI)} but without the concrete-location
-     * fallback: the result is always a route template (or the class-simple-name
-     * stand-in), never a literal path with its parameter values. For a consumer
-     * whose tag values must stay bounded — such as the {@code uri} tag on
+     * Like {@link #tagForActiveRoute(UI)} but without the concrete-location or
+     * class-simple-name fallbacks: the result is always a route template, never
+     * a literal path with its parameter values nor a class name that merely
+     * looks like a path. For a consumer whose tag values must stay bounded and
+     * read as routes — such as the {@code uri} tag on
      * {@code http.server.requests} — the location fallback would be the one
-     * genuinely unbounded source ({@code orders/17}, {@code orders/18}, …).
+     * genuinely unbounded source ({@code orders/17}, {@code orders/18}, …), and
+     * {@code /OrdersView} would hide that the template lookup failed.
      *
      * @param ui
      *            the UI to resolve the active route of, may be {@code null}
      * @return the route template tag value, or {@link MeterNames#ROUTE_UNKNOWN}
-     *         when no navigation target can be resolved
+     *         when no navigation target or template can be resolved
      */
     public String templateForActiveRoute(UI ui) {
         if (ui == null) {
             return MeterNames.ROUTE_UNKNOWN;
         }
         try {
-            return tagForUi(ui, MeterNames.ROUTE_UNKNOWN);
+            Class<? extends Component> target = activeTarget(ui);
+            if (target == null) {
+                return MeterNames.ROUTE_UNKNOWN;
+            }
+            return resolveTemplate(ui, target).map(this::tagForTemplate)
+                    .orElse(MeterNames.ROUTE_UNKNOWN);
         } catch (RuntimeException e) {
             // Resolution is best-effort enrichment of a measurement; never let
             // it break the caller.
