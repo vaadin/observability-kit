@@ -282,6 +282,129 @@ class RowCountingDataSourceTest {
     }
 
     @Test
+    void closingOnlyTheConnection_stopsTheQuerySpan() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement prepared = mock(PreparedStatement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(prepared);
+        when(prepared.executeQuery()).thenReturn(resultSet);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = recordStops(observationRegistry);
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true, 100));
+        // Neither the statement nor the result set is closed: closing the
+        // connection closes them inside the driver, where no proxy sees it.
+        try (Connection c = ds.getConnection()) {
+            c.prepareStatement("select 1").executeQuery();
+            assertThat(stopped).isEmpty();
+        }
+
+        assertThat(stopped).singleElement()
+                .satisfies(context -> assertThat(context.getName())
+                        .isEqualTo(ObservationNames.DB_QUERY));
+    }
+
+    @Test
+    void abortingTheConnection_stopsTheQuerySpan() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.executeQuery(anyString())).thenReturn(resultSet);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = recordStops(observationRegistry);
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true, 100));
+        Connection c = ds.getConnection();
+        c.createStatement().executeQuery("select 1");
+        c.abort(Runnable::run);
+
+        assertThat(stopped).hasSize(1);
+    }
+
+    @Test
+    void closingTheStatementOfAResultSet_stopsTheQuerySpan() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement prepared = mock(PreparedStatement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(prepared);
+        when(prepared.executeQuery()).thenReturn(resultSet);
+        when(resultSet.getStatement()).thenReturn(prepared);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = recordStops(observationRegistry);
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true, 100));
+        Connection c = ds.getConnection();
+        PreparedStatement ps = c.prepareStatement("select 1");
+        ResultSet rs = ps.executeQuery();
+
+        // The result set hands back the proxy, not the raw driver statement,
+        // so closing it still goes through the span bookkeeping.
+        assertThat(rs.getStatement()).isSameAs(ps);
+        rs.getStatement().close();
+
+        assertThat(stopped).hasSize(1);
+    }
+
+    @Test
+    void aSpanStoppedBeforeTheConnectionCloses_isStoppedOnce()
+            throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement prepared = mock(PreparedStatement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(prepared);
+        when(prepared.executeQuery()).thenReturn(resultSet);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = recordStops(observationRegistry);
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true, 100));
+        try (Connection c = ds.getConnection()) {
+            PreparedStatement ps = c.prepareStatement("select 1");
+            ps.executeQuery().close();
+        }
+
+        assertThat(stopped).hasSize(1);
+    }
+
+    private static List<Observation.Context> recordStops(
+            ObservationRegistry observationRegistry) {
+        List<Observation.Context> stopped = new ArrayList<>();
+        observationRegistry.observationConfig()
+                .observationHandler(new ObservationHandler<>() {
+                    @Override
+                    public boolean supportsContext(Observation.Context c) {
+                        return true;
+                    }
+
+                    @Override
+                    public void onStop(Observation.Context c) {
+                        stopped.add(c);
+                    }
+                });
+        return stopped;
+    }
+
+    @Test
     void everyQuery_countsTowardsTheThreadTally() throws Exception {
         // What the data query insights read: the metric says how big each
         // result set was, the tally says how many result sets a single data
