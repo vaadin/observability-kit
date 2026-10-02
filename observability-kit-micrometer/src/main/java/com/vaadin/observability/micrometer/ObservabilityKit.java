@@ -188,6 +188,34 @@ public final class ObservabilityKit {
         return SETTINGS.get();
     }
 
+    /**
+     * Clears what one service bound, when its service is destroyed. Each field
+     * is cleared only while it still holds that service's value, so the destroy
+     * of one service does not clear what another one bound since.
+     * <p>
+     * Without this the fields outlive the service: when the kit is loaded by a
+     * longer-lived class loader than the application (Spring Boot DevTools
+     * restarts, a shared server lib folder) they would pin the previous
+     * deployment's registry, buffers and UI state binder — and through it its
+     * UIs — and keep the endpoint and dev-tools panel serving its data. Any
+     * argument may be {@code null} for a feature that was off.
+     */
+    static void clearBound(MeterRegistry registry,
+            RecentInteractions interactions, RecentQueries queries,
+            RecentClientErrors clientErrors, RetainedStateGrowth growth) {
+        clearIfCurrent(ACTIVE_METER_REGISTRY, registry);
+        clearIfCurrent(RECENT_INTERACTIONS, interactions);
+        clearIfCurrent(RECENT_QUERIES, queries);
+        clearIfCurrent(RECENT_CLIENT_ERRORS, clientErrors);
+        clearIfCurrent(RETAINED_STATE_GROWTH, growth);
+    }
+
+    private static <T> void clearIfCurrent(AtomicReference<T> field, T bound) {
+        if (bound != null) {
+            field.compareAndSet(bound, null);
+        }
+    }
+
     /** Clears all installed state. Intended for tests and redeploys. */
     static void reset() {
         METER_REGISTRY.set(null);

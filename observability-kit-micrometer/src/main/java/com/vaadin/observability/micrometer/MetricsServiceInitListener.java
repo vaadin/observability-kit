@@ -29,6 +29,7 @@ import com.vaadin.observability.micrometer.insights.InteractionCollector;
 import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 import com.vaadin.observability.micrometer.insights.RecentQueries;
+import com.vaadin.observability.micrometer.insights.RetainedStateGrowth;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 import com.vaadin.observability.micrometer.trace.TracingExecutor;
 
@@ -263,9 +264,10 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         // that browsers are failing and being able to fix it. Built before the
         // UI binder because the client binder it feeds is created in there.
         ClientErrorCollector clientErrors = null;
+        RecentClientErrors browserErrors = null;
         if (settings.isClient() && settings.isInsights()
                 && settings.isErrors()) {
-            RecentClientErrors browserErrors = new RecentClientErrors(
+            browserErrors = new RecentClientErrors(
                     settings.getInsightsCapacity());
             clientErrors = new ClientErrorCollector(browserErrors, settings);
             ObservabilityKit.setRecentClientErrors(browserErrors);
@@ -338,6 +340,7 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     .register(service.getEventBus());
         }
 
+        RetainedStateGrowth growth = null;
         if (settings.isUiState()) {
             // One binder, three subscriptions: UIs report their own state size
             // at init and after navigation, any RPC invocation refreshes the
@@ -351,7 +354,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     && settings.getUiStateGrowthSamples() > 0) {
                 // A view collection that keeps growing is reported by class
                 // and field, which a low-cardinality gauge cannot carry.
-                ObservabilityKit.setRetainedStateGrowth(uiStateBinder::growing);
+                growth = uiStateBinder::growing;
+                ObservabilityKit.setRetainedStateGrowth(growth);
             }
         }
 
@@ -367,29 +371,41 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             errorBinder.register(service.getEventBus());
         }
 
+        RecentInteractions interactions = null;
         if (settings.isInsights()
                 && (settings.isErrors() || settings.isRequests())) {
             // Retain failed and over-UX-budget user interactions so the
             // insights endpoint can backtrack user reports ("I clicked this
             // and got an error / it was slow") to a replicable interaction.
-            RecentInteractions interactions = new RecentInteractions(
+            interactions = new RecentInteractions(
                     settings.getInsightsCapacity());
             new InteractionCollector(interactions, settings,
                     isDevelopmentMode(service)).register(service.getEventBus());
             ObservabilityKit.setRecentInteractions(interactions);
         }
 
+        RecentQueries queries = null;
         if (settings.isInsights() && settings.isData()
                 && (settings.isErrors() || settings.isRequests())) {
             // A slow data load never reaches the interaction collector: the
             // invocation that triggers it only registers a flush, so it ends
             // in microseconds. Capture the queries themselves.
-            RecentQueries queries = new RecentQueries(
-                    settings.getInsightsCapacity());
+            queries = new RecentQueries(settings.getInsightsCapacity());
             new DataQueryCollector(queries, settings)
                     .register(service.getEventBus());
             ObservabilityKit.setRecentQueries(queries);
         }
+
+        // The fields above are static, so they would outlive this service and
+        // pin what it bound; see ObservabilityKit.clearBound.
+        RecentClientErrors boundClientErrors = browserErrors;
+        RetainedStateGrowth boundGrowth = growth;
+        RecentInteractions boundInteractions = interactions;
+        RecentQueries boundQueries = queries;
+        service.addServiceDestroyListener(
+                destroyed -> ObservabilityKit.clearBound(registry,
+                        boundInteractions, boundQueries, boundClientErrors,
+                        boundGrowth));
 
         if (settings.isTraces() && observationRegistry != null) {
             Executor executor = event.getExecutor()
