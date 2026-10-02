@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
+import com.vaadin.flow.component.PollEvent;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinServiceEventBus;
@@ -28,6 +29,7 @@ import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ComponentResolver;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
+import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 /**
  * Captures interesting client-to-server invocations as
@@ -84,6 +86,9 @@ public class InteractionCollector {
 
     /** Flow's invocation type for a synchronized property update. */
     private static final String RPC_TYPE_PROPERTY_SYNC = "mSync";
+
+    /** Flow's invocation type for a DOM event. */
+    private static final String RPC_TYPE_EVENT = "event";
 
     private final RecentInteractions buffer;
     private final boolean captureErrors;
@@ -374,7 +379,7 @@ public class InteractionCollector {
      */
     private void recordLatest(AbstractRpcInvocationEvent event,
             Component component, long durationNanos, boolean failed) {
-        if (!screenDetail) {
+        if (!screenDetail || !isUserInteraction(event, component)) {
             return;
         }
         UI ui = event.getUI();
@@ -387,6 +392,22 @@ public class InteractionCollector {
                                 : CapturedInteraction.OUTCOME_SUCCESS,
                         durationNanos / 1_000_000.0, 1),
                 RPC_TYPE_PROPERTY_SYNC.equals(event.getType()));
+    }
+
+    /**
+     * Whether the invocation is something the user did, rather than traffic
+     * that arrives on its own: the kit's own sample flush, sent in a request of
+     * its own a few seconds after the interaction it measured, and UI polls.
+     * Either would otherwise replace the user's last interaction moments after
+     * it happened. The browser collector skips the same requests.
+     */
+    private static boolean isUserInteraction(AbstractRpcInvocationEvent event,
+            Component component) {
+        if (component instanceof MetricsCollectorElement) {
+            return false;
+        }
+        return !(RPC_TYPE_EVENT.equals(event.getType())
+                && PollEvent.DOM_EVENT_NAME.equals(event.getName()));
     }
 
     private static Optional<String> firstApplicationFrame(

@@ -23,6 +23,15 @@ public class RecentInteractions {
 
     private final int capacity;
     private final Deque<CapturedInteraction> interactions = new ArrayDeque<>();
+    /**
+     * The latest interaction of the whole application, not of a UI or session:
+     * with two tabs open, the panel in one shows the other's interaction, and
+     * pairs its server time with its own browser samples.
+     * <p>
+     * TODO: scope to the developer's own UI once the per-UI records of #392
+     * exist, as #393 asks. The dev-tools connection does not say which session
+     * or UI it belongs to, so the panel will have to name its UI.
+     */
     private LatestInteraction latest;
     private int latestRequestId;
 
@@ -83,6 +92,7 @@ public class RecentInteractions {
 
     /**
      * The latest interaction, or {@code null} when none has been recorded.
+     * Application-wide for now, from whichever UI interacted last.
      *
      * @return the latest interaction, or {@code null}
      */
