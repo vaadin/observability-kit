@@ -226,7 +226,7 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             LOGGER.warn(
                     "No valid {} license found. Observability Kit instrumentation "
                             + "will not be registered and no telemetry will be collected. "
-                            + "See https://vaadin.com/commercial-license-and-service-terms",
+                            + "See https://vaadin.com/enterprise",
                     ObservabilityLicense.PRODUCT_NAME);
             return;
         }
