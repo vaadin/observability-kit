@@ -73,7 +73,14 @@ public final class MetricsCollectorElement extends Component {
         addDetachListener(event -> {
             UI ui = event.getUI();
             if (ui != null && !ui.isClosing()) {
-                ui.access(() -> ui.add(this));
+                // A resynchronization detaches and re-attaches in place:
+                // adding the element again would move it, detach it once more
+                // and loop forever.
+                ui.access(() -> {
+                    if (getParent().isEmpty()) {
+                        ui.add(this);
+                    }
+                });
             }
         });
     }

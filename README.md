@@ -36,7 +36,6 @@ flowchart LR
 
     subgraph Server["Vaadin application"]
         httpobs["Spring HTTP observation<br/>http.server.requests"]
-        resync["Resync detection filter<br/>vaadin.resync"]
         flow["VaadinService + Flow SPIs<br/>requests, RPC, navigation,<br/>data queries, sessions, UIs, errors"]
 
         subgraph Kit["Observability Kit binders"]
@@ -46,6 +45,7 @@ flowchart LR
             datab["DataQueryMetricsBinder<br/>vaadin.data.fetch / count"]
             errb["ErrorMetricsBinder<br/>vaadin.errors"]
             lifeb["Session / UI / Lock / State binders<br/>vaadin.sessions.*, vaadin.ui.*"]
+            resyncb["ResyncMetricsBinder<br/>vaadin.resync"]
             clientb["ClientMetricsBinder<br/>vaadin.client.*"]
             dbproxy["DataSource proxy, Boot opt-in<br/>vaadin.db.query / fetch.rows"]
         end
@@ -68,10 +68,9 @@ flowchart LR
 
     collector -- "rate-limited batches<br/>over a ClientCallable" --> clientb
     flow -- "listener and event-bus callbacks" --> Kit
-    resync --> meters
     reqb -- "enrich and mark" --> hooks --> httpobs
     reqb & rpcb & navb & datab --> obsreg
-    errb & lifeb & clientb & dbproxy --> meters
+    errb & lifeb & resyncb & clientb & dbproxy --> meters
     errb & reqb -- "failed / slow interactions" --> insights
     texec --> obsreg
     obsreg --> handler --> meters
@@ -398,7 +397,7 @@ vaadin.observability.traces=false
 | `vaadin.observability.data` | `true` | Data provider count/fetch query timing and page sizes for lazy-loading components. |
 | `vaadin.observability.errors` | `true` | Error counters. |
 | `vaadin.observability.client` | `true` | Browser-side timing, connection state and errors collected from the client (see [Connection and client-side problems](#connection-and-client-side-problems)). |
-| `vaadin.observability.resync` | `true` | Observe UIDL message resends and client-requested resynchronizations. |
+| `vaadin.observability.resync` | `true` | Count client message resends, client-requested resynchronizations and unexpected message ids. |
 | `vaadin.observability.database` | `false` | Wrap `DataSource` beans to record JDBC result-set sizes per route, report the SQL queries behind each [slow data query insight](#what-a-slow-data-query-cost-in-the-database), and (when tracing is on) emit a span per query (Spring Boot starter only). |
 | `vaadin.observability.database-statement` | `false` | Attach the (parameterized) SQL as `db.statement` on the query span. Off by default since SQL is higher cardinality and may be sensitive. |
 | `vaadin.observability.database-span-limit` | `100` | Most `vaadin.db.query` spans under any one parent span (request, RPC, data fetch). Queries past it are still timed and counted but get no span; the parent carries how many as `vaadin.db.queries.unspanned`. `0` spans no query that has a parent span. See [N+1 loads and the span limit](#n1-loads-and-the-span-limit). |
@@ -455,7 +454,7 @@ ObservabilitySettings.builder()
 | `vaadin.data.fetch.requested` | DistributionSummary | Items a fetch query asked for, tagged by `route`. |
 | `vaadin.data.fetch.rows` | DistributionSummary | Items a fetch query actually returned, tagged by `route`. Compared against `vaadin.data.fetch.requested` it shows a component asking for far more than it renders, or a data provider returning short pages. |
 | `vaadin.errors` | Counter | Server-side errors (tagged by `exception`, `route`, `component`). See [Error metrics](#error-metrics). |
-| `vaadin.resync` | Counter | UIDL message recovery events observed on incoming requests, tagged by `type`: `resend` for a duplicate message the client re-sent because it never got the previous response, `resync` for a full client-requested UI-state rebuild. Both mean the client lost a server message. Disable with `vaadin.observability.resync=false`. |
+| `vaadin.resync` | Counter | Client message recovery events, for both HTTP and push requests, tagged by `type`: `resend` for a duplicate message the client re-sent because it never got the previous response, `resync` for a full client-requested UI-state rebuild, `out_of_sync` for a message with an id the server did not expect, which shows the user the session synchronization error. `resend` and `resync` mean the client lost a server message; `out_of_sync` usually means the UI continued on a server with an older state. Disable with `vaadin.observability.resync=false`. |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
 | `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time, tagged by `route` and by the `trigger` that started it (`back` or `programmatic`). |
 | `vaadin.client.request.duration` | Timer | One UIDL request as the browser saw it, from queueing to the last byte of the response, tagged by `route`. The browser's side of `vaadin.request.duration`. See [Interaction timing from the browser](#interaction-timing-from-the-browser). |

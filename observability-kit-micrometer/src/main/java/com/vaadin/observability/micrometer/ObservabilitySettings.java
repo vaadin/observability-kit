@@ -115,7 +115,10 @@ public final class ObservabilitySettings {
         return client;
     }
 
-    /** Whether to observe UIDL message resends and resynchronizations. */
+    /**
+     * Whether to count client message resends, resynchronizations and
+     * unexpected message ids.
+     */
     public boolean isResync() {
         return resync;
     }
