@@ -2089,8 +2089,8 @@
         ? '<div class="ok-license">' +
           'Observability Kit needs a license. Without one, no metrics or ' +
           'insights are collected. See ' +
-          '<a href="https://vaadin.com/commercial-license-and-service-terms" ' +
-          'target="_blank" rel="noopener">vaadin.com/commercial-license-and-service-terms</a>.' +
+          '<a href="https://vaadin.com/enterprise" ' +
+          'target="_blank" rel="noopener">vaadin.com/enterprise</a>.' +
           '</div>'
         : '';
     }
