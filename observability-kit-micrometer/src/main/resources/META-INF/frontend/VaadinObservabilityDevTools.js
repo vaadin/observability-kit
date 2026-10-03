@@ -1702,6 +1702,8 @@
     '.ok-tick{position:absolute;top:-3px;width:1px;height:10px;background:var(--ok-muted)}',
     '.ok-scale{display:flex;justify-content:space-between;font-size:10px;color:var(--ok-muted);margin-top:4px}',
     '.ok-note{font-size:11px;color:var(--ok-muted);margin-top:8px}',
+    '.ok-license{margin:8px 14px 0;padding:8px 10px;border-radius:4px;' +
+      'background:rgba(217,115,13,.15)}',
     '.ok-flush{margin-top:1px}',
     '.ok-link{color:var(--ok-blue);text-decoration:underline;cursor:pointer}',
     '.ok-preview{margin-top:14px;border:1px solid rgba(22,118,243,.25);background:rgba(22,118,243,.06);' +
@@ -2084,8 +2086,7 @@
 
     renderLicense() {
       this._licenseEl.innerHTML = unlicensed()
-        ? '<div style="margin:8px 12px;padding:8px 10px;border-radius:4px;' +
-          'background:rgba(255,160,0,.15)">' +
+        ? '<div class="ok-license">' +
           'Observability Kit needs a license. Without one, no metrics or ' +
           'insights are collected. See ' +
           '<a href="https://vaadin.com/commercial-license-and-service-terms" ' +

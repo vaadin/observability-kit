@@ -683,7 +683,7 @@ const SESSION_METERS = [
   check('a stale browser sample is not used', click.html('anatomy').includes('Needs client metrics'), true);
 }
 
-// 14b. The panel is offered to Copilot whether or not the kit is licensed;
+// 14d. The panel is offered to Copilot whether or not the kit is licensed;
 // without a license it says why its sections are empty rather than looking
 // like an idle application, or like one with the insights setting off.
 {
@@ -692,14 +692,14 @@ const SESSION_METERS = [
   bare.open();
   bare.meters({ timestamp: Date.now(), licensed: false, meters: [] });
   bare.insights(payload([], 'inactive'));
-  check('an unlicensed kit shows the license notice', bare.panel.regions['[data-region="license"]'].innerHTML.includes('needs a license'), true);
+  check('an unlicensed kit shows the license notice', bare.html('license').includes('needs a license'), true);
   check('and does not blame the insights setting', bare.insightsHtml().includes('vaadin.observability.insights'), false);
   check('nor invite interaction to generate meters', bare.metricsHtml().includes('Interact with the application'), false);
 
   const licensed = harness('/orders/17');
   licensed.open();
   licensed.meters({ timestamp: Date.now(), licensed: true, meters: [] });
-  check('a licensed kit shows no notice', licensed.panel.regions['[data-region="license"]'].innerHTML.includes('needs a license'), false);
+  check('a licensed kit shows no notice', licensed.html('license').includes('needs a license'), false);
 }
 
 // 15. A typed parameter carries its regex after the modifier, which is where
