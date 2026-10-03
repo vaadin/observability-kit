@@ -9,6 +9,7 @@
 package com.vaadin.observability.micrometer;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -63,6 +64,13 @@ public final class ObservabilityKit {
      */
     private static final AtomicReference<RetainedStateGrowth> RETAINED_STATE_GROWTH = new AtomicReference<>();
 
+    /**
+     * Whether the kit had a valid license at {@code serviceInit}; when not,
+     * binding was skipped. Read by the dev-mode Copilot panel, which says so
+     * rather than showing empty sections that read like an idle application.
+     */
+    private static final AtomicBoolean LICENSE_PRESENT = new AtomicBoolean();
+
     private ObservabilityKit() {
     }
 
@@ -115,6 +123,24 @@ public final class ObservabilityKit {
      */
     static void setActiveMeterRegistry(MeterRegistry registry) {
         ACTIVE_METER_REGISTRY.set(registry);
+    }
+
+    /**
+     * Records whether the license check at {@code serviceInit} passed. Called
+     * from {@code MetricsServiceInitListener}.
+     */
+    static void setLicensePresent(boolean present) {
+        LICENSE_PRESENT.set(present);
+    }
+
+    /**
+     * Whether the kit has a valid license, i.e. instrumentation was not skipped
+     * for lack of one. Read by the dev-mode Copilot metrics panel.
+     *
+     * @return {@code false} if the last license check failed
+     */
+    public static boolean isLicensePresent() {
+        return LICENSE_PRESENT.get();
     }
 
     /**
@@ -198,5 +224,6 @@ public final class ObservabilityKit {
         RECENT_QUERIES.set(null);
         RECENT_CLIENT_ERRORS.set(null);
         RETAINED_STATE_GROWTH.set(null);
+        LICENSE_PRESENT.set(false);
     }
 }
