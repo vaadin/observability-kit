@@ -35,12 +35,14 @@ public class ObservabilityProperties {
     private boolean tracesSessionId = false;
     private boolean database = false;
     private boolean databaseStatement = false;
+    private int databaseSpanLimit = 100;
     private boolean insights = true;
     private boolean insightsDetails = false;
     private int routeCardinalityLimit = 200;
     private int clientRatePerSession = 100;
     private int uiStateSampleInterval = 10000;
     private int uiStateBytesPerNode = 0;
+    private int uiStateGrowthSamples = 5;
     private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
     public boolean isEnabled() {
@@ -196,6 +198,21 @@ public class ObservabilityProperties {
         this.databaseStatement = databaseStatement;
     }
 
+    /**
+     * Maximum number of {@code vaadin.db.query} spans under any one parent
+     * span; queries past it are timed and counted but not spanned.
+     *
+     * @return the most query spans per parent span, {@code 0} for none under a
+     *         parent span
+     */
+    public int getDatabaseSpanLimit() {
+        return databaseSpanLimit;
+    }
+
+    public void setDatabaseSpanLimit(int databaseSpanLimit) {
+        this.databaseSpanLimit = databaseSpanLimit;
+    }
+
     public int getRouteCardinalityLimit() {
         return routeCardinalityLimit;
     }
@@ -229,6 +246,20 @@ public class ObservabilityProperties {
     }
 
     /**
+     * Measurements a view collection has to grow in before it is reported as
+     * growing; {@code 0} does not read view collections at all.
+     *
+     * @return the number of measurements, or {@code 0}
+     */
+    public int getUiStateGrowthSamples() {
+        return uiStateGrowthSamples;
+    }
+
+    public void setUiStateGrowthSamples(int uiStateGrowthSamples) {
+        this.uiStateGrowthSamples = uiStateGrowthSamples;
+    }
+
+    /**
      * Converts these properties to an {@link ObservabilitySettings} instance.
      * The {@code enabled} flag is not included in settings; it only gates
      * activation of the auto-configuration.
@@ -257,11 +288,13 @@ public class ObservabilityProperties {
                 .data(data).errors(errors).client(client).resync(resync)
                 .traces(traces).tracesSessionId(tracesSessionId)
                 .database(database).databaseStatement(databaseStatement)
-                .insights(insights).insightsDetails(insightsDetails)
+                .databaseSpanLimit(databaseSpanLimit).insights(insights)
+                .insightsDetails(insightsDetails)
                 .routeCardinalityLimit(routeCardinalityLimit)
                 .clientRatePerSession(clientRatePerSession)
                 .uiStateSampleInterval(uiStateSampleInterval)
                 .uiStateBytesPerNode(uiStateBytesPerNode)
+                .uiStateGrowthSamples(uiStateGrowthSamples)
                 .insightsCapacity(insightsCapacity).build();
     }
 }

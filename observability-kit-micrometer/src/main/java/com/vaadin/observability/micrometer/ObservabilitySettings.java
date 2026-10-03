@@ -29,12 +29,14 @@ public final class ObservabilitySettings {
     private final boolean tracesSessionId;
     private final boolean database;
     private final boolean databaseStatement;
+    private final int databaseSpanLimit;
     private final boolean insights;
     private final boolean insightsDetails;
     private final int routeCardinalityLimit;
     private final int clientRatePerSession;
     private final int uiStateSampleInterval;
     private final int uiStateBytesPerNode;
+    private final int uiStateGrowthSamples;
     private final int insightsCapacity;
 
     private ObservabilitySettings(Builder builder) {
@@ -51,12 +53,14 @@ public final class ObservabilitySettings {
         this.tracesSessionId = builder.tracesSessionId;
         this.database = builder.database;
         this.databaseStatement = builder.databaseStatement;
+        this.databaseSpanLimit = builder.databaseSpanLimit;
         this.insights = builder.insights;
         this.insightsDetails = builder.insightsDetails;
         this.routeCardinalityLimit = builder.routeCardinalityLimit;
         this.clientRatePerSession = builder.clientRatePerSession;
         this.uiStateSampleInterval = builder.uiStateSampleInterval;
         this.uiStateBytesPerNode = builder.uiStateBytesPerNode;
+        this.uiStateGrowthSamples = builder.uiStateGrowthSamples;
         this.insightsCapacity = builder.insightsCapacity;
     }
 
@@ -163,6 +167,24 @@ public final class ObservabilitySettings {
         return databaseStatement;
     }
 
+    /**
+     * Maximum number of {@code vaadin.db.query} spans under any one parent span
+     * — a request, an RPC, a data provider fetch. An N+1 load issues a query
+     * per row, and sixty thousand spans for one click overflow the tracing
+     * exporter's queue, which then drops spans from every request, not just
+     * that one. Past the limit a query still counts toward the
+     * {@code vaadin.db.query} timer and the insights, but gets no span; the
+     * parent span carries how many it left out as
+     * {@code vaadin.db.queries.unspanned}. A query with no parent span is not
+     * limited.
+     *
+     * @return the most query spans per parent span, {@code 0} for none under a
+     *         parent span
+     */
+    public int getDatabaseSpanLimit() {
+        return databaseSpanLimit;
+    }
+
     public int getRouteCardinalityLimit() {
         return routeCardinalityLimit;
     }
@@ -208,6 +230,32 @@ public final class ObservabilitySettings {
     }
 
     /**
+     * How many measurements in a row a collection held by a view has to grow in
+     * before it is reported as growing, or {@code 0} to not read the
+     * collections views hold at all.
+     * <p>
+     * A view that keeps what it loads in a field — every refresh appended to a
+     * list, every result cached in a map — grows on the heap while its
+     * component tree stays the same size, so none of the state-tree gauges
+     * move. When this is above zero, each UI measurement also reads the sizes
+     * of the collections its views hold in their own fields, and a field whose
+     * size went up at this many measurements without once going down is counted
+     * in {@code vaadin.ui.state.retained.growing}. A measurement where the size
+     * stayed the same neither counts nor breaks the run, because measurements
+     * follow interactions, not the code that adds to the field.
+     * <p>
+     * Some collections legitimately grow for a while — a chat log, rows a user
+     * keeps adding — so a higher value trades a later signal for fewer of
+     * those. Only takes effect when {@link #isUiState()} is on.
+     *
+     * @return measurements of growth before a collection is reported, or
+     *         {@code 0} when collections are not read
+     */
+    public int getUiStateGrowthSamples() {
+        return uiStateGrowthSamples;
+    }
+
+    /**
      * Maximum number of records retained for the insights endpoint, applied to
      * <em>each</em> buffer rather than shared between them: interactions, data
      * provider queries and browser errors are retained separately, so with all
@@ -238,12 +286,14 @@ public final class ObservabilitySettings {
         private boolean tracesSessionId = false;
         private boolean database = false;
         private boolean databaseStatement = false;
+        private int databaseSpanLimit = 100;
         private boolean insights = true;
         private boolean insightsDetails = false;
         private int routeCardinalityLimit = 200;
         private int clientRatePerSession = 100;
         private int uiStateSampleInterval = 10000;
         private int uiStateBytesPerNode = 0;
+        private int uiStateGrowthSamples = 5;
         private int insightsCapacity = RecentInteractions.DEFAULT_CAPACITY;
 
         private Builder() {
@@ -331,6 +381,16 @@ public final class ObservabilitySettings {
             return this;
         }
 
+        public Builder databaseSpanLimit(int databaseSpanLimit) {
+            if (databaseSpanLimit < 0) {
+                throw new IllegalArgumentException(
+                        "databaseSpanLimit must be >= 0, got "
+                                + databaseSpanLimit);
+            }
+            this.databaseSpanLimit = databaseSpanLimit;
+            return this;
+        }
+
         public Builder routeCardinalityLimit(int routeCardinalityLimit) {
             if (routeCardinalityLimit < 1) {
                 throw new IllegalArgumentException(
@@ -368,6 +428,16 @@ public final class ObservabilitySettings {
                                 + uiStateBytesPerNode);
             }
             this.uiStateBytesPerNode = uiStateBytesPerNode;
+            return this;
+        }
+
+        public Builder uiStateGrowthSamples(int uiStateGrowthSamples) {
+            if (uiStateGrowthSamples < 0) {
+                throw new IllegalArgumentException(
+                        "uiStateGrowthSamples must be >= 0, got "
+                                + uiStateGrowthSamples);
+            }
+            this.uiStateGrowthSamples = uiStateGrowthSamples;
             return this;
         }
 

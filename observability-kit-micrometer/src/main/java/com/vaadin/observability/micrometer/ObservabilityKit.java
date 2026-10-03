@@ -19,6 +19,7 @@ import io.micrometer.observation.ObservationRegistry;
 import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 import com.vaadin.observability.micrometer.insights.RecentQueries;
+import com.vaadin.observability.micrometer.insights.RetainedStateGrowth;
 
 /**
  * Programmatic bootstrap for standalone (non-Spring) deployments. Call
@@ -57,6 +58,13 @@ public final class ObservabilityKit {
     private static final AtomicReference<RecentClientErrors> RECENT_CLIENT_ERRORS = new AtomicReference<>();
 
     /**
+     * The view collections the UI state binder currently reports as growing,
+     * recorded at {@code serviceInit} time like the buffers above. Read by the
+     * insights endpoint.
+     */
+    private static final AtomicReference<RetainedStateGrowth> RETAINED_STATE_GROWTH = new AtomicReference<>();
+
+    /**
      * Whether {@code serviceInit} skipped binding because the kit has no valid
      * license. Read by the dev-mode Copilot panel, which says so rather than
      * showing empty sections that read like an idle application.
@@ -64,6 +72,24 @@ public final class ObservabilityKit {
     private static final AtomicBoolean LICENSE_MISSING = new AtomicBoolean();
 
     private ObservabilityKit() {
+    }
+
+    /**
+     * Records where the growing view collections are read from. Called from
+     * {@code MetricsServiceInitListener} for all deployment types.
+     */
+    static void setRetainedStateGrowth(RetainedStateGrowth growth) {
+        RETAINED_STATE_GROWTH.set(growth);
+    }
+
+    /**
+     * Gets the view collections currently growing, or {@code null} when UI
+     * state measurement, collection reading or insights is off.
+     *
+     * @return the growth source, or {@code null}
+     */
+    public static RetainedStateGrowth getRetainedStateGrowth() {
+        return RETAINED_STATE_GROWTH.get();
     }
 
     public static void install(MeterRegistry meterRegistry,
@@ -197,6 +223,7 @@ public final class ObservabilityKit {
         RECENT_INTERACTIONS.set(null);
         RECENT_QUERIES.set(null);
         RECENT_CLIENT_ERRORS.set(null);
+        RETAINED_STATE_GROWTH.set(null);
         LICENSE_MISSING.set(false);
     }
 }
