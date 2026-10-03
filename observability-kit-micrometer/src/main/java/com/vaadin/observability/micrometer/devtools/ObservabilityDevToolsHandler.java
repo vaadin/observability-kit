@@ -91,7 +91,7 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
         payload.put("timestamp", System.currentTimeMillis());
         // The panel is shown whether or not the kit is licensed; this is what
         // lets it say why its sections are empty.
-        payload.put("licensed", !ObservabilityKit.isLicenseMissing());
+        payload.put("licensed", ObservabilityKit.isLicensePresent());
         payload.put("meters", snapshot());
         payload.put("lastInteraction", lastInteraction());
         devToolsInterface.send(COMMAND_METRICS, payload);

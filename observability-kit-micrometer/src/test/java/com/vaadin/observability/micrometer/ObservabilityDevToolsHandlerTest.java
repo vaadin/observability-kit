@@ -199,8 +199,8 @@ class ObservabilityDevToolsHandlerTest {
     }
 
     @Test
-    void licenseMissing_stillAnswersAndSaysSo() {
-        ObservabilityKit.setLicenseMissing(true);
+    void licenseNotPresent_stillAnswersAndSaysSo() {
+        ObservabilityKit.setLicensePresent(false);
 
         handler.handleConnect(devTools);
 

@@ -65,11 +65,12 @@ public final class ObservabilityKit {
     private static final AtomicReference<RetainedStateGrowth> RETAINED_STATE_GROWTH = new AtomicReference<>();
 
     /**
-     * Whether {@code serviceInit} skipped binding because the kit has no valid
-     * license. Read by the dev-mode Copilot panel, which says so rather than
-     * showing empty sections that read like an idle application.
+     * Whether the kit had a valid license at {@code serviceInit}; when not,
+     * binding was skipped. Read by the dev-mode Copilot panel, which says so
+     * rather than showing empty sections that read like an idle application.
      */
-    private static final AtomicBoolean LICENSE_MISSING = new AtomicBoolean();
+    private static final AtomicBoolean LICENSE_PRESENT = new AtomicBoolean(
+            true);
 
     private ObservabilityKit() {
     }
@@ -126,21 +127,21 @@ public final class ObservabilityKit {
     }
 
     /**
-     * Records whether the license check at {@code serviceInit} failed. Called
+     * Records whether the license check at {@code serviceInit} passed. Called
      * from {@code MetricsServiceInitListener}.
      */
-    static void setLicenseMissing(boolean missing) {
-        LICENSE_MISSING.set(missing);
+    static void setLicensePresent(boolean present) {
+        LICENSE_PRESENT.set(present);
     }
 
     /**
-     * Whether instrumentation was not bound because the kit has no valid
-     * license. Read by the dev-mode Copilot metrics panel.
+     * Whether the kit has a valid license, i.e. instrumentation was not skipped
+     * for lack of one. Read by the dev-mode Copilot metrics panel.
      *
-     * @return {@code true} if the last license check failed
+     * @return {@code false} if the last license check failed
      */
-    public static boolean isLicenseMissing() {
-        return LICENSE_MISSING.get();
+    public static boolean isLicensePresent() {
+        return LICENSE_PRESENT.get();
     }
 
     /**
@@ -224,6 +225,6 @@ public final class ObservabilityKit {
         RECENT_QUERIES.set(null);
         RECENT_CLIENT_ERRORS.set(null);
         RETAINED_STATE_GROWTH.set(null);
-        LICENSE_MISSING.set(false);
+        LICENSE_PRESENT.set(true);
     }
 }
