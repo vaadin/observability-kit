@@ -69,8 +69,7 @@ public final class ObservabilityKit {
      * binding was skipped. Read by the dev-mode Copilot panel, which says so
      * rather than showing empty sections that read like an idle application.
      */
-    private static final AtomicBoolean LICENSE_PRESENT = new AtomicBoolean(
-            true);
+    private static final AtomicBoolean LICENSE_PRESENT = new AtomicBoolean();
 
     private ObservabilityKit() {
     }
@@ -225,6 +224,6 @@ public final class ObservabilityKit {
         RECENT_QUERIES.set(null);
         RECENT_CLIENT_ERRORS.set(null);
         RETAINED_STATE_GROWTH.set(null);
-        LICENSE_PRESENT.set(true);
+        LICENSE_PRESENT.set(false);
     }
 }
