@@ -753,5 +753,55 @@ function err(message, stack) {
       timing(all), [['request', '/orders/17', 180]]);
   }
 
+  // 9. LCP is one sample per page load: whichever candidate is current when
+  //    the user first interacts or the page is hidden. The panel sees the
+  //    candidates as they come, without any of them going to the server.
+  {
+    const lcpWith = (finish) => {
+      let observer = null;
+      let pending = [];
+      const handlers = {};
+      const on = (name, cb) => { (handlers[name] = handlers[name] || []).push(cb); };
+      const win = {
+        addEventListener: on,
+        location: { pathname: '/orders', href: 'https://app.example.com/orders' },
+        sessionStorage: { store: {}, getItem(k) { return this.store[k] === undefined ? null : this.store[k]; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } },
+        __vaadinMicrometerDetails: false
+      };
+      const doc = { querySelector: () => null, addEventListener: on, visibilityState: 'visible' };
+      function Observer(cb) { this.cb = cb; }
+      Observer.prototype.observe = function (opts) { if (opts.type === 'largest-contentful-paint') { observer = this; } };
+      Observer.prototype.takeRecords = function () { const taken = pending; pending = []; return taken; };
+      Observer.prototype.disconnect = function () { observer = null; };
+      new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', src)(
+        win, doc, { getEntriesByType: () => [], now: () => 0 }, Observer, {}, () => 0, () => 0
+      );
+      const api = win.__vaadinMicrometer;
+      observer.cb({ getEntries: () => [{ renderTime: 300, startTime: 300 }] });
+      observer.cb({ getEntries: () => [{ renderTime: 0, loadTime: 0, startTime: 900 }] });
+      const seen = [api.bufferSize(), api.latest('vaadin.client.web_vitals.lcp').valueMs];
+      // A candidate the browser has queued but not yet delivered still counts.
+      pending = [{ renderTime: 1200, startTime: 1200 }];
+      finish(handlers, doc);
+      const afterFirst = api.bufferSize();
+      (handlers.keydown || []).forEach((cb) => cb({}));
+      (handlers.pagehide || []).forEach((cb) => cb({}));
+      return { seen, afterFirst, afterMore: api.bufferSize(), latest: api.latest('vaadin.client.web_vitals.lcp').valueMs, gone: observer === null };
+    };
+
+    const byInput = lcpWith((handlers) => handlers.pointerdown.forEach((cb) => cb({})));
+    check('LCP candidates are not sent as they come', byInput.seen[0], 0);
+    check('but the panel sees the current one', byInput.seen[1], 900);
+    check('the first input reports LCP once, with the queued candidate', [byInput.afterFirst, byInput.latest], [1, 1200]);
+    check('later inputs and hiding report nothing more', byInput.afterMore, 1);
+    check('and the observer is let go', byInput.gone, true);
+
+    const byHiding = lcpWith((handlers, doc) => {
+      doc.visibilityState = 'hidden';
+      handlers.visibilitychange.forEach((cb) => cb({}));
+    });
+    check('hiding the page reports LCP once', [byHiding.afterFirst, byHiding.afterMore], [1, 1]);
+  }
+
   process.exit(failures === 0 ? 0 : 1);
 })();

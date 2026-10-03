@@ -52,6 +52,11 @@
 
   var buffer = [];
 
+  // The most recent sample per meter name, value and time only. Read by the
+  // development-mode Copilot panel, which breaks the user's last interaction
+  // down into round trip and render; flushing does not clear it.
+  var latestSamples = {};
+
   // The batch handed to the server and not yet answered for, if any. It stays
   // in the persisted copy until the answer arrives, since the send is
   // asynchronous and a tab that closes while it is in flight takes the request
@@ -168,6 +173,7 @@
     }
     offlineBaseline.set(sample, offlineElapsed());
     buffer.push(sample);
+    latestSamples[name] = { valueMs: valueMs, ts: sample.ts };
     if (offline()) {
       // Only worth the write while the samples are at risk: a reload during an
       // outage would otherwise lose exactly the reports that explain it.
@@ -423,19 +429,58 @@
     /* ignore */
   }
 
-  // Web Vitals: LCP.
+  // Web Vitals: LCP. The browser emits a new candidate every time a larger
+  // element paints, and the page's LCP is whichever is current when the user
+  // first interacts or the page is hidden -- after either, a larger paint is
+  // the page responding, not loading. So it is reported once, then. Sending
+  // every candidate would put the early, smaller ones into the server's mean.
+  // The panel reads the current candidate meanwhile, through `latest`.
+  var LCP = 'vaadin.client.web_vitals.lcp';
+  var lcpObserver = null;
+  var lcpCandidate = null;
+
+  function takeLcp(entries) {
+    var last = entries[entries.length - 1];
+    if (last) {
+      lcpCandidate = { route: currentRoute(), valueMs: last.renderTime || last.loadTime || last.startTime };
+      latestSamples[LCP] = { valueMs: lcpCandidate.valueMs, ts: Date.now() };
+    }
+  }
+
+  function reportLcp() {
+    if (lcpObserver === null) {
+      return;
+    }
+    try {
+      takeLcp(lcpObserver.takeRecords());
+      lcpObserver.disconnect();
+    } catch (e) {
+      /* already gone, report what was seen */
+    }
+    lcpObserver = null;
+    if (lcpCandidate !== null) {
+      pushSample(LCP, { route: lcpCandidate.route }, lcpCandidate.valueMs);
+    }
+  }
+
   try {
-    var lcpObserver = new PerformanceObserver(function (list) {
-      var entries = list.getEntries();
-      var last = entries[entries.length - 1];
-      if (last) {
-        var value = last.renderTime || last.loadTime || last.startTime;
-        pushSample('vaadin.client.web_vitals.lcp', { route: currentRoute() }, value);
-      }
+    lcpObserver = new PerformanceObserver(function (list) {
+      takeLcp(list.getEntries());
     });
     lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+    // Registered ahead of the flush on hiding further down, so the sample is
+    // in the buffer that flush sends.
+    ['keydown', 'pointerdown'].forEach(function (type) {
+      window.addEventListener(type, reportLcp, { capture: true, once: true });
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        reportLcp();
+      }
+    });
+    window.addEventListener('pagehide', reportLcp);
   } catch (e) {
-    /* unsupported, skip */
+    lcpObserver = null;
   }
 
   // Web Vitals: FCP (from paint timing).
@@ -1267,6 +1312,10 @@
     flush: flush,
     bufferSize: function () {
       return buffer.length;
+    },
+    latest: function (name) {
+      var sample = latestSamples[name];
+      return sample ? { valueMs: sample.valueMs, ts: sample.ts } : null;
     }
   };
 })();
