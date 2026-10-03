@@ -56,7 +56,8 @@ class MetricsServiceInitListenerLicenseTest {
     void developmentMode_withoutValidLicense_skipsInstrumentation() {
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(false);
-        // Left over from an earlier start with a license
+        // Start from "present" so the assertion below proves the failed check
+        // is what clears it, rather than it merely being the default
         ObservabilityKit.setLicensePresent(true);
 
         try (var licenseChecker = mockStatic(LicenseChecker.class)) {
