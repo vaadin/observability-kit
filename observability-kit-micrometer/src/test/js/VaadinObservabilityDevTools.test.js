@@ -630,6 +630,14 @@ const SESSION_METERS = [
   });
   check('a second poll draws the key metric trend', lcp.html('key').includes('<polyline'), true);
 
+  // An unlicensed kit binds nothing: no meters and no browser collector, but
+  // the browser still keeps its navigation timing.
+  lcp.win.__vaadinMicrometer = undefined;
+  lcp.meters({ timestamp: Date.now(), meters: [] });
+  const unlicensed = lcp.html('vitals');
+  check('without a server bootstrap sample bootstrap has none', unlicensed.includes('for this page load.'), false);
+  check('without any samples no vital card has a figure', /ok-big ok-mono">\d/.test(unlicensed), false);
+
   lcp.win.__vaadinMicrometer = { latest: () => null };
   lcp.win.performance = { getEntriesByType: () => [] };
   lcp.meters({ timestamp: Date.now(), meters: SESSION_METERS });
