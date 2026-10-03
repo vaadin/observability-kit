@@ -640,7 +640,12 @@ const SESSION_METERS = [
 
   lcp.win.__vaadinMicrometer = { latest: () => null };
   lcp.win.performance = { getEntriesByType: () => [] };
-  lcp.meters({ timestamp: Date.now(), meters: SESSION_METERS });
+  lcp.meters({
+    timestamp: Date.now(),
+    meters: SESSION_METERS.concat([
+      timer('vaadin.request.duration', { 'vaadin.request.type': 'bootstrap' }, 55, 4)
+    ])
+  });
   const empty = lcp.html('vitals');
   check('without a browser sample LCP has none', empty.includes('When the main content'), false);
   check('without navigation timing bootstrap has none', empty.includes('for this page load.'), false);
