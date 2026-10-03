@@ -93,6 +93,7 @@ class ObservabilityDevToolsHandlerTest {
 
     @Test
     void connect_sendsBothAMeterSnapshotAndTheInsights() {
+        ObservabilityKit.setLicensePresent(true);
         ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
         RecentInteractions interactions = new RecentInteractions(10);
         interactions.add(failedClick("com.example.SaveButton"));
@@ -104,6 +105,8 @@ class ObservabilityDevToolsHandlerTest {
                 devTools.commands);
         Assertions.assertNotNull(
                 devTools.payloads.get(COMMAND_METRICS).get("meters"));
+        Assertions.assertEquals(true,
+                devTools.payloads.get(COMMAND_METRICS).get("licensed"));
         Assertions.assertEquals(1, insights().size());
         Assertions.assertEquals("user-interaction-error",
                 insights().get(0).get("type"));
@@ -200,8 +203,7 @@ class ObservabilityDevToolsHandlerTest {
 
     @Test
     void licenseNotPresent_stillAnswersAndSaysSo() {
-        ObservabilityKit.setLicensePresent(false);
-
+        // Not recorded as present until serviceInit passes the check
         handler.handleConnect(devTools);
 
         // The panel is shown either way; the flag is what lets it explain

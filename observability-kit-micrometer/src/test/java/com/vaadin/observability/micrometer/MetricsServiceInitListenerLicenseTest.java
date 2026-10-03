@@ -56,6 +56,8 @@ class MetricsServiceInitListenerLicenseTest {
     void developmentMode_withoutValidLicense_skipsInstrumentation() {
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(false);
+        // Left over from an earlier start with a license
+        ObservabilityKit.setLicensePresent(true);
 
         try (var licenseChecker = mockStatic(LicenseChecker.class)) {
             licenseChecker
@@ -77,9 +79,6 @@ class MetricsServiceInitListenerLicenseTest {
     void developmentMode_withValidLicense_registersInstrumentation() {
         when(service.getDeploymentConfiguration().isProductionMode())
                 .thenReturn(false);
-        // Left over from an earlier start without a license
-        ObservabilityKit.setLicensePresent(false);
-
         // An unstubbed static checkLicense is a no-op, i.e. a valid license
         try (var licenseChecker = mockStatic(LicenseChecker.class)) {
             new MetricsServiceInitListener().serviceInit(event);
