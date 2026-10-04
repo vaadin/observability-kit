@@ -706,6 +706,7 @@ const SESSION_METERS = [
   bare.meters({ timestamp: Date.now(), licensed: false, meters: [] });
   bare.insights(payload([], 'inactive'));
   check('an unlicensed kit shows the license notice', bare.html('license').includes('needs a license'), true);
+  check('and tells a license holder to log in through Copilot', bare.html('license').includes('log in from the Vaadin Copilot menu'), true);
   check('and does not blame the insights setting', bare.insightsHtml().includes('vaadin.observability.insights'), false);
   check('nor invite interaction to generate meters', bare.metricsHtml().includes('Interact with the application'), false);
 

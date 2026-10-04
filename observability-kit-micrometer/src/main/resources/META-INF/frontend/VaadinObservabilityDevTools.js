@@ -2095,6 +2095,8 @@
           'insights are collected. See ' +
           '<a href="https://vaadin.com/enterprise" ' +
           'target="_blank" rel="noopener">vaadin.com/enterprise</a>.' +
+          ' If you already have a license, log in from the Vaadin Copilot ' +
+          'menu and restart the application.' +
           '</div>'
         : '';
     }
