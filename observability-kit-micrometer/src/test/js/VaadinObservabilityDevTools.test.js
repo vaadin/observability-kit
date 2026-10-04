@@ -637,7 +637,7 @@ const SESSION_METERS = [
   // An unlicensed kit binds nothing: no meters and no browser collector, but
   // the browser still keeps its navigation timing.
   lcp.win.__vaadinMicrometer = undefined;
-  lcp.meters({ timestamp: Date.now(), meters: [] });
+  lcp.meters({ timestamp: Date.now(), licensed: false, meters: [] });
   const unlicensed = lcp.html('vitals');
   check('without a server bootstrap sample bootstrap has none', unlicensed.includes('for this page load.'), false);
   check('without any samples no vital card has a figure', /ok-big ok-mono">\d/.test(unlicensed), false);
