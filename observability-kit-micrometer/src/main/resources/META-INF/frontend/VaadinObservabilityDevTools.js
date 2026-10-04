@@ -1169,8 +1169,12 @@
       title: 'Server bootstrap',
       name: 'vaadin.request.duration',
       tags: { 'vaadin.request.type': 'bootstrap' },
-      // This page's own bootstrap, for the same reason as LCP above.
-      current: documentServerMs,
+      // This page's own bootstrap, for the same reason as LCP above. Only
+      // once the server has recorded a bootstrap: navigation timing is there
+      // even when the kit collects nothing, e.g. without a license.
+      current: function (stat) {
+        return stat && stat.count > 0 ? documentServerMs() : null;
+      },
       budget: 200,
       note: function () {
         return esc(
@@ -1210,7 +1214,7 @@
   // and the server's count-weighted mean everywhere else.
   function vitalValue(def, stat) {
     if (def.current) {
-      return def.current();
+      return def.current(stat);
     }
     return stat ? stat.mean : null;
   }
