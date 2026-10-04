@@ -27,6 +27,7 @@ import tools.jackson.databind.JsonNode;
 
 import com.vaadin.base.devserver.DevToolsInterface;
 import com.vaadin.base.devserver.DevToolsMessageHandler;
+import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.observability.micrometer.ObservabilityKit;
 import com.vaadin.observability.micrometer.insights.InsightsService;
 import com.vaadin.observability.micrometer.insights.LatestInteraction;
@@ -48,7 +49,11 @@ import com.vaadin.observability.micrometer.insights.RecentInteractions;
  * meter table is only worth polling while the panel is open, whereas the panel
  * watches for new insights whether or not anyone is looking at it, and that
  * background poll should not snapshot the whole registry every time.
+ * <p>
+ * The panel itself is the development-only module declared here, which the
+ * frontend build picks up because this class is a dev-tools entry point.
  */
+@JsModule(value = "./VaadinObservabilityDevTools.js", developmentOnly = true)
 public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
 
     static final String COMMAND_REFRESH = "observability-kit-refresh";
@@ -84,6 +89,9 @@ public class ObservabilityDevToolsHandler implements DevToolsMessageHandler {
     private void sendSnapshot(DevToolsInterface devToolsInterface) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("timestamp", System.currentTimeMillis());
+        // The panel is shown whether or not the kit is licensed; this is what
+        // lets it say why its sections are empty.
+        payload.put("licensed", ObservabilityKit.isLicensePresent());
         payload.put("meters", snapshot());
         payload.put("lastInteraction", lastInteraction());
         devToolsInterface.send(COMMAND_METRICS, payload);

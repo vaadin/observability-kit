@@ -93,6 +93,7 @@ class ObservabilityDevToolsHandlerTest {
 
     @Test
     void connect_sendsBothAMeterSnapshotAndTheInsights() {
+        ObservabilityKit.setLicensePresent(true);
         ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
         RecentInteractions interactions = new RecentInteractions(10);
         interactions.add(failedClick("com.example.SaveButton"));
@@ -104,6 +105,8 @@ class ObservabilityDevToolsHandlerTest {
                 devTools.commands);
         Assertions.assertNotNull(
                 devTools.payloads.get(COMMAND_METRICS).get("meters"));
+        Assertions.assertEquals(true,
+                devTools.payloads.get(COMMAND_METRICS).get("licensed"));
         Assertions.assertEquals(1, insights().size());
         Assertions.assertEquals("user-interaction-error",
                 insights().get(0).get("type"));
@@ -195,6 +198,21 @@ class ObservabilityDevToolsHandlerTest {
                 .get(COMMAND_INSIGHTS_DATA).get("instrumentation"));
         Assertions.assertEquals(List.of(), insights());
         Assertions.assertNotNull(
+                devTools.payloads.get(COMMAND_METRICS).get("meters"));
+    }
+
+    @Test
+    void licenseNotPresent_stillAnswersAndSaysSo() {
+        // Not recorded as present until serviceInit passes the check
+        handler.handleConnect(devTools);
+
+        // The panel is shown either way; the flag is what lets it explain
+        // its empty sections instead of looking like an idle application.
+        Assertions.assertEquals(List.of(COMMAND_METRICS, COMMAND_INSIGHTS_DATA),
+                devTools.commands);
+        Assertions.assertEquals(false,
+                devTools.payloads.get(COMMAND_METRICS).get("licensed"));
+        Assertions.assertEquals(List.of(),
                 devTools.payloads.get(COMMAND_METRICS).get("meters"));
     }
 
