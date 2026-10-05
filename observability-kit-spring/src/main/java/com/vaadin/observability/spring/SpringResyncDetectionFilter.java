@@ -69,14 +69,11 @@ public final class SpringResyncDetectionFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Bounded cache: Spring sizes its first buffer from the client-sent
-        // Content-Length (capped by this limit), so an unbounded limit would
-        // let a forged header allocate gigabytes. A body over the limit is
-        // not inspected, as a truncated one could hide the resync/clientId
-        // fields, which the UIDL JSON places after the (potentially large)
-        // rpc array.
-        LimitedCachingRequestWrapper wrapped = new LimitedCachingRequestWrapper(
-                request, ResyncInspector.MAX_INSPECTED_BODY_BYTES);
+        // No practical cache limit: Flow buffers the whole body anyway, and a
+        // truncated body could hide the resync/clientId fields, which the UIDL
+        // JSON places after the (potentially large) rpc array.
+        ContentCachingRequestWrapper wrapped = new ContentCachingRequestWrapper(
+                request, Integer.MAX_VALUE);
         try {
             chain.doFilter(wrapped, response);
         } finally {
@@ -88,11 +85,7 @@ public final class SpringResyncDetectionFilter extends OncePerRequestFilter {
         }
     }
 
-    private void inspect(LimitedCachingRequestWrapper request) {
-        if (request.overflowed) {
-            // Only a prefix was cached; nothing reliable to classify.
-            return;
-        }
+    private void inspect(ContentCachingRequestWrapper request) {
         byte[] cached = request.getContentAsByteArray();
         if (cached.length == 0) {
             // Flow never read the body; nothing to classify.
@@ -116,25 +109,5 @@ public final class SpringResyncDetectionFilter extends OncePerRequestFilter {
             }
         }
         return StandardCharsets.UTF_8;
-    }
-
-    /**
-     * Caching wrapper that remembers whether the body outgrew the cache limit.
-     * Spring stops caching at the limit but keeps passing the bytes through, so
-     * Flow still reads the whole body.
-     */
-    private static final class LimitedCachingRequestWrapper
-            extends ContentCachingRequestWrapper {
-
-        private boolean overflowed;
-
-        LimitedCachingRequestWrapper(HttpServletRequest request, int limit) {
-            super(request, limit);
-        }
-
-        @Override
-        protected void handleContentOverflow(int contentCacheLimit) {
-            overflowed = true;
-        }
     }
 }
