@@ -10,25 +10,23 @@ package com.vaadin.observability.micrometer.client;
 
 import java.util.List;
 
-import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
-import com.vaadin.observability.micrometer.ClientResourceLoader;
+import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 /**
  * Hidden helper component attached to each UI when client metrics are enabled.
  * Exposes a {@link ClientCallable} that receives batches of
- * {@link ClientSample} from the in-browser collector. Loads the client JS on
- * first attach and re-attaches itself to its UI if removed.
+ * {@link ClientSample} from the in-browser collector, whose script defines the
+ * element and starts collecting once it is attached. Re-attaches itself to its
+ * UI if removed.
  */
+@JsModule("./VaadinMetricsClient.js")
 @Tag("vaadin-metrics-collector")
 public final class MetricsCollectorElement extends Component {
-
-    private static final String CLIENT_INIT_KEY = "vaadinMetricsClientInitialized";
-    private static final String CLIENT_RESOURCE = "META-INF/frontend/VaadinMetricsClient.js";
 
     /**
      * Tells the in-browser collector whether to gather the message of an error
@@ -37,11 +35,10 @@ public final class MetricsCollectorElement extends Component {
      * either, since the browser holds its buffer in {@code sessionStorage}
      * across a reload and an outage.
      */
-    private static final String DETAILS_PRELUDE = "window.__vaadinMicrometerDetails=%s;";
+    private static final String DETAILS_ATTRIBUTE = "details";
 
     private final transient ClientMetricsBinder binder;
     private final transient ClientRateLimiter limiter;
-    private final boolean collectErrorMessages;
 
     /**
      * @deprecated use
@@ -66,23 +63,16 @@ public final class MetricsCollectorElement extends Component {
     public MetricsCollectorElement(ClientMetricsBinder binder,
             ObservabilitySettings settings, boolean collectErrorMessages) {
         this.binder = binder;
-        this.collectErrorMessages = collectErrorMessages;
         this.limiter = new ClientRateLimiter(
                 settings.getClientRatePerSession());
         getElement().getStyle().set("display", "none");
+        getElement().setAttribute(DETAILS_ATTRIBUTE, collectErrorMessages);
         addDetachListener(event -> {
             UI ui = event.getUI();
             if (ui != null && !ui.isClosing()) {
                 ui.access(() -> ui.add(this));
             }
         });
-    }
-
-    @Override
-    protected void onAttach(AttachEvent event) {
-        ClientResourceLoader.loadOnce(event.getUI(), CLIENT_INIT_KEY,
-                CLIENT_RESOURCE, MetricsCollectorElement.class,
-                DETAILS_PRELUDE.formatted(collectErrorMessages));
     }
 
     @ClientCallable
