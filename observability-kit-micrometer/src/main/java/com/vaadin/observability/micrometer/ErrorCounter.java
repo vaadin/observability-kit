@@ -31,17 +31,29 @@ import com.vaadin.flow.component.UI;
  * with each other, so one instance is shared by both writers: a cap enforced
  * per instance would mean two budgets for one meter, and the same route or
  * exception type could be itself on one path and {@code _other} on the other.
- * The instance is created only when {@link ObservabilitySettings#isErrors()} is
- * on; there is nothing to count otherwise.
+ * The exception-type budget ({@link ExceptionTags}) is shared further, with the
+ * {@code error} tag of the request and RPC timers. The instance is created only
+ * when {@link ObservabilitySettings#isErrors()} is on; there is nothing to
+ * count otherwise.
  */
 final class ErrorCounter {
 
     private final MeterRegistry registry;
     private final RouteTagResolver routes;
     private final BoundedTagValues components;
-    private final BoundedTagValues exceptions;
+    private final ExceptionTags exceptions;
 
     ErrorCounter(MeterRegistry registry, ObservabilitySettings settings) {
+        this(registry, settings, new ExceptionTags(settings));
+    }
+
+    /**
+     * @param exceptions
+     *            the exception-type budget, shared with the {@code error} tag
+     *            of the request and RPC timers
+     */
+    ErrorCounter(MeterRegistry registry, ObservabilitySettings settings,
+            ExceptionTags exceptions) {
         this.registry = registry;
         this.routes = new RouteTagResolver(settings.getRouteCardinalityLimit());
         // Components and exception types are bounded by the same limit as
@@ -51,9 +63,7 @@ final class ErrorCounter {
         this.components = new BoundedTagValues(
                 settings.getRouteCardinalityLimit(),
                 MeterNames.COMPONENT_OTHER);
-        this.exceptions = new BoundedTagValues(
-                settings.getRouteCardinalityLimit(),
-                MeterNames.EXCEPTION_OTHER);
+        this.exceptions = exceptions;
     }
 
     /**
@@ -71,7 +81,7 @@ final class ErrorCounter {
             return;
         }
         Counter.builder(MeterNames.ERRORS)
-                .tag(MeterNames.TAG_EXCEPTION, exceptionTag(error))
+                .tag(MeterNames.TAG_EXCEPTION, exceptions.tag(error))
                 .tag(MeterNames.TAG_ROUTE,
                         routes.tagForActiveRoute(ui(component)))
                 .tag(MeterNames.TAG_COMPONENT, componentTag(component))
@@ -95,14 +105,6 @@ final class ErrorCounter {
             }
         }
         return UI.getCurrent();
-    }
-
-    private String exceptionTag(Throwable error) {
-        Class<?> type = error.getClass();
-        String name = type.getSimpleName();
-        // Same reasoning as for components: a lambda or an anonymous Throwable
-        // subclass has an empty simple name.
-        return exceptions.admit(name.isEmpty() ? type.getName() : name);
     }
 
     private String componentTag(Component component) {
