@@ -10,8 +10,10 @@ package com.vaadin.observability.micrometer;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
@@ -21,9 +23,12 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.Location;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.RouteRegistry;
+import com.vaadin.flow.server.SessionRouteRegistry;
 import com.vaadin.flow.server.VaadinSession;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 
 public class RouteTagResolverTest {
@@ -172,6 +177,74 @@ public class RouteTagResolverTest {
 
         assertEquals("_none",
                 new RouteTagResolver(10).tagForUi(new UI(), "_none"));
+    }
+
+    /**
+     * Issue #417: at requestEnd the session is current but no longer locked,
+     * and the router's registry may not know the target. The template must
+     * still resolve through the session registry, read under the lock.
+     */
+    @Test
+    void theCurrentSessionResolvesTheTemplateWhenTheRouterRegistryMisses() {
+        ReentrantLock lock = new ReentrantLock();
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+        Mockito.when(session.getLockInstance()).thenReturn(lock);
+        SessionRouteRegistry sessionRegistry = Mockito
+                .mock(SessionRouteRegistry.class);
+        Mockito.when(sessionRegistry.getTemplate(OrdersView.class))
+                .thenAnswer(invocation -> {
+                    assertTrue(lock.isHeldByCurrentThread(),
+                            "the session registry must be read under the lock");
+                    return Optional.of("orders/:id");
+                });
+        UI ui = uiShowing(new OrdersView(), routerRegistryWithoutTemplates());
+        Mockito.when(ui.getSession()).thenReturn(session);
+
+        VaadinSession.setCurrent(session);
+        try (MockedStatic<SessionRouteRegistry> registries = Mockito
+                .mockStatic(SessionRouteRegistry.class)) {
+            registries.when(
+                    () -> SessionRouteRegistry.getSessionRegistry(session))
+                    .thenReturn(sessionRegistry);
+            RouteTagResolver resolver = new RouteTagResolver(10);
+            assertEquals("orders/:id", resolver.templateForActiveRoute(ui));
+            assertEquals("orders/:id",
+                    resolver.tagForUi(ui, MeterNames.ROUTE_UNKNOWN));
+        } finally {
+            VaadinSession.setCurrent(null);
+        }
+        assertFalse(lock.isLocked(), "the lock must be released");
+    }
+
+    @Test
+    void templateOnlyResolutionDoesNotPassTheClassNameOffAsARoute() {
+        // A class name like /OrdersView reads as a real route on the uri tag;
+        // an unresolved template must surface as unknown instead.
+        VaadinSession.setCurrent(null);
+        UI ui = uiShowing(new OrdersView(), routerRegistryWithoutTemplates());
+        RouteTagResolver resolver = new RouteTagResolver(10);
+
+        assertEquals(MeterNames.ROUTE_UNKNOWN,
+                resolver.templateForActiveRoute(ui));
+        // Plain route tags keep the simple-name stand-in.
+        assertEquals("OrdersView",
+                resolver.tagForUi(ui, MeterNames.ROUTE_UNKNOWN));
+    }
+
+    private static RouteRegistry routerRegistryWithoutTemplates() {
+        RouteRegistry registry = Mockito.mock(RouteRegistry.class);
+        Mockito.when(registry.getTemplate(Mockito.any()))
+                .thenReturn(Optional.empty());
+        return registry;
+    }
+
+    private static UI uiShowing(Component view, RouteRegistry registry) {
+        UI ui = Mockito.mock(UI.class, RETURNS_DEEP_STUBS);
+        Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.of(view));
+        Mockito.when(ui.getInternals().getRouter().getRegistry())
+                .thenReturn(registry);
+        return ui;
     }
 
     @Test

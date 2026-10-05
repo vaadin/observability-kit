@@ -25,6 +25,7 @@ import com.vaadin.flow.internal.JacksonUtils;
 import com.vaadin.observability.micrometer.devtools.ObservabilityDevToolsHandler;
 import com.vaadin.observability.micrometer.insights.CapturedClientError;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
+import com.vaadin.observability.micrometer.insights.LatestInteraction;
 import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
@@ -92,6 +93,7 @@ class ObservabilityDevToolsHandlerTest {
 
     @Test
     void connect_sendsBothAMeterSnapshotAndTheInsights() {
+        ObservabilityKit.setLicensePresent(true);
         ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
         RecentInteractions interactions = new RecentInteractions(10);
         interactions.add(failedClick("com.example.SaveButton"));
@@ -103,6 +105,8 @@ class ObservabilityDevToolsHandlerTest {
                 devTools.commands);
         Assertions.assertNotNull(
                 devTools.payloads.get(COMMAND_METRICS).get("meters"));
+        Assertions.assertEquals(true,
+                devTools.payloads.get(COMMAND_METRICS).get("licensed"));
         Assertions.assertEquals(1, insights().size());
         Assertions.assertEquals("user-interaction-error",
                 insights().get(0).get("type"));
@@ -119,6 +123,40 @@ class ObservabilityDevToolsHandlerTest {
         // insights whether or not it is: answering with both would put the
         // whole registry on the wire for a watch that never reads it.
         Assertions.assertEquals(List.of(COMMAND_METRICS), devTools.commands);
+    }
+
+    @Test
+    void refresh_carriesTheLatestInteractionWithTheMeters() {
+        ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
+        RecentInteractions interactions = new RecentInteractions(10);
+        interactions.recordLatest(1,
+                new LatestInteraction(Instant.ofEpochMilli(1000), "orders",
+                        "OrderView", "com.example.SaveButton", "Save", "click",
+                        CapturedInteraction.OUTCOME_SUCCESS, 4.5, 1),
+                false);
+        ObservabilityKit.setRecentInteractions(interactions);
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> last = (Map<String, Object>) devTools.payloads
+                .get(COMMAND_METRICS).get("lastInteraction");
+        Assertions.assertEquals(1000L, last.get("timestamp"));
+        Assertions.assertEquals("OrderView", last.get("view"));
+        Assertions.assertEquals("Save", last.get("caption"));
+        Assertions.assertEquals(4.5, last.get("serverMs"));
+    }
+
+    @Test
+    void refresh_withNoInteractionBuffer_sendsNoLatestInteraction() {
+        ObservabilityKit.setActiveMeterRegistry(new SimpleMeterRegistry());
+
+        handler.handleMessage(COMMAND_REFRESH, null, devTools);
+
+        Assertions.assertTrue(devTools.payloads.get(COMMAND_METRICS)
+                .containsKey("lastInteraction"));
+        Assertions.assertNull(
+                devTools.payloads.get(COMMAND_METRICS).get("lastInteraction"));
     }
 
     @Test
@@ -160,6 +198,21 @@ class ObservabilityDevToolsHandlerTest {
                 .get(COMMAND_INSIGHTS_DATA).get("instrumentation"));
         Assertions.assertEquals(List.of(), insights());
         Assertions.assertNotNull(
+                devTools.payloads.get(COMMAND_METRICS).get("meters"));
+    }
+
+    @Test
+    void licenseNotPresent_stillAnswersAndSaysSo() {
+        // Not recorded as present until serviceInit passes the check
+        handler.handleConnect(devTools);
+
+        // The panel is shown either way; the flag is what lets it explain
+        // its empty sections instead of looking like an idle application.
+        Assertions.assertEquals(List.of(COMMAND_METRICS, COMMAND_INSIGHTS_DATA),
+                devTools.commands);
+        Assertions.assertEquals(false,
+                devTools.payloads.get(COMMAND_METRICS).get("licensed"));
+        Assertions.assertEquals(List.of(),
                 devTools.payloads.get(COMMAND_METRICS).get("meters"));
     }
 

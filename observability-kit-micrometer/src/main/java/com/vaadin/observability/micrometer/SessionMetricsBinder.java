@@ -9,8 +9,9 @@
 package com.vaadin.observability.micrometer;
 
 import java.time.Duration;
+import java.util.Collections;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import io.micrometer.core.instrument.Counter;
@@ -34,7 +35,14 @@ final class SessionMetricsBinder
     private final Counter created;
     private final AtomicLong active = new AtomicLong();
     private final Timer duration;
-    private final Map<VaadinSession, Long> startNanos = new ConcurrentHashMap<>();
+    /**
+     * Weakly keyed: a container that passivates or swaps out a session drops
+     * the in-memory {@link VaadinSession} without a destroy event, and a
+     * restored session is a new instance, so an entry for the old one would
+     * otherwise never be removed.
+     */
+    private final Map<VaadinSession, Long> startNanos = Collections
+            .synchronizedMap(new WeakHashMap<>());
 
     SessionMetricsBinder(MeterRegistry registry) {
         this.created = Counter.builder(MeterNames.SESSIONS_CREATED)

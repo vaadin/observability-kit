@@ -20,7 +20,9 @@ import org.mockito.Mockito;
 
 import com.vaadin.flow.component.AbstractSinglePropertyField;
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.HasText;
+import com.vaadin.flow.component.PollEvent;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
@@ -30,6 +32,7 @@ import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
+import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 class InteractionCollectorTest {
 
@@ -731,5 +734,78 @@ class InteractionCollectorTest {
 
         Assertions.assertEquals(List.of(), buffer.snapshot().get(0).viewState(),
                 "opening the view and clicking is the whole reproduction");
+    }
+
+    @Test
+    void latest_isTheUsersInteraction() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT, CAPTURE_NONE);
+        UI ui = new UI();
+
+        succeedQuietly(collector, targetOf(ui,
+                new TextComponent("Process return"), "event", "click"));
+
+        LatestInteraction latest = buffer.latest();
+        Assertions.assertEquals("click", latest.event());
+        Assertions.assertEquals("Process return", latest.caption());
+    }
+
+    @Test
+    void latest_isNotReplacedByTheKitsOwnSampleFlush() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT, CAPTURE_NONE);
+        UI ui = new UI();
+        // As if the client script were already loaded, which a UI without a
+        // session could not do.
+        ComponentUtil.setData(ui, "vaadinMetricsClientInitialized",
+                Boolean.TRUE);
+        succeedQuietly(collector, targetOf(ui,
+                new TextComponent("Process return"), "event", "click"));
+
+        succeedQuietly(collector,
+                targetOf(ui,
+                        new MetricsCollectorElement(null,
+                                ObservabilitySettings.builder().build(), false),
+                        "publishedEventHandler", "recordSamples"));
+
+        LatestInteraction latest = buffer.latest();
+        Assertions.assertEquals("click", latest.event());
+        Assertions.assertEquals(1, latest.invocations());
+    }
+
+    @Test
+    void latest_isNotReplacedByAPoll() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT, CAPTURE_NONE);
+        UI ui = new UI();
+        succeedQuietly(collector, targetOf(ui,
+                new TextComponent("Process return"), "event", "click"));
+
+        succeedQuietly(collector, pollOf(ui));
+
+        LatestInteraction latest = buffer.latest();
+        Assertions.assertEquals("click", latest.event());
+        Assertions.assertEquals(1, latest.invocations());
+    }
+
+    /** A poll, which Flow delivers as a DOM event on the UI's own node. */
+    private static Target pollOf(UI ui) {
+        int nodeId = ui.getElement().getNode().getId();
+
+        RpcInvocationStartedEvent started = Mockito
+                .mock(RpcInvocationStartedEvent.class);
+        Mockito.when(started.getType()).thenReturn("event");
+        Mockito.when(started.getName()).thenReturn(PollEvent.DOM_EVENT_NAME);
+        Mockito.when(started.getUI()).thenReturn(ui);
+        Mockito.when(started.getNodeId()).thenReturn(nodeId);
+
+        RpcInvocationEndedEvent ended = Mockito
+                .mock(RpcInvocationEndedEvent.class);
+        Mockito.when(ended.getType()).thenReturn("event");
+        Mockito.when(ended.getName()).thenReturn(PollEvent.DOM_EVENT_NAME);
+        Mockito.when(ended.getUI()).thenReturn(ui);
+        Mockito.when(ended.getNodeId()).thenReturn(nodeId);
+
+        return new Target(ui, ui, started, ended);
     }
 }
