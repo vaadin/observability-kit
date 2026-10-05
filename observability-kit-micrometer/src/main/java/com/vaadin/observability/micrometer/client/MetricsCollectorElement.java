@@ -15,6 +15,7 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.dependency.JsModule;
+import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
 /**
@@ -38,7 +39,13 @@ public final class MetricsCollectorElement extends Component {
     private static final String DETAILS_ATTRIBUTE = "details";
 
     private final transient ClientMetricsBinder binder;
-    private final transient ClientRateLimiter limiter;
+    private final int ratePerSession;
+    /**
+     * Used only when no session is current, which Flow never does for a
+     * client-callable invocation; kept so the element still limits when driven
+     * directly.
+     */
+    private transient ClientRateLimiter fallbackLimiter;
 
     /**
      * @deprecated use
@@ -63,8 +70,7 @@ public final class MetricsCollectorElement extends Component {
     public MetricsCollectorElement(ClientMetricsBinder binder,
             ObservabilitySettings settings, boolean collectErrorMessages) {
         this.binder = binder;
-        this.limiter = new ClientRateLimiter(
-                settings.getClientRatePerSession());
+        this.ratePerSession = settings.getClientRatePerSession();
         getElement().getStyle().set("display", "none");
         getElement().setAttribute(DETAILS_ATTRIBUTE, collectErrorMessages);
         addDetachListener(event -> {
@@ -87,7 +93,7 @@ public final class MetricsCollectorElement extends Component {
         if (binder == null || samples == null || samples.isEmpty()) {
             return;
         }
-        int granted = limiter.tryAcquire(samples.size());
+        int granted = limiter().tryAcquire(samples.size());
         if (granted < samples.size()) {
             binder.recordThrottled(samples.size() - granted);
             if (granted == 0) {
@@ -97,5 +103,29 @@ public final class MetricsCollectorElement extends Component {
         } else {
             binder.ingest(samples);
         }
+    }
+
+    /**
+     * The limiter of the current session, created on first use. One per session
+     * rather than per element, so the {@code client-rate-per-session} budget is
+     * what it says: a user with many tabs open shares one budget instead of
+     * getting one per tab. Called from a client-callable invocation, which
+     * holds the session lock, so the get-or-create cannot race.
+     */
+    private ClientRateLimiter limiter() {
+        VaadinSession session = VaadinSession.getCurrent();
+        if (session == null) {
+            if (fallbackLimiter == null) {
+                fallbackLimiter = new ClientRateLimiter(ratePerSession);
+            }
+            return fallbackLimiter;
+        }
+        ClientRateLimiter shared = session
+                .getAttribute(ClientRateLimiter.class);
+        if (shared == null) {
+            shared = new ClientRateLimiter(ratePerSession);
+            session.setAttribute(ClientRateLimiter.class, shared);
+        }
+        return shared;
     }
 }

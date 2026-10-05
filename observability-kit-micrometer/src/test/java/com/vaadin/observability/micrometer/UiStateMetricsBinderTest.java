@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.lang.ref.WeakReference;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -416,6 +417,42 @@ class UiStateMetricsBinderTest {
         verify(tab.ui()).addDetachListener(captor.capture());
         captor.getValue().onComponentEvent(mock(DetachEvent.class));
 
+        assertEquals(0, binder.trackedUis());
+        assertEquals(0.0, gauge(MeterNames.UI_STATE_NODES), 0.0);
+    }
+
+    @Test
+    void aTabWhoseSessionLeavesMemoryWithoutAnyEventIsNotRetained()
+            throws InterruptedException {
+        // A real UI and session: Mockito's inline mocks record every call made
+        // on them, and those records keep a mock reachable for good. The
+        // session references the UI, as a real one does through its UI list,
+        // so the binder holding the session strongly would keep the weakly
+        // held UI alive.
+        VaadinSession session = new VaadinSession(
+                mock(VaadinService.class, RETURNS_DEEP_STUBS)) {
+            @Override
+            public boolean hasLock() {
+                return true;
+            }
+        };
+        UI ui = new UI();
+        ui.getInternals().setSession(session);
+        session.setAttribute(UI.class, ui);
+        binder.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
+        assertEquals(1, binder.trackedUis());
+
+        // Passivation or swap-out: the session and its UIs leave memory with
+        // neither a detach nor a destroy event.
+        WeakReference<UI> probe = new WeakReference<>(ui);
+        ui = null;
+        session = null;
+        for (int i = 0; i < 100 && probe.get() != null; i++) {
+            System.gc();
+            Thread.sleep(10);
+        }
+
+        assertNull(probe.get(), "the binder must not keep a UI reachable");
         assertEquals(0, binder.trackedUis());
         assertEquals(0.0, gauge(MeterNames.UI_STATE_NODES), 0.0);
     }

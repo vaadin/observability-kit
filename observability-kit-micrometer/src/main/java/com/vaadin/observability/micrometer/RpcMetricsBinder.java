@@ -56,12 +56,15 @@ final class RpcMetricsBinder {
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final boolean useObservation;
+    private final ExceptionTags exceptionTags;
 
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
-    // Simple class name of the failing exception, mirroring what
-    // DefaultMeterObservationHandler reads off the Observation context so the
-    // direct-recording path can tag its Timer the same way.
+    // Type of the failing exception for the direct-recording path's error tag:
+    // its simple class name, as DefaultMeterObservationHandler tags the
+    // Observation path, but drawn from the shared bounded set so a flood of
+    // generated exception types collapses into _other. The Observation path's
+    // tag is written by that handler and is not bounded.
     private final ThreadLocal<String> errorType = new ThreadLocal<>();
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Observation> observation = new ThreadLocal<>();
@@ -70,10 +73,23 @@ final class RpcMetricsBinder {
     RpcMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings) {
+        this(registry, observationRegistry, settings,
+                new ExceptionTags(settings));
+    }
+
+    /**
+     * @param exceptionTags
+     *            the exception-type budget the {@code error} tag is drawn from,
+     *            shared with {@code vaadin.errors} and the request timer
+     */
+    RpcMetricsBinder(MeterRegistry registry,
+            ObservationRegistry observationRegistry,
+            ObservabilitySettings settings, ExceptionTags exceptionTags) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.useObservation = observationRegistry != null
                 && settings.isTraces();
+        this.exceptionTags = exceptionTags;
     }
 
     /**
@@ -149,7 +165,7 @@ final class RpcMetricsBinder {
         Throwable error = event.getError();
         errored.set(Boolean.TRUE);
         if (error != null) {
-            errorType.set(error.getClass().getSimpleName());
+            errorType.set(exceptionTags.tag(error));
         }
         Observation obs = observation.get();
         if (obs != null && error != null) {
