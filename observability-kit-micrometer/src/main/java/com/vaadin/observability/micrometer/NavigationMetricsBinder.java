@@ -45,10 +45,12 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * {@code forwardTo} restarts the chain (so {@code beforeEnter} fires again),
  * and an exception thrown while instantiating the view abandons it altogether.
  * Such a navigation is closed out by the {@code beforeEnter} that supersedes
- * it, by {@code requestEnd} as a request-scoped backstop, or by
- * {@code uiDetached} for one started off-request through {@code UI.access()}.
- * Without that, its span would never be stopped and its
- * {@link Observation.Scope} would stay open on the request thread.
+ * it, by {@code requestEnd} as a request-scoped backstop, or — for one started
+ * outside a request, e.g. through {@code UI.access()} — by an access task
+ * queued for it that runs when its thread releases the session lock, with
+ * {@code uiDetached} as the last resort. Without that, its span would never be
+ * stopped and its {@link Observation.Scope} would stay open on the request
+ * thread.
  * <p>
  * The recorded {@link Outcome} comes from the navigation's own redirect state.
  * One carrying no redirect flag at all is classified by where it was closed out
@@ -126,6 +128,15 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
      */
     private final ThreadLocal<Set<WeakReference<UI>>> pendingUis = new ThreadLocal<>();
 
+    /**
+     * Whether this thread is inside a request this interceptor saw start, so
+     * {@code requestEnd} will close out what it leaves open. A navigation
+     * started anywhere else — a {@code UI.access()} task on a background
+     * thread, a push message — gets a backstop of its own instead; see
+     * {@link #closeOutOffRequest}.
+     */
+    private final ThreadLocal<Boolean> inRequest = new ThreadLocal<>();
+
     NavigationMetricsBinder(MeterRegistry registry, RouteTagResolver routes) {
         this(registry, null, ObservabilitySettings.builder().build(), routes);
     }
@@ -186,6 +197,35 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
             pendingUis.set(marked);
         }
         marked.add(new WeakReference<>(ui));
+        if (!Boolean.TRUE.equals(inRequest.get())) {
+            closeOutOffRequest(ui, pending);
+        }
+    }
+
+    /**
+     * Gives a navigation started outside a request a backstop on its own
+     * thread. Nothing calls {@code requestEnd} there, and {@code uiDetached}
+     * usually runs on another thread, where the navigation's scope may not be
+     * closed — so a navigation abandoned without reaching
+     * {@code afterNavigation} would leave its scope current on a pooled thread,
+     * parenting every later span there under it.
+     * <p>
+     * An access task is queued for it: the session lock is held here, so Flow
+     * runs the task when this thread releases the lock, after the work that
+     * started the navigation has returned, and still under the lock. A
+     * navigation that has completed or been superseded by then is no longer the
+     * pending one, and the task leaves it alone.
+     */
+    private void closeOutOffRequest(UI ui, Pending pending) {
+        VaadinSession session = ui.getSession();
+        if (session == null) {
+            return;
+        }
+        session.access(() -> {
+            if (ComponentUtil.getData(ui, PENDING_KEY) == pending) {
+                finish(ui, null, Outcome.UNKNOWN);
+            }
+        });
     }
 
     @Override
@@ -199,6 +239,7 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // skipped (e.g. mid-request server shutdown), so this request never
         // unwinds a navigation belonging to another one.
         pendingUis.remove();
+        inRequest.set(Boolean.TRUE);
         // Also drain the UI relay: this interceptor is registered whenever
         // navigation is on, so stale entries are cleared on request threads
         // even when RequestMetricsBinder is not registered. Cleared only at
@@ -227,6 +268,7 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // this method first: the navigation scope has to close while the
         // enclosing request scope is still open, or closing it would restore
         // the already stopped request observation onto the thread.
+        inRequest.remove();
         Set<WeakReference<UI>> marked = pendingUis.get();
         if (marked == null) {
             return;

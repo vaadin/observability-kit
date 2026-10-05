@@ -8,13 +8,22 @@
  */
 package com.vaadin.observability.micrometer.client;
 
+import java.io.Serial;
+import java.io.Serializable;
+
 /**
  * Trivial token bucket: refills {@code ratePerWindow} tokens every
- * {@code windowMs} milliseconds. Not thread safe in the strict sense, but
- * synchronized on the instance, which is sufficient because there is one
- * limiter per UI.
+ * {@code windowMs} milliseconds. Synchronized on the instance, which is
+ * sufficient because there is one limiter per session and its callers already
+ * hold that session's lock.
+ * <p>
+ * Serializable because it is kept as a session attribute, which the container
+ * writes out with the session.
  */
-final class ClientRateLimiter {
+final class ClientRateLimiter implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     private static final long WINDOW_MS = 10_000L;
 
