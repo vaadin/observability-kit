@@ -105,6 +105,22 @@ class ObservabilityKitTest {
     }
 
     @Test
+    void clearBound_keepsRegistryAnotherLiveServiceSharesUntilItIsDestroyed() {
+        // One registry bean shared by two Vaadin servlets.
+        SimpleMeterRegistry shared = new SimpleMeterRegistry();
+        ObservabilityKit.setActiveMeterRegistry(shared);
+        ObservabilityKit.setActiveMeterRegistry(shared);
+
+        ObservabilityKit.clearBound(shared, null, null, null, null);
+
+        assertSame(shared, ObservabilityKit.getActiveMeterRegistry());
+
+        ObservabilityKit.clearBound(shared, null, null, null, null);
+
+        assertNull(ObservabilityKit.getActiveMeterRegistry());
+    }
+
+    @Test
     void reset_clearsState() {
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().build());
