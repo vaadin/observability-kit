@@ -1,16 +1,19 @@
 // Copyright 2000-2026 Vaadin Ltd.
 // Licensed under the Vaadin Commercial License and Service Terms.
 //
-// In-browser collector for observability-kit. Injected per UI by
-// MetricsCollectorElement via Page.executeJs. The IIFE is idempotent so the
-// re-attach path does not double-install hooks.
-(function () {
+// In-browser collector for observability-kit, bundled through the @JsModule
+// on MetricsCollectorElement. Loading the module only defines the
+// <vaadin-metrics-collector> element; nothing is collected until the server
+// attaches one, which it does only when client metrics are enabled. The
+// install is idempotent so the re-attach path does not double-install hooks.
+var COLLECTOR_TAG = 'vaadin-metrics-collector';
+
+function installCollector() {
   if (window.__vaadinMicrometerInstalled) {
     return;
   }
   window.__vaadinMicrometerInstalled = true;
 
-  var COLLECTOR_TAG = 'vaadin-metrics-collector';
   var BUFFER_MAX = 200;
   var FLUSH_INTERVAL_MS = 5000;
   // How long a handed-over batch may go unanswered before a flush takes it
@@ -51,6 +54,11 @@
   var OWN_REQUEST_MAX_WAIT_MS = 30000;
 
   var buffer = [];
+
+  // The most recent sample per meter name, value and time only. Read by the
+  // development-mode Copilot panel, which breaks the user's last interaction
+  // down into round trip and render; flushing does not clear it.
+  var latestSamples = {};
 
   // The batch handed to the server and not yet answered for, if any. It stays
   // in the persisted copy until the answer arrives, since the send is
@@ -168,6 +176,7 @@
     }
     offlineBaseline.set(sample, offlineElapsed());
     buffer.push(sample);
+    latestSamples[name] = { valueMs: valueMs, ts: sample.ts };
     if (offline()) {
       // Only worth the write while the samples are at risk: a reload during an
       // outage would otherwise lose exactly the reports that explain it.
@@ -423,19 +432,58 @@
     /* ignore */
   }
 
-  // Web Vitals: LCP.
+  // Web Vitals: LCP. The browser emits a new candidate every time a larger
+  // element paints, and the page's LCP is whichever is current when the user
+  // first interacts or the page is hidden -- after either, a larger paint is
+  // the page responding, not loading. So it is reported once, then. Sending
+  // every candidate would put the early, smaller ones into the server's mean.
+  // The panel reads the current candidate meanwhile, through `latest`.
+  var LCP = 'vaadin.client.web_vitals.lcp';
+  var lcpObserver = null;
+  var lcpCandidate = null;
+
+  function takeLcp(entries) {
+    var last = entries[entries.length - 1];
+    if (last) {
+      lcpCandidate = { route: currentRoute(), valueMs: last.renderTime || last.loadTime || last.startTime };
+      latestSamples[LCP] = { valueMs: lcpCandidate.valueMs, ts: Date.now() };
+    }
+  }
+
+  function reportLcp() {
+    if (lcpObserver === null) {
+      return;
+    }
+    try {
+      takeLcp(lcpObserver.takeRecords());
+      lcpObserver.disconnect();
+    } catch (e) {
+      /* already gone, report what was seen */
+    }
+    lcpObserver = null;
+    if (lcpCandidate !== null) {
+      pushSample(LCP, { route: lcpCandidate.route }, lcpCandidate.valueMs);
+    }
+  }
+
   try {
-    var lcpObserver = new PerformanceObserver(function (list) {
-      var entries = list.getEntries();
-      var last = entries[entries.length - 1];
-      if (last) {
-        var value = last.renderTime || last.loadTime || last.startTime;
-        pushSample('vaadin.client.web_vitals.lcp', { route: currentRoute() }, value);
-      }
+    lcpObserver = new PerformanceObserver(function (list) {
+      takeLcp(list.getEntries());
     });
     lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+    // Registered ahead of the flush on hiding further down, so the sample is
+    // in the buffer that flush sends.
+    ['keydown', 'pointerdown'].forEach(function (type) {
+      window.addEventListener(type, reportLcp, { capture: true, once: true });
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        reportLcp();
+      }
+    });
+    window.addEventListener('pagehide', reportLcp);
   } catch (e) {
-    /* unsupported, skip */
+    lcpObserver = null;
   }
 
   // Web Vitals: FCP (from paint timing).
@@ -473,15 +521,17 @@
     return text.length > DETAIL_MAX ? text.slice(0, DETAIL_MAX) : text;
   }
 
-  // Whether the application asked for error messages to be collected. Set by
-  // the server ahead of this script. The message is gathered only when it is
-  // on, rather than gathered and discarded later: a browser error message can
-  // quote whatever the page was working with, and buffering one puts it in
-  // sessionStorage and then on the wire, neither of which a server-side
-  // retention rule can undo. The server applies the same rule again, for the
-  // page that was already open when the setting changed.
+  // Whether the application asked for error messages to be collected, which the
+  // server says with the `details` attribute on the collector element. The
+  // message is gathered only when it is on, rather than gathered and discarded
+  // later: a browser error message can quote whatever the page was working
+  // with, and buffering one puts it in sessionStorage and then on the wire,
+  // neither of which a server-side retention rule can undo. The server applies
+  // the same rule again, for the page that was already open when the setting
+  // changed.
   function detailsEnabled() {
-    return window.__vaadinMicrometerDetails === true;
+    var el = document.querySelector(COLLECTOR_TAG);
+    return !!el && el.hasAttribute('details');
   }
 
 
@@ -1267,6 +1317,21 @@
     flush: flush,
     bufferSize: function () {
       return buffer.length;
+    },
+    latest: function (name) {
+      var sample = latestSamples[name];
+      return sample ? { valueMs: sample.valueMs, ts: sample.ts } : null;
     }
   };
-})();
+}
+
+if (!customElements.get(COLLECTOR_TAG)) {
+  customElements.define(
+    COLLECTOR_TAG,
+    class extends HTMLElement {
+      connectedCallback() {
+        installCollector();
+      }
+    }
+  );
+}

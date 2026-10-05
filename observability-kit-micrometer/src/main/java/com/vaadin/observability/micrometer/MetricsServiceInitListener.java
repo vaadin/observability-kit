@@ -222,10 +222,11 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         boolean productionMode = event.getSource().getDeploymentConfiguration()
                 .isProductionMode();
         if (!ObservabilityLicense.isLicensed(productionMode)) {
+            ObservabilityKit.setLicensePresent(false);
             LOGGER.warn(
                     "No valid {} license found. Observability Kit instrumentation "
                             + "will not be registered and no telemetry will be collected. "
-                            + "See https://vaadin.com/commercial-license-and-service-terms",
+                            + "See https://vaadin.com/enterprise",
                     ObservabilityLicense.PRODUCT_NAME);
             return;
         }
@@ -234,14 +235,10 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                 : ObservabilityKit.getObservationRegistry();
         // Record the bound registry so the dev-mode Copilot metrics panel can
         // read the live meters regardless of deployment type.
+        ObservabilityKit.setLicensePresent(true);
         ObservabilityKit.setActiveMeterRegistry(r);
         ObservabilityUsage.markAsUsed(s);
         bind(event, r, or, s);
-        if (!productionMode) {
-            event.getSource()
-                    .addUIInitListener(uiEvent -> ObservabilityDevToolsClient
-                            .inject(uiEvent.getUI()));
-        }
     }
 
     void bind(ServiceInitEvent event, MeterRegistry registry,
