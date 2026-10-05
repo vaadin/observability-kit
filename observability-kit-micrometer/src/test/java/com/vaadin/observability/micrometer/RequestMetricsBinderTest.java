@@ -23,6 +23,7 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
+import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 class RequestMetricsBinderTest {
 
@@ -43,6 +44,32 @@ class RequestMetricsBinderTest {
                 .timer();
         Assertions.assertNotNull(timer);
         Assertions.assertEquals(1L, timer.count());
+    }
+
+    @Test
+    void unknownHttpMethodsShareOneTimer() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry,
+                ObservabilitySettings.builder().traces(false).build());
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        for (String method : List.of("POST", "FOO1", "FOO2", "get")) {
+            VaadinRequest req = Mockito.mock(VaadinRequest.class);
+            Mockito.when(req.getMethod()).thenReturn(method);
+            binder.requestStart(req, res);
+            binder.requestEnd(req, res, session);
+        }
+
+        List<String> methods = registry.find(MeterNames.REQUEST_DURATION)
+                .timers().stream()
+                .map(t -> t.getId().getTag(ObservationNames.KEY_HTTP_METHOD))
+                .sorted().toList();
+        Assertions.assertEquals(List.of("POST", "_other"), methods);
+        Assertions.assertEquals(3L,
+                registry.find(MeterNames.REQUEST_DURATION)
+                        .tag(ObservationNames.KEY_HTTP_METHOD, "_other").timer()
+                        .count());
     }
 
     @Test
