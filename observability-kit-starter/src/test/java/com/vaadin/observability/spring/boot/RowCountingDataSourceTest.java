@@ -362,6 +362,34 @@ class RowCountingDataSourceTest {
     }
 
     @Test
+    void closingTheConnectionOfAStatement_stopsTheQuerySpan() throws Exception {
+        DataSource delegate = mock(DataSource.class);
+        Connection connection = mock(Connection.class);
+        PreparedStatement prepared = mock(PreparedStatement.class);
+        ResultSet resultSet = mock(ResultSet.class);
+        when(delegate.getConnection()).thenReturn(connection);
+        when(connection.prepareStatement(anyString())).thenReturn(prepared);
+        when(prepared.executeQuery()).thenReturn(resultSet);
+        when(prepared.getConnection()).thenReturn(connection);
+
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        List<Observation.Context> stopped = recordStops(observationRegistry);
+
+        DataSource ds = new RowCountingDataSource(delegate,
+                new DatabaseFetchMetrics(registry),
+                new DatabaseQuerySpans(observationRegistry, true, 100));
+        Connection c = ds.getConnection();
+        ResultSet rs = c.prepareStatement("select 1").executeQuery();
+
+        // The statement hands back the proxy, not the raw driver connection,
+        // so closing it still stops the spans of its statements.
+        assertThat(rs.getStatement().getConnection()).isSameAs(c);
+        rs.getStatement().getConnection().close();
+
+        assertThat(stopped).hasSize(1);
+    }
+
+    @Test
     void aSpanStoppedBeforeTheConnectionCloses_isStoppedOnce()
             throws Exception {
         DataSource delegate = mock(DataSource.class);

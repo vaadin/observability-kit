@@ -60,15 +60,19 @@ final class CountingResultSet implements ResultSet {
      * reaches the proxy and stops its span.
      */
     private final Statement statement;
+    /** Notified once when this result set closes, after the span stops. */
+    private final Runnable onClose;
     private long rows;
     private boolean recorded;
 
     CountingResultSet(ResultSet delegate, DatabaseQuerySpans.QuerySpan span,
-            DatabaseFetchMetrics metrics, Statement statement) {
+            DatabaseFetchMetrics metrics, Statement statement,
+            Runnable onClose) {
         this.delegate = delegate;
         this.span = span;
         this.metrics = metrics;
         this.statement = statement;
+        this.onClose = onClose;
     }
 
     @Override
@@ -96,6 +100,9 @@ final class CountingResultSet implements ResultSet {
             DatabaseActivity.rowsRead(rows);
             if (span != null) {
                 span.stop(rows);
+            }
+            if (onClose != null) {
+                onClose.run();
             }
         }
     }

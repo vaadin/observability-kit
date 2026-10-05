@@ -78,10 +78,12 @@ final class RowCountingDataSource implements DataSource {
         if (connection == null) {
             return null;
         }
-        return (Connection) Proxy.newProxyInstance(
+        ConnectionHandler handler = new ConnectionHandler(connection);
+        Connection proxy = (Connection) Proxy.newProxyInstance(
                 Connection.class.getClassLoader(),
-                new Class<?>[] { Connection.class },
-                new ConnectionHandler(connection));
+                new Class<?>[] { Connection.class }, handler);
+        handler.proxy = proxy;
+        return proxy;
     }
 
     private Statement wrapStatement(Statement statement, String sql,
@@ -94,19 +96,9 @@ final class RowCountingDataSource implements DataSource {
                 : statement instanceof PreparedStatement
                         ? PreparedStatement.class
                         : Statement.class;
-        StatementHandler handler = new StatementHandler(statement, sql, owner);
-        owner.openStatements.add(handler);
         return (Statement) Proxy.newProxyInstance(
                 Statement.class.getClassLoader(), new Class<?>[] { iface },
-                handler);
-    }
-
-    private ResultSet wrapResultSet(ResultSet resultSet,
-            DatabaseQuerySpans.QuerySpan span, Statement statement) {
-        if (resultSet == null) {
-            return null;
-        }
-        return new CountingResultSet(resultSet, span, metrics, statement);
+                new StatementHandler(statement, sql, owner));
     }
 
     /**
@@ -124,13 +116,20 @@ final class RowCountingDataSource implements DataSource {
     private final class ConnectionHandler implements InvocationHandler {
         private final Connection connection;
         /**
-         * Statements created here and not yet closed through their proxy.
-         * Closing a connection implicitly closes its statements and result sets
-         * inside the driver (or pool), where our proxies never see it, so their
-         * in-flight spans are stopped from here. Bounded by what the driver
-         * itself holds open for this connection.
+         * The proxy wrapping this handler, handed back by
+         * {@code Statement.getConnection()} so that closing the connection
+         * reached through a statement still stops its spans.
          */
-        private final Set<StatementHandler> openStatements = ConcurrentHashMap
+        private Connection proxy;
+        /**
+         * Statements of this connection with an in-flight span. Closing a
+         * connection implicitly closes its statements and result sets inside
+         * the driver (or pool), where our proxies never see it, so their spans
+         * are stopped from here. A statement leaves the set as soon as its span
+         * stops, so the set is bounded by the queries in flight rather than by
+         * every statement the connection ever created.
+         */
+        private final Set<StatementHandler> pendingStatements = ConcurrentHashMap
                 .newKeySet();
 
         ConnectionHandler(Connection connection) {
@@ -163,10 +162,10 @@ final class RowCountingDataSource implements DataSource {
         }
 
         private void stopOpenStatements() {
-            for (StatementHandler statement : openStatements) {
+            for (StatementHandler statement : pendingStatements) {
                 statement.stopPending();
             }
-            openStatements.clear();
+            pendingStatements.clear();
         }
     }
 
@@ -202,9 +201,8 @@ final class RowCountingDataSource implements DataSource {
             // this statement, so stop the previous span first — its result-set
             // close never reaches our proxy, and it would otherwise be
             // orphaned.
-            if (producesQuery && pending != null) {
-                pending.stop(-1);
-                pending = null;
+            if (producesQuery) {
+                stopPending();
             }
             // Start the span before executing so it brackets the DB round trip.
             DatabaseQuerySpans.QuerySpan span = spans != null && producesQuery
@@ -212,6 +210,7 @@ final class RowCountingDataSource implements DataSource {
                     : null;
             if (span != null) {
                 pending = span;
+                owner.pendingStatements.add(this);
             }
             Object result;
             try {
@@ -227,16 +226,13 @@ final class RowCountingDataSource implements DataSource {
                     DatabaseActivity.queryExecuted();
                 }
             } catch (Throwable t) {
-                if (span != null) {
-                    span.stop(-1);
-                    pending = null;
-                }
+                stopPending();
                 throw t;
             }
             switch (name) {
             case "executeQuery" -> {
                 if (result instanceof ResultSet resultSet) {
-                    return wrapResultSet(resultSet, pending, (Statement) proxy);
+                    return wrapResultSet(resultSet, (Statement) proxy);
                 }
                 // No result set (unusual) — don't leak the span.
                 stopPending();
@@ -250,13 +246,17 @@ final class RowCountingDataSource implements DataSource {
             }
             case "getResultSet" -> {
                 if (result instanceof ResultSet resultSet) {
-                    return wrapResultSet(resultSet, pending, (Statement) proxy);
+                    return wrapResultSet(resultSet, (Statement) proxy);
                 }
+            }
+            case "getConnection" -> {
+                // Hand back the proxy, so that closing the connection reached
+                // through this statement still stops the pending spans.
+                return owner.proxy;
             }
             case "close" -> {
                 // Result set never closed: stop the span so it isn't orphaned.
                 stopPending();
-                owner.openStatements.remove(this);
             }
             default -> {
                 // getGeneratedKeys() and other ResultSet-returning methods are
@@ -267,10 +267,28 @@ final class RowCountingDataSource implements DataSource {
             return result;
         }
 
+        private ResultSet wrapResultSet(ResultSet resultSet, Statement proxy) {
+            DatabaseQuerySpans.QuerySpan span = pending;
+            return new CountingResultSet(resultSet, span, metrics, proxy,
+                    () -> released(span));
+        }
+
         private void stopPending() {
             if (pending != null) {
                 pending.stop(-1);
                 pending = null;
+                owner.pendingStatements.remove(this);
+            }
+        }
+
+        /**
+         * Called when the result set of {@code span} closes, which stops the
+         * span itself: the connection no longer needs to track this statement.
+         */
+        private void released(DatabaseQuerySpans.QuerySpan span) {
+            if (span != null && pending == span) {
+                pending = null;
+                owner.pendingStatements.remove(this);
             }
         }
 
