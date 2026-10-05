@@ -81,6 +81,37 @@ class ObservabilitySettingsTest {
     }
 
     @Test
+    void limitsAboveTheirMaximum_throwIllegalArgument() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().insightsCapacity(
+                        ObservabilitySettings.MAX_INSIGHTS_CAPACITY + 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().routeCardinalityLimit(
+                        ObservabilitySettings.MAX_ROUTE_CARDINALITY_LIMIT + 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> ObservabilitySettings.builder().databaseSpanLimit(
+                        ObservabilitySettings.MAX_DATABASE_SPAN_LIMIT + 1));
+    }
+
+    @Test
+    void limitsAtTheirMaximum_areAccepted() {
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .insightsCapacity(ObservabilitySettings.MAX_INSIGHTS_CAPACITY)
+                .routeCardinalityLimit(
+                        ObservabilitySettings.MAX_ROUTE_CARDINALITY_LIMIT)
+                .databaseSpanLimit(
+                        ObservabilitySettings.MAX_DATABASE_SPAN_LIMIT)
+                .build();
+
+        assertEquals(ObservabilitySettings.MAX_INSIGHTS_CAPACITY,
+                settings.getInsightsCapacity());
+        assertEquals(ObservabilitySettings.MAX_ROUTE_CARDINALITY_LIMIT,
+                settings.getRouteCardinalityLimit());
+        assertEquals(ObservabilitySettings.MAX_DATABASE_SPAN_LIMIT,
+                settings.getDatabaseSpanLimit());
+    }
+
+    @Test
     void routeCardinalityLimit_zero_throwsIllegalArgument() {
         assertThrows(IllegalArgumentException.class,
                 () -> ObservabilitySettings.builder().routeCardinalityLimit(0));
