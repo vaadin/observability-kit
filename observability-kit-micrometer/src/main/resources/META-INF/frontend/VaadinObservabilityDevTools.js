@@ -1,8 +1,8 @@
 // Copyright 2000-2026 Vaadin Ltd.
 // Licensed under the Vaadin Commercial License and Service Terms.
 //
-// Dev-mode Vaadin Copilot panel for observability-kit. Injected per UI by
-// ObservabilityDevToolsClient via Page.executeJs (development mode only).
+// Dev-mode Vaadin Copilot panel for observability-kit, bundled through the
+// development-only @JsModule on ObservabilityDevToolsHandler.
 // Registers a Copilot plugin with four tabs. Three read the live vaadin.*
 // Micrometer meters: the vitals, a handful of figures read against common
 // budgets with a preview of how they would feel over a real network; the last
@@ -27,13 +27,7 @@
 // listening for until the log panel opens - and the log panel is usually not
 // open either.
 //
-// The IIFE is idempotent so repeated injection does not re-register the plugin.
-//
-// NOTE: this file is injected through ClientResourceLoader, which strips its
-// comments with a parser that is not a JavaScript parser: a double slash with
-// code after it on the same line deletes the rest of that line. Hence no regex
-// literals and no URLs in string literals here. ClientResourceIntegrityTest
-// enforces it.
+// The IIFE is idempotent so a second load does not re-register the plugin.
 (function () {
   if (window.__vaadinObservabilityDevToolsInstalled) {
     return;
@@ -1175,8 +1169,12 @@
       title: 'Server bootstrap',
       name: 'vaadin.request.duration',
       tags: { 'vaadin.request.type': 'bootstrap' },
-      // This page's own bootstrap, for the same reason as LCP above.
-      current: documentServerMs,
+      // This page's own bootstrap, for the same reason as LCP above. Only
+      // once the server has recorded a bootstrap: navigation timing is there
+      // even when the kit collects nothing, e.g. without a license.
+      current: function (stat) {
+        return stat && stat.count > 0 ? documentServerMs() : null;
+      },
       budget: 200,
       note: function () {
         return esc(
@@ -1216,7 +1214,7 @@
   // and the server's count-weighted mean everywhere else.
   function vitalValue(def, stat) {
     if (def.current) {
-      return def.current();
+      return def.current(stat);
     }
     return stat ? stat.mean : null;
   }
@@ -1708,6 +1706,8 @@
     '.ok-tick{position:absolute;top:-3px;width:1px;height:10px;background:var(--ok-muted)}',
     '.ok-scale{display:flex;justify-content:space-between;font-size:10px;color:var(--ok-muted);margin-top:4px}',
     '.ok-note{font-size:11px;color:var(--ok-muted);margin-top:8px}',
+    '.ok-license{margin:8px 14px 0;padding:8px 10px;border-radius:4px;' +
+      'background:rgba(217,115,13,.15)}',
     '.ok-flush{margin-top:1px}',
     '.ok-link{color:var(--ok-blue);text-decoration:underline;cursor:pointer}',
     '.ok-preview{margin-top:14px;border:1px solid rgba(22,118,243,.25);background:rgba(22,118,243,.06);' +
@@ -1875,6 +1875,13 @@
     return true;
   }
 
+  // Whether the server said the kit has no license, which it says on the meter
+  // snapshot: the insights payload is the actuator's, unaltered. The panel is
+  // shown either way, with its sections empty and a notice saying why.
+  function unlicensed() {
+    return !!latest && latest.licensed === false;
+  }
+
   var ticks = 0;
 
   // Insights are polled whether or not the panel is open - that is what makes
@@ -2006,6 +2013,7 @@
         this.innerHTML =
           '<style>' + STYLE + '</style>' +
           '<div class="ok-root">' +
+          '<div data-region="license"></div>' +
           '<div data-region="tabs"></div>' +
           '<div data-region="vitals"></div>' +
           '<div data-region="anatomy"></div>' +
@@ -2016,6 +2024,7 @@
           '<div data-region="insights"></div>' +
           '<div data-region="footer"></div>' +
           '</div>';
+        this._licenseEl = this.querySelector('[data-region="license"]');
         this._tabsEl = this.querySelector('[data-region="tabs"]');
         this._vitalsEl = this.querySelector('[data-region="vitals"]');
         this._anatomyEl = this.querySelector('[data-region="anatomy"]');
@@ -2025,6 +2034,7 @@
         this._insightsEl = this.querySelector('[data-region="insights"]');
         this._footerEl = this.querySelector('[data-region="footer"]');
       }
+      this.renderLicense();
       this.renderInsights();
       this.renderMeters();
       this.renderVitals();
@@ -2078,6 +2088,19 @@
         slowestView((latest && latest.meters) || []);
     }
 
+    renderLicense() {
+      this._licenseEl.innerHTML = unlicensed()
+        ? '<div class="ok-license">' +
+          'Observability Kit needs a license. Without one, no metrics or ' +
+          'insights are collected. See ' +
+          '<a href="https://vaadin.com/enterprise" ' +
+          'target="_blank" rel="noopener">vaadin.com/enterprise</a>.' +
+          ' If you already have a license, log in from the Vaadin Copilot ' +
+          'menu and restart the application.' +
+          '</div>'
+        : '';
+    }
+
     renderInsights(force) {
       var insights = (latestInsights && latestInsights.insights) || [];
       var instrumentation = latestInsights && latestInsights.instrumentation;
@@ -2115,6 +2138,7 @@
       // all, and hiding one changes it without the server being involved.
       var signature = JSON.stringify([
         !!latestInsights,
+        unlicensed(),
         instrumentation,
         this._ranked,
         Object.keys(expanded).sort(),
@@ -2157,6 +2181,13 @@
         body =
           '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
           'Waiting for the first snapshot…' +
+          '</div>';
+      } else if (unlicensed()) {
+        // Not "no problems detected", and not the insights setting either:
+        // the notice above says why nothing is here.
+        body =
+          '<div style="padding:10px 12px;color:var(--dev-tools-text-color-secondary,#888)">' +
+          'Not collected without a license.' +
           '</div>';
       } else if (quiet.length > 0) {
         // Findings exist; none is being counted. Saying "no problems
@@ -2228,9 +2259,11 @@
           header +
           '<div class="ok-sec ok-note">' +
           esc(
-            all.length === 0
-              ? 'No Vaadin meters yet. Interact with the application to generate metrics.'
-              : 'Every meter is filtered out. Turn a filter off to see them.'
+            unlicensed()
+              ? 'Not collected without a license.'
+              : all.length === 0
+                ? 'No Vaadin meters yet. Interact with the application to generate metrics.'
+                : 'Every meter is filtered out. Turn a filter off to see them.'
           ) +
           '</div>';
         return;

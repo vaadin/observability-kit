@@ -12,6 +12,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.component.Component;
@@ -21,6 +23,8 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.UIInitEvent;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
+import com.vaadin.observability.micrometer.insights.ClientErrorCollector;
+import com.vaadin.observability.micrometer.insights.RecentClientErrors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -183,6 +187,34 @@ class UiLifecycleTest {
         Component[] added = captor.getValue();
         assertEquals(1, added.length);
         assertEquals(MetricsCollectorElement.class, added[0].getClass());
+    }
+
+    /**
+     * The browser is told to gather error messages only when the application
+     * asked for them and something on the server will retain them; otherwise a
+     * message nothing keeps would still be buffered in the tab and posted.
+     */
+    @ParameterizedTest
+    @CsvSource({ "true, true, true", "true, false, false",
+            "false, true, false" })
+    void metricsCollectorElementCarriesDetailsFlag(boolean insightsDetails,
+            boolean retainsErrors, boolean expectedDetails) {
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .insightsDetails(insightsDetails).build();
+        UiMetricsBinder b = new UiMetricsBinder(new SimpleMeterRegistry(), null,
+                settings,
+                retainsErrors
+                        ? new ClientErrorCollector(new RecentClientErrors(1),
+                                settings)
+                        : null);
+        UI ui = mock(UI.class);
+        b.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
+
+        ArgumentCaptor<Component[]> captor = ArgumentCaptor
+                .forClass(Component[].class);
+        verify(ui).add(captor.capture());
+        assertEquals(expectedDetails,
+                captor.getValue()[0].getElement().hasAttribute("details"));
     }
 
     @Test
