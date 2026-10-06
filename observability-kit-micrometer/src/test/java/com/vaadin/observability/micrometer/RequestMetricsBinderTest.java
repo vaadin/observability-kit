@@ -10,6 +10,7 @@ package com.vaadin.observability.micrometer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
@@ -450,12 +451,15 @@ class RequestMetricsBinderTest {
         UI ui = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
         Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
                 .thenReturn(List.of(new RoutedView()));
+        Mockito.when(ui.getInternals().getRouter().getRegistry()
+                .getTemplate(RoutedView.class))
+                .thenReturn(Optional.of("routed"));
 
         binder.requestStart(req, res);
         RequestUi.mark(ui);
         binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
 
-        Assertions.assertEquals(List.of("RoutedView"), hooks.routes,
+        Assertions.assertEquals(List.of("routed"), hooks.routes,
                 "route enrichment must run with traces off");
     }
 
