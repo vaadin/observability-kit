@@ -19,6 +19,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasComponents;
+import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.Command;
 import com.vaadin.flow.server.VaadinService;
@@ -32,6 +35,11 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class MetricsCollectorElementTest {
+
+    @Tag("div")
+    private static final class Layout extends Component
+            implements HasComponents {
+    }
 
     /** The tasks {@code UI.access} queued, run by the test. */
     private final List<Command> accessTasks = new ArrayList<>();
@@ -139,6 +147,20 @@ class MetricsCollectorElementTest {
         ui.add(element);
 
         ui.remove(element);
+        runAccessTasks();
+
+        Assertions.assertSame(ui, element.getParent().orElse(null));
+    }
+
+    @Test
+    void elementInARemovedLayoutIsAddedBackToItsUi() {
+        UI ui = uiQueueingAccessTasks();
+        Layout layout = new Layout();
+        MetricsCollectorElement element = tab();
+        layout.add(element);
+        ui.add(layout);
+
+        ui.remove(layout);
         runAccessTasks();
 
         Assertions.assertSame(ui, element.getParent().orElse(null));
