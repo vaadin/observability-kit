@@ -28,6 +28,19 @@ import com.vaadin.flow.shared.ApplicationConstants;
  */
 public final class ResyncInspector {
 
+    /**
+     * The largest UIDL body, in bytes, the detection filters buffer for
+     * inspection. A longer body is passed on to Flow untouched but not
+     * classified: buffering it without a bound would let any client (the
+     * filters run before Flow and security, and a session is optional) make the
+     * server hold arbitrarily large copies of a request, and inspecting only a
+     * prefix could miss the {@code clientId}/{@code resynchronize} fields,
+     * which the UIDL JSON places after the potentially large {@code rpc} array.
+     * Regular UIDL messages are a few kilobytes, so this only skips the rare
+     * huge one.
+     */
+    public static final int MAX_INSPECTED_BODY_BYTES = 1024 * 1024;
+
     private static final String LAST_CLIENT_ID_ATTR_PREFIX = ResyncInspector.class
             .getName() + ".lastClientId.";
 

@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.lang.ref.WeakReference;
+
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +19,7 @@ import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinSession;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 
 class SessionMetricsBinderTest {
@@ -88,5 +91,27 @@ class SessionMetricsBinderTest {
                 registry.get(MeterNames.SESSIONS_ACTIVE).gauge().value(), 0.0);
         assertEquals(0L,
                 registry.get(MeterNames.SESSIONS_DURATION).timer().count());
+    }
+
+    @Test
+    void aSessionThatLeavesMemoryWithoutADestroyEventIsNotRetained()
+            throws InterruptedException {
+        SessionMetricsBinder binder = new SessionMetricsBinder(
+                new SimpleMeterRegistry());
+        VaadinSession session = mock(VaadinSession.class);
+        binder.sessionInit(
+                new SessionInitEvent(mock(VaadinService.class), session, null));
+
+        // A container that passivates or swaps out the session drops the
+        // in-memory instance without destroying it.
+        WeakReference<VaadinSession> probe = new WeakReference<>(session);
+        session = null;
+        for (int i = 0; i < 100 && probe.get() != null; i++) {
+            System.gc();
+            Thread.sleep(10);
+        }
+
+        assertNull(probe.get(),
+                "the start-time map must not keep a session reachable");
     }
 }

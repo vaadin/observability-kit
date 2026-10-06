@@ -12,12 +12,14 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serial;
 import java.io.Serializable;
+import java.lang.ref.WeakReference;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.WeakHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.ToDoubleFunction;
 
@@ -73,7 +75,9 @@ import com.vaadin.observability.micrometer.insights.GrowingViewState;
  * listener, or by its session being destroyed; the second of those catches a UI
  * this binder never saw initialize — one restored from a serialized session, or
  * one whose first walk threw — so an interaction is enough to start tracking a
- * UI and nothing is held past the life of its session.
+ * UI and nothing is held past the life of its session. The UIs are also held
+ * weakly, so a session that leaves memory without either event — one a
+ * container passivates or swaps out — does not keep its UIs alive here.
  * <p>
  * <strong>State outside the tree.</strong> Unless
  * {@link ObservabilitySettings#getUiStateGrowthSamples()} is zero, each walk
@@ -122,12 +126,16 @@ final class UiStateMetricsBinder
      *            by {@link RetainedCollection#key()}, holding only the
      *            collections of the last measurement, so a view that left the
      *            tree takes its history with it
+     * @param session
+     *            held weakly: the session references its UIs, so a strong
+     *            reference here would keep the weakly held UI key reachable
      * @param sessionId
      *            the session as insights report it, or {@code null} when
      *            nothing in this UI is being followed
      */
-    private record Tracked(VaadinSession session, UiStateSample sample,
-            Map<String, Growth> growth, String sessionId, int uiId) {
+    private record Tracked(WeakReference<VaadinSession> session,
+            UiStateSample sample, Map<String, Growth> growth, String sessionId,
+            int uiId) {
     }
 
     /**
@@ -216,7 +224,13 @@ final class UiStateMetricsBinder
     private final int growthSamples;
     private final boolean insightsDetails;
     private final long totalsCacheNanos;
-    private transient Map<UI, Tracked> tracked = new ConcurrentHashMap<>();
+    /**
+     * Weakly keyed, so a UI whose session left memory without a detach or
+     * destroy event (container passivation or swap-out) is dropped once it is
+     * garbage collected. Iteration must synchronize on the map; see
+     * {@link #snapshot()}.
+     */
+    private transient Map<UI, Tracked> tracked = newTrackedMap();
 
     /**
      * Last aggregate and when it was computed. Deliberately not invalidated by
@@ -326,7 +340,7 @@ final class UiStateMetricsBinder
             return List.of();
         }
         List<GrowingViewState> growing = new ArrayList<>();
-        for (Tracked entry : tracked.values()) {
+        for (Tracked entry : snapshot()) {
             for (Growth growth : entry.growth().values()) {
                 if (isGrowing(growth)) {
                     RetainedCollection latest = growth.latest();
@@ -404,8 +418,10 @@ final class UiStateMetricsBinder
     @Override
     public void sessionDestroy(SessionDestroyEvent event) {
         VaadinSession session = event.getSession();
-        tracked.entrySet()
-                .removeIf(entry -> entry.getValue().session() == session);
+        synchronized (tracked) {
+            tracked.values()
+                    .removeIf(entry -> entry.session().get() == session);
+        }
     }
 
     /**
@@ -434,8 +450,8 @@ final class UiStateMetricsBinder
                     ? previous.sessionId()
                     : growth.isEmpty() ? null
                             : GrowingViewState.sessionIdOf(ui, insightsDetails);
-            tracked.put(ui, new Tracked(session, sample, growth, sessionId,
-                    ui.getUIId()));
+            tracked.put(ui, new Tracked(new WeakReference<>(session), sample,
+                    growth, sessionId, ui.getUIId()));
         } catch (RuntimeException e) {
             LOGGER.debug(
                     "Could not measure the state tree of UI {}, "
@@ -467,6 +483,20 @@ final class UiStateMetricsBinder
 
     private void forget(UI ui) {
         tracked.remove(ui);
+    }
+
+    private static Map<UI, Tracked> newTrackedMap() {
+        return Collections.synchronizedMap(new WeakHashMap<>());
+    }
+
+    /**
+     * A copy of the tracked entries, taken under the map's lock so the
+     * aggregation itself does not hold up the UIs reporting their samples.
+     */
+    private List<Tracked> snapshot() {
+        synchronized (tracked) {
+            return new ArrayList<>(tracked.values());
+        }
     }
 
     /**
@@ -525,7 +555,8 @@ final class UiStateMetricsBinder
     }
 
     private Totals computeTotals() {
-        if (tracked.isEmpty()) {
+        List<Tracked> entries = snapshot();
+        if (entries.isEmpty()) {
             return Totals.EMPTY;
         }
         int nodes = 0;
@@ -540,7 +571,7 @@ final class UiStateMetricsBinder
         // Per session, so the two "largest single X" gauges can distinguish a
         // heavy tab from a user holding many of them.
         Map<VaadinSession, int[]> perSession = new HashMap<>();
-        for (Tracked entry : tracked.values()) {
+        for (Tracked entry : entries) {
             UiStateSample sample = entry.sample();
             for (Growth growth : entry.growth().values()) {
                 int elements = growth.latest().elements();
@@ -556,10 +587,15 @@ final class UiStateMetricsBinder
             staleViews += sample.staleViews();
             maxUiNodes = Math.max(maxUiNodes, sample.nodes());
             oldest = Math.min(oldest, sample.sampledAtNanos());
-            int[] session = perSession.computeIfAbsent(entry.session(),
-                    key -> new int[2]);
-            session[0] += sample.nodes();
-            session[1]++;
+            // The UI key holds its session strongly, so while the entry is
+            // present the session is too; skipped only defensively.
+            VaadinSession owner = entry.session().get();
+            if (owner != null) {
+                int[] session = perSession.computeIfAbsent(owner,
+                        key -> new int[2]);
+                session[0] += sample.nodes();
+                session[1]++;
+            }
         }
         int maxSessionNodes = 0;
         int maxUisPerSession = 0;
@@ -585,7 +621,7 @@ final class UiStateMetricsBinder
     private void readObject(ObjectInputStream in)
             throws IOException, ClassNotFoundException {
         in.defaultReadObject();
-        tracked = new ConcurrentHashMap<>();
+        tracked = newTrackedMap();
     }
 
     /** Tracked UI count, for tests. */
