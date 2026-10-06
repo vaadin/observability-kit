@@ -8,6 +8,9 @@
  */
 package com.vaadin.observability.spring;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -19,14 +22,36 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.http.server.observation.ServerRequestObservationContext;
+import org.springframework.web.filter.ServerHttpObservationFilter;
 
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 class SpringMetricsServiceInitListenerTest {
+
+    @Test
+    void enrichmentReachesTheSpringObservationWithSpringWeb() {
+        SpringMetricsServiceInitListener listener = new SpringMetricsServiceInitListener(
+                new SimpleMeterRegistry(), ObservationRegistry.NOOP,
+                ObservabilitySettings.builder().build());
+        ServerRequestObservationContext context = new ServerRequestObservationContext(
+                Mockito.mock(HttpServletRequest.class),
+                Mockito.mock(HttpServletResponse.class));
+        VaadinRequest request = Mockito.mock(VaadinRequest.class);
+        Mockito.when(request.getMethod()).thenReturn("POST");
+        Mockito.when(request.getAttribute(
+                ServerHttpObservationFilter.CURRENT_OBSERVATION_CONTEXT_ATTRIBUTE))
+                .thenReturn(context);
+
+        listener.enrichHttpObservation(request, "uidl");
+
+        assertThat(context.getPathPattern()).isEqualTo("/vaadin/uidl");
+    }
 
     /**
      * Neither the starter nor vaadin-spring bring spring-web at runtime, so the
@@ -113,15 +138,6 @@ class SpringMetricsServiceInitListenerTest {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
-        }
-
-        @Override
-        public java.net.URL getResource(String name) {
-            if (name.startsWith("org/springframework/web/")
-                    || name.startsWith("org/springframework/http/")) {
-                return null;
-            }
-            return super.getResource(name);
         }
     }
 }
