@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import com.vaadin.flow.server.VaadinServiceEventBus;
@@ -26,14 +27,19 @@ import com.vaadin.flow.shared.Registration;
  * ({@link MeterNames#RESYNC_TYPE_RESEND}), a resynchronization the client asked
  * for ({@link MeterNames#RESYNC_TYPE_RESYNC}), and an unexpected message id
  * that shows the user the session synchronization error
- * ({@link MeterNames#RESYNC_TYPE_OUT_OF_SYNC}).
+ * ({@link MeterNames#RESYNC_TYPE_OUT_OF_SYNC}). The counters are registered up
+ * front, so each type reports 0 before its first event instead of no data.
  */
 final class ResyncMetricsBinder {
 
-    private final MeterRegistry registry;
+    private final Counter resent;
+    private final Counter resynchronized;
+    private final Counter outOfSync;
 
     ResyncMetricsBinder(MeterRegistry registry) {
-        this.registry = registry;
+        this.resent = counter(registry, MeterNames.RESYNC_TYPE_RESEND);
+        this.resynchronized = counter(registry, MeterNames.RESYNC_TYPE_RESYNC);
+        this.outOfSync = counter(registry, MeterNames.RESYNC_TYPE_OUT_OF_SYNC);
     }
 
     /**
@@ -54,19 +60,19 @@ final class ResyncMetricsBinder {
     }
 
     void messageResent(ClientMessageResentEvent event) {
-        count(MeterNames.RESYNC_TYPE_RESEND);
+        resent.increment();
     }
 
     void uiResynchronized(UIResynchronizationEvent event) {
-        count(MeterNames.RESYNC_TYPE_RESYNC);
+        resynchronized.increment();
     }
 
     void messageIdSyncError(MessageIdSyncErrorEvent event) {
-        count(MeterNames.RESYNC_TYPE_OUT_OF_SYNC);
+        outOfSync.increment();
     }
 
-    private void count(String type) {
-        registry.counter(MeterNames.RESYNC, MeterNames.TAG_TYPE, type)
-                .increment();
+    private static Counter counter(MeterRegistry registry, String type) {
+        return Counter.builder(MeterNames.RESYNC).tag(MeterNames.TAG_TYPE, type)
+                .register(registry);
     }
 }

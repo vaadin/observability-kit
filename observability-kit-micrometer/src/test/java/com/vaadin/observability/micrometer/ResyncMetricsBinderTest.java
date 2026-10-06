@@ -8,7 +8,6 @@
  */
 package com.vaadin.observability.micrometer;
 
-import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,7 @@ import com.vaadin.flow.server.communication.UIResynchronizationEvent;
 import com.vaadin.flow.shared.Registration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
 class ResyncMetricsBinderTest {
@@ -36,6 +35,18 @@ class ResyncMetricsBinderTest {
     void setUp() {
         registry = new SimpleMeterRegistry();
         eventBus = new VaadinServiceEventBus(mock(VaadinService.class));
+    }
+
+    @Test
+    void everyTypeReportsZeroBeforeItsFirstEvent() {
+        new ResyncMetricsBinder(registry).register(eventBus);
+
+        for (String type : new String[] { MeterNames.RESYNC_TYPE_RESEND,
+                MeterNames.RESYNC_TYPE_RESYNC,
+                MeterNames.RESYNC_TYPE_OUT_OF_SYNC }) {
+            assertNotNull(registry.find(MeterNames.RESYNC)
+                    .tag(MeterNames.TAG_TYPE, type).counter(), type);
+        }
     }
 
     @Test
@@ -62,12 +73,13 @@ class ResyncMetricsBinderTest {
         eventBus.fireEvent(new UIResynchronizationEvent(ui));
         eventBus.fireEvent(new MessageIdSyncErrorEvent(ui, 3, 7));
 
-        assertNull(registry.find(MeterNames.RESYNC).counter());
+        assertEquals(0d, count(MeterNames.RESYNC_TYPE_RESEND));
+        assertEquals(0d, count(MeterNames.RESYNC_TYPE_RESYNC));
+        assertEquals(0d, count(MeterNames.RESYNC_TYPE_OUT_OF_SYNC));
     }
 
     private double count(String type) {
-        Counter counter = registry.find(MeterNames.RESYNC)
-                .tag(MeterNames.TAG_TYPE, type).counter();
-        return counter == null ? 0d : counter.count();
+        return registry.get(MeterNames.RESYNC).tag(MeterNames.TAG_TYPE, type)
+                .counter().count();
     }
 }
