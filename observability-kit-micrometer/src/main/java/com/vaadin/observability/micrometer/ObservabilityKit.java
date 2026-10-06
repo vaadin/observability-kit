@@ -8,6 +8,8 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -41,6 +43,14 @@ public final class ObservabilityKit {
      * by the dev-mode Copilot metrics panel to read the live meters.
      */
     private static final AtomicReference<MeterRegistry> ACTIVE_METER_REGISTRY = new AtomicReference<>();
+
+    /**
+     * How many live services are bound to each registry. A registry is usually
+     * shared by every service (one Spring bean), so destroying one of them must
+     * not clear {@link #ACTIVE_METER_REGISTRY} while another still publishes to
+     * it. Guarded by itself; an entry is removed when its count reaches zero.
+     */
+    private static final Map<MeterRegistry, Integer> METER_REGISTRY_BINDINGS = new IdentityHashMap<>();
 
     /**
      * The recent-interactions buffer instrumentation was bound to, recorded at
@@ -119,10 +129,14 @@ public final class ObservabilityKit {
 
     /**
      * Records the registry instrumentation was bound to. Called from
-     * {@code MetricsServiceInitListener} for all deployment types.
+     * {@code MetricsServiceInitListener} for all deployment types, once per
+     * service, and released by {@link #clearBound}.
      */
     static void setActiveMeterRegistry(MeterRegistry registry) {
-        ACTIVE_METER_REGISTRY.set(registry);
+        synchronized (METER_REGISTRY_BINDINGS) {
+            METER_REGISTRY_BINDINGS.merge(registry, 1, Integer::sum);
+            ACTIVE_METER_REGISTRY.set(registry);
+        }
     }
 
     /**
@@ -214,12 +228,59 @@ public final class ObservabilityKit {
         return SETTINGS.get();
     }
 
+    /**
+     * Clears what one service bound, when its service is destroyed. Each field
+     * is cleared only while it still holds that service's value, so the destroy
+     * of one service does not clear what another one bound since.
+     * <p>
+     * Without this the fields outlive the service: when the kit is loaded by a
+     * longer-lived class loader than the application (Spring Boot DevTools
+     * restarts, a shared server lib folder) they would pin the previous
+     * deployment's registry, buffers and UI state binder — and through it its
+     * UIs — and keep the endpoint and dev-tools panel serving its data. Any
+     * argument may be {@code null} for a feature that was off.
+     * <p>
+     * The registry is the exception to the per-service values: it is usually
+     * shared, so it is cleared only once no live service is bound to it.
+     */
+    static void clearBound(MeterRegistry registry,
+            RecentInteractions interactions, RecentQueries queries,
+            RecentClientErrors clientErrors, RetainedStateGrowth growth) {
+        releaseMeterRegistry(registry);
+        clearIfCurrent(RECENT_INTERACTIONS, interactions);
+        clearIfCurrent(RECENT_QUERIES, queries);
+        clearIfCurrent(RECENT_CLIENT_ERRORS, clientErrors);
+        clearIfCurrent(RETAINED_STATE_GROWTH, growth);
+    }
+
+    private static void releaseMeterRegistry(MeterRegistry registry) {
+        if (registry == null) {
+            return;
+        }
+        synchronized (METER_REGISTRY_BINDINGS) {
+            Integer remaining = METER_REGISTRY_BINDINGS.computeIfPresent(
+                    registry, (r, count) -> count > 1 ? count - 1 : null);
+            if (remaining == null) {
+                clearIfCurrent(ACTIVE_METER_REGISTRY, registry);
+            }
+        }
+    }
+
+    private static <T> void clearIfCurrent(AtomicReference<T> field, T bound) {
+        if (bound != null) {
+            field.compareAndSet(bound, null);
+        }
+    }
+
     /** Clears all installed state. Intended for tests and redeploys. */
     static void reset() {
         METER_REGISTRY.set(null);
         OBSERVATION_REGISTRY.set(null);
         SETTINGS.set(null);
-        ACTIVE_METER_REGISTRY.set(null);
+        synchronized (METER_REGISTRY_BINDINGS) {
+            METER_REGISTRY_BINDINGS.clear();
+            ACTIVE_METER_REGISTRY.set(null);
+        }
         RECENT_INTERACTIONS.set(null);
         RECENT_QUERIES.set(null);
         RECENT_CLIENT_ERRORS.set(null);
