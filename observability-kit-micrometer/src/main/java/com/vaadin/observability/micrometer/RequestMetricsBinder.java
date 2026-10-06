@@ -115,6 +115,17 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private static final Set<String> PAGE_FETCH_DESTINATIONS = Set
             .of("document", "iframe", "frame", "embed", "object");
 
+    /**
+     * The HTTP methods that may reach the {@code http.method} tag as-is. The
+     * method is client-controlled and servlet containers accept any token, so
+     * passing it through would let a client mint a new Timer per request;
+     * anything outside this set is tagged {@link #HTTP_METHOD_OTHER}.
+     */
+    private static final Set<String> KNOWN_HTTP_METHODS = Set.of("GET", "HEAD",
+            "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "TRACE");
+
+    private static final String HTTP_METHOD_OTHER = "_other";
+
     private final HttpObservationHooks hooks;
     private final RouteTagResolver routes;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
@@ -272,7 +283,10 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             return "unknown";
         }
         String m = request.getMethod();
-        return m == null ? "unknown" : m;
+        if (m == null) {
+            return "unknown";
+        }
+        return KNOWN_HTTP_METHODS.contains(m) ? m : HTTP_METHOD_OTHER;
     }
 
     private static String uiId(VaadinRequest request) {
