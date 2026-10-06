@@ -21,7 +21,6 @@ import com.vaadin.flow.server.communication.UIResynchronizationEvent;
 import com.vaadin.flow.shared.Registration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
 class ResyncMetricsBinderTest {
@@ -44,8 +43,7 @@ class ResyncMetricsBinderTest {
         for (String type : new String[] { MeterNames.RESYNC_TYPE_RESEND,
                 MeterNames.RESYNC_TYPE_RESYNC,
                 MeterNames.RESYNC_TYPE_OUT_OF_SYNC }) {
-            assertNotNull(registry.find(MeterNames.RESYNC)
-                    .tag(MeterNames.TAG_TYPE, type).counter(), type);
+            assertEquals(0d, count(type), type);
         }
     }
 
