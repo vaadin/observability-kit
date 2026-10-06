@@ -19,6 +19,8 @@ import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.server.ErrorHandler;
+import com.vaadin.flow.server.ServiceDestroyEvent;
+import com.vaadin.flow.server.ServiceDestroyListener;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
@@ -529,6 +531,34 @@ class MetricsServiceInitListenerTest {
 
         Assertions.assertNull(ObservabilityKit.getRecentClientErrors(),
                 "no browser-error buffer when insights are off");
+    }
+
+    @Test
+    void destroyingTheServiceUnbindsWhatItBound() {
+        // The bound state is static: left in place, it would pin a destroyed
+        // deployment when the kit outlives the application's class loader.
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().uiState(true)
+                        .uiStateGrowthSamples(3).build());
+        VaadinService service = initAndFireFailedInvocation();
+        Assertions.assertNotNull(ObservabilityKit.getActiveMeterRegistry());
+        Assertions.assertNotNull(ObservabilityKit.getRecentInteractions());
+        Assertions.assertNotNull(ObservabilityKit.getRecentQueries());
+        Assertions.assertNotNull(ObservabilityKit.getRecentClientErrors());
+        Assertions.assertNotNull(ObservabilityKit.getRetainedStateGrowth());
+
+        ArgumentCaptor<ServiceDestroyListener> captor = ArgumentCaptor
+                .forClass(ServiceDestroyListener.class);
+        verify(service, atLeastOnce())
+                .addServiceDestroyListener(captor.capture());
+        captor.getAllValues().forEach(listener -> listener
+                .serviceDestroy(new ServiceDestroyEvent(service)));
+
+        Assertions.assertNull(ObservabilityKit.getActiveMeterRegistry());
+        Assertions.assertNull(ObservabilityKit.getRecentInteractions());
+        Assertions.assertNull(ObservabilityKit.getRecentQueries());
+        Assertions.assertNull(ObservabilityKit.getRecentClientErrors());
+        Assertions.assertNull(ObservabilityKit.getRetainedStateGrowth());
     }
 
     private static CapturedInteraction interaction(String component) {

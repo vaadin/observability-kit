@@ -636,6 +636,53 @@ class RequestMetricsBinderObservationTest {
     }
 
     @Test
+    void aFailingHookDoesNotLeaveTheRequestObservationOpen() {
+        // The hooks are overridable integration code that runs before the
+        // interceptor closes its scope and stops its observation; a hook that
+        // throws must not leave either behind on the pooled thread.
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build(),
+                new HttpObservationHooks() {
+                    @Override
+                    public void requestType(VaadinRequest request,
+                            String type) {
+                        throw new IllegalStateException("hook failed");
+                    }
+
+                    @Override
+                    public void error(VaadinRequest request,
+                            Throwable failure) {
+                        throw new IllegalStateException("hook failed");
+                    }
+                }, null);
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        binder.requestStart(req, resp);
+        CurrentInstance.set(VaadinRequest.class, req);
+        try {
+            RequestError.markHandled(new IllegalStateException("handled"));
+        } finally {
+            CurrentInstance.clearAll();
+        }
+        Assertions.assertDoesNotThrow(
+                () -> binder.requestEnd(req, resp, session));
+
+        Assertions.assertEquals(List.of(MeterNames.REQUEST_DURATION),
+                recorder.names, "the request observation must be stopped");
+        Assertions.assertEquals(List.of(MeterNames.REQUEST_DURATION),
+                recorder.scopesClosed, "and its scope closed");
+        Assertions.assertNull(obs.getCurrentObservation());
+    }
+
+    @Test
     void escapedExceptionIsMarkedOnceNotTwice() {
         // handleException marks the framework observation and sets the
         // interceptor-error flag; the relay in requestEnd must not mark the
