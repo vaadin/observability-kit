@@ -283,8 +283,13 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         // error handler. One meter, one cardinality budget — a per-instance cap
         // would let the same route or exception type be itself on one path and
         // _other on the other.
+        //
+        // The exception types it tags are one budget with the error tag of
+        // the request and RPC timers, for the same reason: one type, one
+        // value, on every meter that names it.
+        ExceptionTags exceptionTags = new ExceptionTags(settings);
         ErrorCounter errors = settings.isErrors()
-                ? new ErrorCounter(registry, settings)
+                ? new ErrorCounter(registry, settings, exceptionTags)
                 : null;
 
         if (settings.isRequests() || settings.isErrors()) {
@@ -304,8 +309,9 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     markHttpObservationError(request, failure);
                 }
             };
-            event.addVaadinRequestInterceptor(new RequestMetricsBinder(registry,
-                    observationRegistry, settings, hooks, errors));
+            event.addVaadinRequestInterceptor(
+                    new RequestMetricsBinder(registry, observationRegistry,
+                            settings, hooks, errors, exceptionTags));
         }
 
         if (navigationBinder != null) {
@@ -323,8 +329,8 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         }
 
         if (settings.isRequests()) {
-            new RpcMetricsBinder(registry, observationRegistry, settings)
-                    .register(service.getEventBus());
+            new RpcMetricsBinder(registry, observationRegistry, settings,
+                    exceptionTags).register(service.getEventBus());
         }
 
         if (settings.isData()) {

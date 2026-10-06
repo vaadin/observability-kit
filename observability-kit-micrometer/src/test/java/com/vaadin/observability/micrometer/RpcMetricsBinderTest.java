@@ -128,6 +128,54 @@ class RpcMetricsBinderTest {
     }
 
     @Test
+    void directPathErrorTagOverflowsIntoOther() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,
+                ObservabilitySettings.builder().traces(false)
+                        .routeCardinalityLimit(1).build());
+
+        failInvocation(binder, new IllegalStateException("first"));
+        failInvocation(binder, new IllegalArgumentException("second"));
+
+        Assertions.assertEquals(
+                List.of("IllegalStateException", MeterNames.EXCEPTION_OTHER),
+                errorTags(registry));
+    }
+
+    @Test
+    void directPathErrorTagSharesTheBudgetOfTheErrorCounter() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ObservabilitySettings settings = ObservabilitySettings.builder()
+                .traces(false).routeCardinalityLimit(1).build();
+        ExceptionTags shared = new ExceptionTags(settings);
+        ErrorCounter errors = new ErrorCounter(registry, settings, shared);
+        RpcMetricsBinder binder = new RpcMetricsBinder(registry, null, settings,
+                shared);
+
+        // The counter takes the one slot; the timer gets the same answer for
+        // the same type, and _other for any other.
+        errors.increment(new IllegalStateException("counted"), null);
+        failInvocation(binder, new IllegalStateException("same type"));
+        failInvocation(binder, new IllegalArgumentException("other type"));
+
+        Assertions.assertEquals(
+                List.of("IllegalStateException", MeterNames.EXCEPTION_OTHER),
+                errorTags(registry));
+    }
+
+    private void failInvocation(RpcMetricsBinder binder, Throwable error) {
+        binder.invocationStarted(started("event"));
+        binder.invocationFailed(failed(error));
+        binder.invocationEnded(ended("event"));
+    }
+
+    private static List<String> errorTags(SimpleMeterRegistry registry) {
+        return registry.find(MeterNames.RPC_DURATION).timers().stream()
+                .map(timer -> timer.getId().getTag(MeterNames.TAG_ERROR))
+                .sorted().toList();
+    }
+
+    @Test
     void invocationStartedMarksRequestInteractionAsRpc() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,

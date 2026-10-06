@@ -73,6 +73,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings settings;
     private final ErrorCounter errors;
+    private final ExceptionTags exceptionTags;
     /**
      * How many distinct route templates may reach the framework's {@code uri}
      * tag before the rest collapse into {@code _other}. Deliberately well under
@@ -114,14 +115,28 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     private static final Set<String> PAGE_FETCH_DESTINATIONS = Set
             .of("document", "iframe", "frame", "embed", "object");
 
+    /**
+     * The HTTP methods that may reach the {@code http.method} tag as-is. The
+     * method is client-controlled and servlet containers accept any token, so
+     * passing it through would let a client mint a new Timer per request;
+     * anything outside this set is tagged {@link #HTTP_METHOD_OTHER}.
+     */
+    private static final Set<String> KNOWN_HTTP_METHODS = Set.of("GET", "HEAD",
+            "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "TRACE");
+
+    private static final String HTTP_METHOD_OTHER = "_other";
+
     private final HttpObservationHooks hooks;
     private final RouteTagResolver routes;
     private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Boolean> errored = ThreadLocal
             .withInitial(() -> Boolean.FALSE);
-    // Simple class name of the exception passed to handleException, mirroring
-    // what DefaultMeterObservationHandler reads off the Observation context so
-    // the direct-recording path can tag its Timer the same way.
+    // Type of the exception passed to handleException for the direct-recording
+    // path's error tag: its simple class name, as
+    // DefaultMeterObservationHandler
+    // tags the Observation path, but drawn from the shared bounded set so a
+    // flood of generated exception types collapses into _other. The
+    // Observation path's tag is written by that handler and is not bounded.
     private final ThreadLocal<String> errorType = new ThreadLocal<>();
     private final ThreadLocal<Observation> observation = new ThreadLocal<>();
     private final ThreadLocal<Observation.Scope> observationScope = new ThreadLocal<>();
@@ -142,8 +157,26 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings, HttpObservationHooks hooks) {
         this(registry, observationRegistry, settings, hooks,
-                settings.isErrors() ? new ErrorCounter(registry, settings)
-                        : null);
+                new ExceptionTags(settings));
+    }
+
+    private RequestMetricsBinder(MeterRegistry registry,
+            ObservationRegistry observationRegistry,
+            ObservabilitySettings settings, HttpObservationHooks hooks,
+            ExceptionTags exceptionTags) {
+        this(registry, observationRegistry, settings, hooks,
+                settings.isErrors()
+                        ? new ErrorCounter(registry, settings, exceptionTags)
+                        : null,
+                exceptionTags);
+    }
+
+    RequestMetricsBinder(MeterRegistry registry,
+            ObservationRegistry observationRegistry,
+            ObservabilitySettings settings, HttpObservationHooks hooks,
+            ErrorCounter errors) {
+        this(registry, observationRegistry, settings, hooks, errors,
+                new ExceptionTags(settings));
     }
 
     /**
@@ -155,15 +188,19 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
      *            {@code null} when error metrics are off — this interceptor is
      *            also installed for request metrics alone, and then there is
      *            nothing to count
+     * @param exceptionTags
+     *            the exception-type budget the {@code error} tag is drawn from,
+     *            shared with {@code errors} and the RPC timer
      */
     RequestMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
             ObservabilitySettings settings, HttpObservationHooks hooks,
-            ErrorCounter errors) {
+            ErrorCounter errors, ExceptionTags exceptionTags) {
         this.registry = registry;
         this.observationRegistry = observationRegistry;
         this.settings = settings;
         this.errors = errors;
+        this.exceptionTags = exceptionTags;
         this.hooks = hooks != null ? hooks : HttpObservationHooks.NONE;
         this.routes = new RouteTagResolver(Math.min(HTTP_URI_ROUTE_LIMIT,
                 settings.getRouteCardinalityLimit()));
@@ -246,7 +283,10 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             return "unknown";
         }
         String m = request.getMethod();
-        return m == null ? "unknown" : m;
+        if (m == null) {
+            return "unknown";
+        }
+        return KNOWN_HTTP_METHODS.contains(m) ? m : HTTP_METHOD_OTHER;
     }
 
     private static String uiId(VaadinRequest request) {
@@ -331,7 +371,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         if (exception == null) {
             return;
         }
-        errorType.set(exception.getClass().getSimpleName());
+        errorType.set(exceptionTags.tag(exception));
         if (errors != null) {
             // Flow reports the same throwable to the session error handler
             // right after this call; mark it so ErrorMetricsBinder does not
@@ -373,7 +413,7 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         if (error == null && handledError != null) {
             // Parity with the Observation path, where the obs.error() below
             // makes DefaultMeterObservationHandler add the error tag for us.
-            error = handledError.getClass().getSimpleName();
+            error = exceptionTags.tag(handledError);
         }
         if (handledError != null && !interceptorError) {
             // A user-triggered failure Flow routed to the session error
