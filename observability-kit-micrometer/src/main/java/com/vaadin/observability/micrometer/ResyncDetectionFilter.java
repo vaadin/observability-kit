@@ -54,10 +54,11 @@ import com.vaadin.flow.server.communication.UidlRequestHandler;
  * {@link CachedBodyHttpServletRequest} so Flow can still read it) and handing
  * it to a {@link ResyncInspector}.
  * <p>
- * Because it has no Spring APIs available it buffers the body eagerly; the
- * Spring variant instead captures the bytes lazily as Flow reads them and only
- * counts requests Flow actually consumed. Instrumentation never fails the
- * request: any error while inspecting is swallowed.
+ * Because it has no Spring APIs available it buffers the body eagerly, up to
+ * {@link ResyncInspector#MAX_INSPECTED_BODY_BYTES} (a longer body is passed on
+ * uninspected); the Spring variant instead captures the bytes lazily as Flow
+ * reads them and only counts requests Flow actually consumed. Instrumentation
+ * never fails the request: any error while inspecting is swallowed.
  */
 public final class ResyncDetectionFilter implements Filter {
 
@@ -83,7 +84,12 @@ public final class ResyncDetectionFilter implements Filter {
         }
 
         CachedBodyHttpServletRequest wrapped = new CachedBodyHttpServletRequest(
-                http);
+                http, ResyncInspector.MAX_INSPECTED_BODY_BYTES);
+        if (wrapped.isTruncated()) {
+            // Too large to buffer for inspection; let Flow handle it as usual.
+            chain.doFilter(wrapped, response);
+            return;
+        }
         try {
             HttpSession session = wrapped.getSession(false);
             Object mutex = session != null ? session : this;
