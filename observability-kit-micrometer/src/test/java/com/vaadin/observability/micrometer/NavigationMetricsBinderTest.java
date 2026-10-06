@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 import io.micrometer.common.KeyValue;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationHandler;
@@ -44,12 +45,14 @@ import com.vaadin.flow.router.NavigationTrigger;
 import com.vaadin.flow.router.NotFoundException;
 import com.vaadin.flow.router.Router;
 import com.vaadin.flow.router.internal.ErrorTargetEntry;
+import com.vaadin.flow.server.Command;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -111,6 +114,10 @@ class NavigationMetricsBinderTest {
     void tearDown() {
         UI.setCurrent(null);
         RequestInteraction.clear();
+        // Micrometer keeps the current scope in a static thread-local shared by
+        // every registry; a scope a failing test leaves open would otherwise
+        // become the parent of the next test's observations.
+        ObservationRegistry.create().setCurrentObservationScope(null);
     }
 
     private NavigationMetricsBinder binder() {
@@ -398,6 +405,74 @@ class NavigationMetricsBinderTest {
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
         assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    /**
+     * A UI whose session hands back the access tasks queued on it, so a test
+     * can run them the way Flow does when the lock is released.
+     */
+    private UI uiQueuingAccessTasksInto(List<Command> queued) {
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+        Mockito.when(session.access(Mockito.any())).thenAnswer(call -> {
+            queued.add(call.getArgument(0));
+            return null;
+        });
+        UI sessionUi = Mockito.mock(UI.class);
+        Mockito.when(sessionUi.getSession()).thenReturn(session);
+        return sessionUi;
+    }
+
+    @Test
+    void aNavigationAbandonedOffRequestIsClosedOutWhenItsLockIsReleased() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler());
+        obs.observationConfig().observationHandler(
+                new DefaultMeterObservationHandler(registry));
+        NavigationMetricsBinder binder = tracingBinder(obs);
+        List<Command> queued = new ArrayList<>();
+        UI accessUi = uiQueuingAccessTasksInto(queued);
+
+        // A UI.access() task on a background thread: no requestStart, and
+        // the navigation never reaches afterNavigation.
+        binder.beforeEnter(beforeEnter(FirstView.class, accessUi));
+        assertNotNull(obs.getCurrentObservation(),
+                "the navigation scope is open while the task runs");
+
+        queued.forEach(Command::execute);
+
+        assertNull(obs.getCurrentObservation(),
+                "the scope must not stay open on the pooled thread");
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+    }
+
+    @Test
+    void aNavigationCompletedOffRequestIsLeftToAfterNavigation() {
+        NavigationMetricsBinder binder = binder();
+        List<Command> queued = new ArrayList<>();
+        UI accessUi = uiQueuingAccessTasksInto(queued);
+
+        binder.beforeEnter(beforeEnter(FirstView.class, accessUi));
+        binder.afterNavigation(afterNavigationOn(accessUi));
+        queued.forEach(Command::execute);
+
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+    }
+
+    @Test
+    void aNavigationInARequestIsLeftToRequestEnd() {
+        NavigationMetricsBinder binder = binder();
+        List<Command> queued = new ArrayList<>();
+        UI requestUi = uiQueuingAccessTasksInto(queued);
+
+        binder.requestStart(Mockito.mock(VaadinRequest.class),
+                Mockito.mock(VaadinResponse.class));
+        binder.beforeEnter(beforeEnter(FirstView.class, requestUi));
+        requestEnd(binder);
+
+        assertTrue(queued.isEmpty(),
+                "requestEnd is the backstop on a request thread");
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
     }
 
     @Test
