@@ -22,7 +22,7 @@ code, no annotations, no configuration required.
 
 ## How it works
 
-The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request interceptor, the RPC and data-query events on `VaadinServiceEventBus`, navigation listeners, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows the tasks submitted to it — signal effect re-evaluations, signal result notifications, and application background tasks — across the thread hop, each under a `vaadin.executor.task` span. A plain `UI.access(...)` from a background thread does not go through that executor: it queues a command that whichever thread unlocks the session runs, so it has no span of its own. A notification task is itself a `UI.access` call, so its span always covers the dispatch but covers the notification body only when the session lock is free; otherwise the body runs later on the unlocking thread, outside the span.
+The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request interceptor, the RPC, data-query and navigation events on `VaadinServiceEventBus`, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows the tasks submitted to it — signal effect re-evaluations, signal result notifications, and application background tasks — across the thread hop, each under a `vaadin.executor.task` span. A plain `UI.access(...)` from a background thread does not go through that executor: it queues a command that whichever thread unlocks the session runs, so it has no span of its own. A notification task is itself a `UI.access` call, so its span always covers the dispatch but covers the notification body only when the session lock is free; otherwise the body runs later on the unlocking thread, outside the span.
 
 The kit also enriches telemetry the framework emits anyway: through its HTTP observation hooks, the Spring HTTP observation gets the Vaadin request type, the active view's route template as its `uri` tag (template-only, and budgeted to stay under Boot's `max-uri-tags` cap), and error status for failures Vaadin handles internally on a 200 response.
 
@@ -503,30 +503,26 @@ build.
 
 ### Navigation outcomes
 
-`vaadin.navigation` is timed from `beforeEnter` to `afterNavigation`, and every
-navigation that starts is recorded — including the ones that never complete,
-which would otherwise leave a span dangling. The `outcome` tag says how it
+`vaadin.navigation` is timed from Flow's `NavigationStartedEvent` to its
+`NavigationEndedEvent`, and every navigation that starts is recorded once. A
+`forwardTo`, a `rerouteTo` or an error view is part of the navigation that
+caused it, not a navigation of its own. The `route` tag is the view the
+requested location resolves to, so a navigation that was sent elsewhere is
+recorded under the view that was asked for. A location that no view resolves
+to is recorded under the view shown in the end. The `outcome` tag says how it
 ended:
 
 | `outcome` | Recorded for |
 | --- | --- |
-| `success` | The navigation reached `afterNavigation`. |
-| `rerouted` | A listener called `rerouteTo`, so this navigation was replaced by another. A routing decision (an access guard sending the user elsewhere), not a failure. |
-| `forwarded` | A listener called `forwardTo`, `forwardToUrl`, or handed off to a client-side route. |
-| `error` | The navigation failed: `rerouteToError`, or an exception while the view was being built. |
-| `unknown` | The navigation was neither completed nor redirected: a re-entrant `UI.navigate()` from a view's `beforeEnter` or `onAttach` superseded it, or its UI was detached while it was still open. |
+| `success` | The requested view was shown. |
+| `rerouted` | Another view was shown: a listener called `rerouteTo` or `forwardTo`. A routing decision (an access guard sending the user elsewhere), not a failure. |
+| `forwarded` | No view was shown: a listener called `forwardToUrl`, the location is a client-side route, or a `@PreserveOnRefresh` view first asked the browser for its window name. |
+| `error` | The navigation failed: `rerouteToError`, an exception while the view was being built, or a location without a view. |
+| `unknown` | A `BeforeLeaveEvent` listener postponed the navigation. Resuming it with `proceed()` is not recorded again. |
 
-Two things to keep in mind when building an error rate on this timer, both of
-which follow from timing the router's own chain — an error view is a navigation
-in its own right, and it is one that succeeds:
-
-- an unknown URL never reaches a `beforeEnter` that could fail, so it is
-  recorded as the error view rendering successfully:
-  `route=RouteNotFoundError, outcome=success`. Alert on that route rather than
-  on `outcome`;
-- a view that throws while being built produces two samples — the failed
-  navigation to the view (`outcome=error`) and the navigation to the error view
-  that replaces it (`route=InternalServerError, outcome=success`).
+An unknown URL is recorded under the error view that was shown, as
+`route=RouteNotFoundError, outcome=error`. A view that throws while being built
+is recorded once, under its own route with `outcome=error`.
 
 ## UI state size
 

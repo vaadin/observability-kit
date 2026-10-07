@@ -8,7 +8,6 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -24,12 +23,10 @@ import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.router.AfterNavigationEvent;
-import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.Location;
-import com.vaadin.flow.router.LocationChangeEvent;
+import com.vaadin.flow.router.NavigationEndedEvent;
+import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
-import com.vaadin.flow.router.Router;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -213,16 +210,12 @@ class MeterTagParityTest {
 
         UI ui = Mockito.mock(UI.class);
         UI.setCurrent(ui);
-        BeforeEnterEvent enter = Mockito.mock(BeforeEnterEvent.class);
-        Mockito.when(enter.getUI()).thenReturn(ui);
-        // doReturn: the wildcard in Class<? extends Component> makes the
-        // type-safe when(...).thenReturn(...) form uncompilable here.
-        Mockito.doReturn(ParityView.class).when(enter).getNavigationTarget();
-
-        binder.beforeEnter(enter);
-        binder.afterNavigation(new AfterNavigationEvent(new LocationChangeEvent(
-                Mockito.mock(Router.class), ui, NavigationTrigger.UI_NAVIGATE,
-                new Location("view"), List.of())));
+        Location location = new Location("view");
+        binder.navigationStarted(new NavigationStartedEvent(ui, location,
+                NavigationTrigger.UI_NAVIGATE));
+        binder.navigationEnded(new NavigationEndedEvent(ui, location,
+                NavigationTrigger.UI_NAVIGATE,
+                new NavigationEndedEvent.Completed(ParityView.class), 200));
 
         return tags(registry, MeterNames.NAVIGATION);
     }

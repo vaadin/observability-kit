@@ -29,13 +29,11 @@ import com.vaadin.flow.component.UI;
 final class RequestUi {
 
     /**
-     * Held weakly: {@code beforeEnter} also fires for a navigation started from
-     * a background thread through {@code UI.access()}, where no request
-     * interceptor ever drains this slot — a strong reference would pin the UI
-     * (and through it the session) to that pooled thread for the life of the
-     * server, the same hazard {@code NavigationMetricsBinder#pendingUis}
-     * documents. A stranded entry then costs a dead reference object, nothing
-     * more.
+     * Held weakly: a navigation can also be started from a background thread
+     * through {@code UI.access()}, where no request interceptor ever drains
+     * this slot — a strong reference would pin the UI (and through it the
+     * session) to that pooled thread for the life of the server. A stranded
+     * entry then costs a dead reference object, nothing more.
      */
     private static final ThreadLocal<WeakReference<UI>> CURRENT = new ThreadLocal<>();
 
