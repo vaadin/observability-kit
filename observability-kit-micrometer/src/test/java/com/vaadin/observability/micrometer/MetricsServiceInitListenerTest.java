@@ -26,7 +26,7 @@ import com.vaadin.flow.server.ServiceDestroyListener;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
-import com.vaadin.flow.server.SessionLockRequestedEvent;
+import com.vaadin.flow.server.SessionLockAcquiredEvent;
 import com.vaadin.flow.server.UIInitListener;
 import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
@@ -125,7 +125,7 @@ class MetricsServiceInitListenerTest {
                 .addSessionDestroyListener(any(SessionDestroyListener.class));
         Assertions.assertEquals(1,
                 service.getEventBus()
-                        .getListeners(SessionLockRequestedEvent.class).size(),
+                        .getListeners(SessionLockAcquiredEvent.class).size(),
                 "sessions enabled should subscribe the session lock binder");
     }
 
@@ -200,8 +200,9 @@ class MetricsServiceInitListenerTest {
                         .noneMatch(l -> l instanceof SessionMetricsBinder),
                 "sessions disabled should not register the SessionMetricsBinder");
         verify(service, never()).addSessionDestroyListener(any());
-        Assertions.assertTrue(service.getEventBus()
-                .getListeners(SessionLockRequestedEvent.class).isEmpty(),
+        Assertions.assertTrue(
+                service.getEventBus()
+                        .getListeners(SessionLockAcquiredEvent.class).isEmpty(),
                 "sessions disabled should not subscribe the lock binder");
     }
 

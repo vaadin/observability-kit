@@ -9,7 +9,10 @@
 package com.vaadin.observability.micrometer;
 
 import java.lang.ref.Reference;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -17,14 +20,17 @@ import org.junit.jupiter.api.Test;
 import com.vaadin.flow.internal.CurrentInstance;
 import com.vaadin.flow.server.SessionLockAcquiredEvent;
 import com.vaadin.flow.server.SessionLockReleasedEvent;
-import com.vaadin.flow.server.SessionLockRequestedEvent;
 import com.vaadin.flow.server.VaadinRequest;
+import com.vaadin.flow.server.VaadinService;
+import com.vaadin.flow.server.VaadinSession;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 
 class SessionLockMetricsBinderTest {
+
+    private final VaadinService service = mock(VaadinService.class);
+    private final VaadinSession session = mock(VaadinSession.class);
 
     @AfterEach
     void clearCurrentInstance() {
@@ -37,13 +43,13 @@ class SessionLockMetricsBinderTest {
         SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
                 registry);
 
-        binder.lockRequested(mock(SessionLockRequestedEvent.class));
-        binder.lockAcquired(mock(SessionLockAcquiredEvent.class));
+        binder.lockAcquired(new SessionLockAcquiredEvent(service, session,
+                Duration.ofMillis(42)));
 
-        assertEquals(1L,
-                registry.get(MeterNames.SESSION_LOCK_WAIT)
-                        .tag(MeterNames.TAG_CONTEXT, MeterNames.CONTEXT_ACCESS)
-                        .timer().count());
+        Timer wait = registry.get(MeterNames.SESSION_LOCK_WAIT)
+                .tag(MeterNames.TAG_CONTEXT, MeterNames.CONTEXT_ACCESS).timer();
+        assertEquals(1L, wait.count());
+        assertEquals(42.0, wait.totalTime(TimeUnit.MILLISECONDS));
     }
 
     @Test
@@ -52,14 +58,13 @@ class SessionLockMetricsBinderTest {
         SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
                 registry);
 
-        binder.lockRequested(mock(SessionLockRequestedEvent.class));
-        binder.lockAcquired(mock(SessionLockAcquiredEvent.class));
-        binder.lockReleased(mock(SessionLockReleasedEvent.class));
+        binder.lockReleased(new SessionLockReleasedEvent(service, session,
+                Duration.ofMillis(7)));
 
-        assertEquals(1L,
-                registry.get(MeterNames.SESSION_LOCK_HOLD)
-                        .tag(MeterNames.TAG_CONTEXT, MeterNames.CONTEXT_ACCESS)
-                        .timer().count());
+        Timer hold = registry.get(MeterNames.SESSION_LOCK_HOLD)
+                .tag(MeterNames.TAG_CONTEXT, MeterNames.CONTEXT_ACCESS).timer();
+        assertEquals(1L, hold.count());
+        assertEquals(7.0, hold.totalTime(TimeUnit.MILLISECONDS));
     }
 
     @Test
@@ -75,9 +80,10 @@ class SessionLockMetricsBinderTest {
         VaadinRequest request = mock(VaadinRequest.class);
         CurrentInstance.set(VaadinRequest.class, request);
         try {
-            binder.lockRequested(mock(SessionLockRequestedEvent.class));
-            binder.lockAcquired(mock(SessionLockAcquiredEvent.class));
-            binder.lockReleased(mock(SessionLockReleasedEvent.class));
+            binder.lockAcquired(new SessionLockAcquiredEvent(service, session,
+                    Duration.ZERO));
+            binder.lockReleased(new SessionLockReleasedEvent(service, session,
+                    Duration.ZERO));
 
             assertEquals(1L, registry.get(MeterNames.SESSION_LOCK_WAIT)
                     .tag(MeterNames.TAG_CONTEXT, MeterNames.CONTEXT_REQUEST)
@@ -92,16 +98,5 @@ class SessionLockMetricsBinderTest {
             Reference.reachabilityFence(request);
             CurrentInstance.clearAll();
         }
-    }
-
-    @Test
-    void releaseWithoutAcquireDoesNotRecordHold() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        SessionLockMetricsBinder binder = new SessionLockMetricsBinder(
-                registry);
-
-        binder.lockReleased(mock(SessionLockReleasedEvent.class));
-
-        assertNull(registry.find(MeterNames.SESSION_LOCK_HOLD).timer());
     }
 }
