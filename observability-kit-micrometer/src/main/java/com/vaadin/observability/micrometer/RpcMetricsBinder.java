@@ -15,7 +15,6 @@ import io.micrometer.observation.ObservationRegistry;
 
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
-import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
@@ -33,8 +32,13 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * the span-friendly name ({@code vaadin.rpc.<type>}) used by tracing
  * handlers.</li>
  * <li>Otherwise (no obs registry / traces disabled / observation handler
- * unavailable), the binder falls back to recording the Timer directly.</li>
+ * unavailable), the binder falls back to recording the Timer directly, with the
+ * duration Flow measured for the invocation.</li>
  * </ul>
+ * <p>
+ * The outcome and the failing exception are both taken from the
+ * {@link RpcInvocationEndedEvent}, which carries the throwable the matching
+ * failed event reported, so the binder needs no listener for that event.
  * <p>
  * Timer tags (low cardinality), identical on both paths: {@code type} (RPC
  * invocation type), {@code outcome} ({@code success}/{@code error}) and
@@ -47,9 +51,10 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * <p>
  * When tracing is enabled, the span additionally carries the invocation name
  * ({@link ObservationNames#KEY_EVENT_NAME}) and the targeted component class
- * ({@link ObservationNames#KEY_COMPONENT}) as high-cardinality key-values.
- * These attach to the span only and never become Timer tags, so they enrich
- * traces without affecting metric cardinality.
+ * ({@link ObservationNames#KEY_COMPONENT}) as high-cardinality key-values. The
+ * component is looked up when the invocation starts, since the invocation may
+ * detach it. These attach to the span only and never become Timer tags, so they
+ * enrich traces without affecting metric cardinality.
  */
 final class RpcMetricsBinder {
 
@@ -58,15 +63,6 @@ final class RpcMetricsBinder {
     private final boolean useObservation;
     private final ExceptionTags exceptionTags;
 
-    private final ThreadLocal<Boolean> errored = ThreadLocal
-            .withInitial(() -> Boolean.FALSE);
-    // Type of the failing exception for the direct-recording path's error tag:
-    // its simple class name, as DefaultMeterObservationHandler tags the
-    // Observation path, but drawn from the shared bounded set so a flood of
-    // generated exception types collapses into _other. The Observation path's
-    // tag is written by that handler and is not bounded.
-    private final ThreadLocal<String> errorType = new ThreadLocal<>();
-    private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
     private final ThreadLocal<Observation> observation = new ThreadLocal<>();
     private final ThreadLocal<Observation.Scope> observationScope = new ThreadLocal<>();
 
@@ -103,8 +99,6 @@ final class RpcMetricsBinder {
         return Registration.combine(
                 eventBus.addListener(RpcInvocationStartedEvent.class,
                         this::invocationStarted),
-                eventBus.addListener(RpcInvocationFailedEvent.class,
-                        this::invocationFailed),
                 eventBus.addListener(RpcInvocationEndedEvent.class,
                         this::invocationEnded));
     }
@@ -112,11 +106,7 @@ final class RpcMetricsBinder {
     void invocationStarted(RpcInvocationStartedEvent event) {
         // Defensively clear any stale thread-local state left by a previous
         // invocation whose invocationEnded was skipped (e.g. mid-request
-        // server shutdown). Without this, a pooled thread could carry
-        // errored=TRUE into the next invocation and misreport it.
-        errored.remove();
-        errorType.remove();
-        sample.remove();
+        // server shutdown).
         observation.remove();
         // Close (not just drop) a leaked scope so the stale observation stops
         // being the registry's current one and this invocation's span is not
@@ -149,65 +139,58 @@ final class RpcMetricsBinder {
                 obs.highCardinalityKeyValue(ObservationNames.KEY_EVENT_NAME,
                         name);
             }
-            ComponentResolver.resolveComponentType(event)
+            event.getComponent()
                     .ifPresent(component -> obs.highCardinalityKeyValue(
-                            ObservationNames.KEY_COMPONENT, component));
+                            ObservationNames.KEY_COMPONENT,
+                            component.getClass().getName()));
 
             obs.start();
             observation.set(obs);
             observationScope.set(obs.openScope());
-        } else {
-            sample.set(Timer.start(registry));
-        }
-    }
-
-    void invocationFailed(RpcInvocationFailedEvent event) {
-        Throwable error = event.getError();
-        errored.set(Boolean.TRUE);
-        if (error != null) {
-            errorType.set(exceptionTags.tag(error));
-        }
-        Observation obs = observation.get();
-        if (obs != null && error != null) {
-            obs.error(error);
         }
     }
 
     void invocationEnded(RpcInvocationEndedEvent event) {
-        boolean wasError = errored.get();
-        String error = errorType.get();
-        String outcome = wasError ? MeterNames.OUTCOME_ERROR
+        Throwable error = event.getError().orElse(null);
+        String outcome = error != null ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
-        String type = event.getType();
 
-        Timer.Sample s = sample.get();
         Observation.Scope scope = observationScope.get();
         Observation obs = observation.get();
 
         // Clear all thread-locals before any calls that could throw.
-        errored.remove();
-        errorType.remove();
-        sample.remove();
         observationScope.remove();
         observation.remove();
 
-        if (obs != null) {
+        if (useObservation) {
+            if (obs == null) {
+                // The invocation started before this binder was listening, so
+                // there is no observation to close.
+                return;
+            }
+            if (error != null) {
+                obs.error(error);
+            }
             obs.lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME, outcome);
             // Unwind anything nested instrumentation leaked on top of our
             // scope before closing it, so the enclosing request scope is
             // current again for the rest of the request.
             ObservationScopes.closeWithNested(observationRegistry, scope);
             obs.stop();
-        } else if (s != null) {
+        } else {
             // The error tag replicates the one
             // DefaultMeterObservationHandler adds for us on the Observation
-            // path, keeping both paths' tag-key sets identical.
-            s.stop(Timer.builder(MeterNames.RPC_DURATION)
-                    .tag(MeterNames.TAG_TYPE, type)
+            // path, keeping both paths' tag-key sets identical. It is drawn
+            // from the shared bounded set, so a flood of generated exception
+            // types collapses into _other; the Observation path's tag is
+            // written by that handler and is not bounded.
+            Timer.builder(MeterNames.RPC_DURATION)
+                    .tag(MeterNames.TAG_TYPE, event.getType())
                     .tag(MeterNames.TAG_OUTCOME, outcome)
                     .tag(MeterNames.TAG_ERROR,
-                            error != null ? error : MeterNames.ERROR_NONE)
-                    .register(registry));
+                            error != null ? exceptionTags.tag(error)
+                                    : MeterNames.ERROR_NONE)
+                    .register(registry).record(event.getDuration());
         }
     }
 }

@@ -10,6 +10,7 @@ package com.vaadin.observability.micrometer.insights;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Assertions;
@@ -77,6 +78,7 @@ class InteractionCollectorTest {
         Mockito.when(started.getName()).thenReturn("click");
         Mockito.when(started.getUI()).thenReturn(ui);
         Mockito.when(started.getNodeId()).thenReturn(nodeId);
+        Mockito.when(started.getComponent()).thenReturn(Optional.of(component));
 
         RpcInvocationEndedEvent ended = Mockito
                 .mock(RpcInvocationEndedEvent.class);
@@ -529,6 +531,7 @@ class InteractionCollectorTest {
         Mockito.when(started.getName()).thenReturn(name);
         Mockito.when(started.getUI()).thenReturn(ui);
         Mockito.when(started.getNodeId()).thenReturn(nodeId);
+        Mockito.when(started.getComponent()).thenReturn(Optional.of(component));
 
         RpcInvocationEndedEvent ended = Mockito
                 .mock(RpcInvocationEndedEvent.class);
@@ -798,6 +801,7 @@ class InteractionCollectorTest {
         Mockito.when(started.getName()).thenReturn(PollEvent.DOM_EVENT_NAME);
         Mockito.when(started.getUI()).thenReturn(ui);
         Mockito.when(started.getNodeId()).thenReturn(nodeId);
+        Mockito.when(started.getComponent()).thenReturn(Optional.of(ui));
 
         RpcInvocationEndedEvent ended = Mockito
                 .mock(RpcInvocationEndedEvent.class);

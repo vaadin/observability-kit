@@ -8,8 +8,10 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -631,11 +633,16 @@ class MetricsServiceInitListenerTest {
         UI ui = mock(UI.class, RETURNS_DEEP_STUBS);
         VaadinServiceEventBus bus = service.getEventBus();
         bus.fireEvent(rpcEvent(RpcInvocationStartedEvent.class, ui));
+        IllegalStateException error = new IllegalStateException("boom");
         RpcInvocationFailedEvent failed = rpcEvent(
                 RpcInvocationFailedEvent.class, ui);
-        when(failed.getError()).thenReturn(new IllegalStateException("boom"));
+        when(failed.getError()).thenReturn(error);
         bus.fireEvent(failed);
-        bus.fireEvent(rpcEvent(RpcInvocationEndedEvent.class, ui));
+        RpcInvocationEndedEvent ended = rpcEvent(RpcInvocationEndedEvent.class,
+                ui);
+        when(ended.getDuration()).thenReturn(Duration.ofMillis(1));
+        when(ended.getError()).thenReturn(Optional.of(error));
+        bus.fireEvent(ended);
         return service;
     }
 

@@ -178,9 +178,9 @@ public final class ObservationNames {
 
     /**
      * High-cardinality span attribute: the class name of the Vaadin
-     * {@code Component} that the invocation targets, when it can be resolved
-     * from the target node. Span-only; it is never added as a Timer tag because
-     * of its cardinality.
+     * {@code Component} that the invocation targets, when the target node is
+     * the element of a component. Span-only; it is never added as a Timer tag
+     * because of its cardinality.
      */
     public static final String KEY_COMPONENT = "vaadin.rpc.component";
 

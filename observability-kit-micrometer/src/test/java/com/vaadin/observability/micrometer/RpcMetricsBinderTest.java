@@ -8,10 +8,12 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.micrometer.common.KeyValue;
@@ -24,18 +26,20 @@ import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
-import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 class RpcMetricsBinderTest {
+
+    private static final Duration DURATION = Duration.ofMillis(42);
+
+    private final UI ui = new UI();
 
     private static final class RecordingHandler
             implements ObservationHandler<Observation.Context> {
@@ -81,6 +85,7 @@ class RpcMetricsBinderTest {
     void clearCurrentScope() {
         ObservationRegistry.create().setCurrentObservationScope(null);
         RequestInteraction.clear();
+        RequestUi.clear();
     }
 
     @Test
@@ -102,6 +107,9 @@ class RpcMetricsBinderTest {
         Assertions.assertNotNull(timer,
                 "vaadin.rpc.duration timer with type=event, outcome=success should exist");
         Assertions.assertEquals(1L, timer.count());
+        Assertions.assertEquals(DURATION.toNanos(),
+                timer.totalTime(TimeUnit.NANOSECONDS),
+                "the timer should record the duration Flow measured");
     }
 
     @Test
@@ -110,14 +118,8 @@ class RpcMetricsBinderTest {
         RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,
                 ObservabilitySettings.builder().traces(false).build());
 
-        RpcInvocationStartedEvent eventStarted = started("event");
-        RpcInvocationEndedEvent eventEnded = ended("event");
-
-        binder.invocationStarted(eventStarted);
-        RpcInvocationFailedEvent eventFailed = failed(
-                new RuntimeException("boom"));
-        binder.invocationFailed(eventFailed);
-        binder.invocationEnded(eventEnded);
+        binder.invocationStarted(started("event"));
+        binder.invocationEnded(ended("event", new RuntimeException("boom")));
 
         Timer timer = registry.find(MeterNames.RPC_DURATION)
                 .tag(MeterNames.TAG_TYPE, "event")
@@ -165,8 +167,7 @@ class RpcMetricsBinderTest {
 
     private void failInvocation(RpcMetricsBinder binder, Throwable error) {
         binder.invocationStarted(started("event"));
-        binder.invocationFailed(failed(error));
-        binder.invocationEnded(ended("event"));
+        binder.invocationEnded(ended("event", error));
     }
 
     private static List<String> errorTags(SimpleMeterRegistry registry) {
@@ -234,14 +235,8 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(true).build());
 
-        RpcInvocationStartedEvent eventStarted = started("event");
-        RpcInvocationEndedEvent eventEnded = ended("event");
-
-        binder.invocationStarted(eventStarted);
-        RpcInvocationFailedEvent eventFailed = failed(
-                new RuntimeException("boom"));
-        binder.invocationFailed(eventFailed);
-        binder.invocationEnded(eventEnded);
+        binder.invocationStarted(started("event"));
+        binder.invocationEnded(ended("event", new RuntimeException("boom")));
 
         Timer timer = simpleRegistry.find(MeterNames.RPC_DURATION)
                 .tag(MeterNames.TAG_TYPE, "event")
@@ -368,36 +363,6 @@ class RpcMetricsBinderTest {
     }
 
     @Test
-    void errorStateDoesNotBleedIntoSubsequentInvocation() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        RpcMetricsBinder binder = new RpcMetricsBinder(registry, null,
-                ObservabilitySettings.builder().traces(false).build());
-
-        RpcInvocationStartedEvent eventStarted = started("event");
-        RpcInvocationEndedEvent eventEnded = ended("event");
-
-        // First invocation: error
-        binder.invocationStarted(eventStarted);
-        RpcInvocationFailedEvent eventFailed = failed(
-                new RuntimeException("boom"));
-        binder.invocationFailed(eventFailed);
-        binder.invocationEnded(eventEnded);
-
-        // Second invocation on the same binder instance/thread: no error
-        binder.invocationStarted(eventStarted);
-        binder.invocationEnded(eventEnded);
-
-        Timer successTimer = registry.find(MeterNames.RPC_DURATION)
-                .tag(MeterNames.TAG_TYPE, "event")
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        Assertions.assertNotNull(successTimer,
-                "second invocation should record success outcome");
-        Assertions.assertEquals(1L, successTimer.count(),
-                "error state must not bleed into next invocation");
-    }
-
-    @Test
     void observationPathAddsEventNameAsHighCardinalitySpanAttribute() {
         SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
         ObservationRegistry observationRegistry = ObservationRegistry.create();
@@ -411,9 +376,9 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(true).build());
 
-        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationStartedEvent eventStarted = new RpcInvocationStartedEvent(
+                ui, "event", -1, "click");
         RpcInvocationEndedEvent eventEnded = ended("event");
-        Mockito.when(eventStarted.getName()).thenReturn("click");
 
         binder.invocationStarted(eventStarted);
         binder.invocationEnded(eventEnded);
@@ -453,7 +418,6 @@ class RpcMetricsBinderTest {
 
         RpcInvocationStartedEvent eventStarted = started("event");
         RpcInvocationEndedEvent eventEnded = ended("event");
-        Mockito.when(eventStarted.getName()).thenReturn(null);
 
         binder.invocationStarted(eventStarted);
         binder.invocationEnded(eventEnded);
@@ -478,19 +442,17 @@ class RpcMetricsBinderTest {
                 observationRegistry,
                 ObservabilitySettings.builder().traces(true).build());
 
-        // Build a real UI with an attached component so the binder can resolve
-        // the component class from the target node id.
-        UI ui = new UI();
+        // An attached component, so the event resolves it from the target node
+        // id.
         Element element = ElementFactory.createDiv();
         Component component = new Component(element) {
         };
         ui.getElement().appendChild(element);
         int nodeId = element.getNode().getId();
 
-        RpcInvocationStartedEvent eventStarted = started("event");
+        RpcInvocationStartedEvent eventStarted = new RpcInvocationStartedEvent(
+                ui, "event", nodeId, null);
         RpcInvocationEndedEvent eventEnded = ended("event");
-        Mockito.when(eventStarted.getUI()).thenReturn(ui);
-        Mockito.when(eventStarted.getNodeId()).thenReturn(nodeId);
 
         binder.invocationStarted(eventStarted);
         binder.invocationEnded(eventEnded);
@@ -503,46 +465,6 @@ class RpcMetricsBinderTest {
                 recorder.tags.get(0)
                         .containsKey(ObservationNames.KEY_COMPONENT),
                 "component class must not be a low-cardinality Timer tag");
-    }
-
-    @Test
-    void observationPathResolvesEnclosingComponentForSubElement() {
-        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        observationRegistry.observationConfig()
-                .observationHandler(
-                        new DefaultMeterObservationHandler(simpleRegistry))
-                .observationHandler(recorder);
-
-        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build());
-
-        // Build a component whose root has a nested sub-element that is not
-        // itself mapped to a component. An RPC targeting the sub-element must
-        // resolve to the enclosing component by walking up the element tree.
-        UI ui = new UI();
-        Element root = ElementFactory.createDiv();
-        Component component = new Component(root) {
-        };
-        Element subElement = ElementFactory.createSpan();
-        root.appendChild(subElement);
-        ui.getElement().appendChild(root);
-        int nodeId = subElement.getNode().getId();
-
-        RpcInvocationStartedEvent eventStarted = started("event");
-        RpcInvocationEndedEvent eventEnded = ended("event");
-        Mockito.when(eventStarted.getUI()).thenReturn(ui);
-        Mockito.when(eventStarted.getNodeId()).thenReturn(nodeId);
-
-        binder.invocationStarted(eventStarted);
-        binder.invocationEnded(eventEnded);
-
-        Assertions.assertEquals(component.getClass().getName(),
-                recorder.highCardinalityTags.get(0)
-                        .get(ObservationNames.KEY_COMPONENT),
-                "span should resolve the enclosing component for a sub-element target");
     }
 
     @Test
@@ -561,7 +483,6 @@ class RpcMetricsBinderTest {
 
         RpcInvocationStartedEvent eventStarted = started("event");
         RpcInvocationEndedEvent eventEnded = ended("event");
-        Mockito.when(eventStarted.getNodeId()).thenReturn(-1);
 
         binder.invocationStarted(eventStarted);
         binder.invocationEnded(eventEnded);
@@ -573,26 +494,17 @@ class RpcMetricsBinderTest {
     }
 
     /** A started event of the given RPC type, with no target node. */
-    private static RpcInvocationStartedEvent started(String type) {
-        RpcInvocationStartedEvent event = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(event.getType()).thenReturn(type);
-        return event;
+    private RpcInvocationStartedEvent started(String type) {
+        return new RpcInvocationStartedEvent(ui, type, -1, null);
     }
 
-    /** An ended event of the given RPC type. */
-    private static RpcInvocationEndedEvent ended(String type) {
-        RpcInvocationEndedEvent event = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(event.getType()).thenReturn(type);
-        return event;
+    /** An ended event of the given RPC type that completed normally. */
+    private RpcInvocationEndedEvent ended(String type) {
+        return ended(type, null);
     }
 
-    /** A failed event carrying the given throwable. */
-    private static RpcInvocationFailedEvent failed(Throwable error) {
-        RpcInvocationFailedEvent event = Mockito
-                .mock(RpcInvocationFailedEvent.class);
-        Mockito.when(event.getError()).thenReturn(error);
-        return event;
+    /** An ended event of the given RPC type, failed with the given error. */
+    private RpcInvocationEndedEvent ended(String type, Throwable error) {
+        return new RpcInvocationEndedEvent(ui, type, -1, null, DURATION, error);
     }
 }
