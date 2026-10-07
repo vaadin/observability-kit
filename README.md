@@ -22,7 +22,7 @@ code, no annotations, no configuration required.
 
 ## How it works
 
-The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request interceptor, the RPC and data-query events on `VaadinServiceEventBus`, navigation listeners, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows the tasks submitted to it — signal effect re-evaluations, signal result notifications, and application background tasks — across the thread hop, each under a `vaadin.executor.task` span. A plain `UI.access(...)` from a background thread does not go through that executor: it queues a command that whichever thread unlocks the session runs, so it has no span of its own. A notification task is itself a `UI.access` call, so its span always covers the dispatch but covers the notification body only when the session lock is free; otherwise the body runs later on the unlocking thread, outside the span.
+The kit is a plain library: no `-javaagent`, no bytecode weaving. At `VaadinService` initialization, `MetricsServiceInitListener` (a Spring/Boot bean, or loaded via `ServiceLoader` in standalone deployments) registers a set of binders on the Flow SPIs: session and UI lifecycle listeners, the request, RPC and data-query events on `VaadinServiceEventBus`, navigation listeners, and a decorated session error handler. Each binder records into the application's `MeterRegistry` and, when tracing is on, drives an `Observation` through the `ObservationRegistry`. One observation produces both signals: the meter observation handler turns it into a Timer, and a tracing bridge (OpenTelemetry, Zipkin) turns it into a span. The service executor is wrapped in a `TracingExecutor`, so trace context follows the tasks submitted to it — signal effect re-evaluations, signal result notifications, and application background tasks — across the thread hop, each under a `vaadin.executor.task` span. A plain `UI.access(...)` from a background thread does not go through that executor: it queues a command that whichever thread unlocks the session runs, so it has no span of its own. A notification task is itself a `UI.access` call, so its span always covers the dispatch but covers the notification body only when the session lock is free; otherwise the body runs later on the unlocking thread, outside the span.
 
 The kit also enriches telemetry the framework emits anyway: through its HTTP observation hooks, the Spring HTTP observation gets the Vaadin request type, the active view's route template as its `uri` tag (template-only, and budgeted to stay under Boot's `max-uri-tags` cap), and error status for failures Vaadin handles internally on a 200 response.
 
@@ -471,35 +471,40 @@ ObservabilitySettings.builder()
 
 ### Request types
 
-Every request Vaadin handles is classified before it is timed, and the class
-becomes the `vaadin.request.type` tag on `vaadin.request.duration` — and, when
-tracing is on, the `vaadin.request.<type>` span name and the request type
-lifted into the framework's own HTTP observation. The types differ so much in
-what they do that one average across all of them means nothing:
+Every request Vaadin handles is classified, and the class becomes the
+`vaadin.request.type` tag on `vaadin.request.duration` — and, when tracing is
+on, the `vaadin.request.<type>` span name and the request type lifted into the
+framework's own HTTP observation. The type comes from the Flow request handler
+that handled the request, and from the request's URL and headers when the
+handler does not tell (no handler handled it, or it is not one of Flow's own).
+The types differ so much in what they do that one average across all of them
+means nothing:
 
 | `vaadin.request.type` | What it covers |
 | --- | --- |
 | `uidl` | A UI interaction: the request the client sends for a click, a poll, a navigation. The one type that is broken down further, by the `vaadin.interaction` tag. |
-| `bootstrap` | A page load: the HTML document request, and the `init` request the client engine follows it with to have the UI created. The server's side of `vaadin.client.bootstrap.duration`. |
+| `bootstrap` | A page load: the `index.html` request, the `init` request the client engine follows it with to have the UI created, and the bootstrap of an embedded web component. The server's side of `vaadin.client.bootstrap.duration`. |
 | `stream` | A download or an upload, served by Flow's stream request handler. Expected to be long-running, which is exactly why it is kept out of the other buckets. |
-| `push` | A push channel request (any transport). |
+| `push` | A push channel request (any transport), and every message the client sends over a push connection. |
 | `heartbeat` | The keep-alive the browser sends for an open UI. |
 | `static` | A static resource: `/VAADIN/`, `/static/`, `/themes/`, `/sw.js`. |
 | `other` | Everything left — an application's own endpoints under the Vaadin servlet, among them. |
 
-A page load is recognised from the browser's `Sec-Fetch-Dest` header (falling
-back to an `Accept` header that asks for `text/html` first, for browsers old
-enough not to send it), so a `fetch()` to an application endpoint that happens
-to sit under the Vaadin servlet is not counted as one. The classification is
-deliberately conservative in that direction: a page load that cannot be told
-apart from application traffic stays `other` rather than diluting `bootstrap`.
+A page load is a request Flow answers with `index.html`, whether a browser, an
+uptime check, a crawler or a `fetch()` (the service worker caching the page,
+say) sent it: each one costs the server a page load. Flow does not answer a
+request the browser marks as a script, style, image or similar resource with
+`index.html`. When no Flow handler handled the request, a page load is
+recognised from the browser's `Sec-Fetch-Dest` header (falling back to an
+`Accept` header that asks for `text/html` first, for browsers old enough not to
+send it), so a `fetch()` to an application endpoint that happens to sit under
+the Vaadin servlet is not counted as one.
 
-An embedded route counts as a page load too — a request whose destination is an
-`iframe`, `frame`, `embed` or `object` is served the same `index.html` and
-builds a UI of its own, and `vaadin.client.bootstrap.duration` records it from
-the browser's end as well. A view that embeds another of its own routes
-therefore reports a second `bootstrap`, which is the second UI it really does
-build.
+An embedded route counts as a page load too — it is served the same
+`index.html` and builds a UI of its own, and `vaadin.client.bootstrap.duration`
+records it from the browser's end as well. A view that embeds another of its own
+routes therefore reports a second `bootstrap`, which is the second UI it really
+does build.
 
 ### Navigation outcomes
 
@@ -663,8 +668,8 @@ application classes and multiply with each other.
 > panels and alerts built on `http.server.requests` will see the volume
 > increase.
 
-Only exceptions that *escape* request handling surface to a request
-interceptor. Everything a user can trigger — a click listener that throws, a
+Flow only reports the exceptions that make handling a request *fail* at the
+end of the request. Everything a user can trigger — a click listener that throws, a
 `UI.access` body, a detach listener, a `beforeEnter` callback — is caught by
 Flow and routed to `VaadinSession.getErrorHandler()` instead. The kit therefore
 decorates that handler, which is also what lets it attribute a failure to a

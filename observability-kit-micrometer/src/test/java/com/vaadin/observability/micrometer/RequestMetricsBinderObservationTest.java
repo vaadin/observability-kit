@@ -35,6 +35,7 @@ import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.WrappedSession;
+import com.vaadin.flow.server.communication.HeartbeatHandler;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 class RequestMetricsBinderObservationTest {
@@ -108,8 +109,8 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertEquals(1, recorder.names.size());
         Assertions.assertEquals(MeterNames.REQUEST_DURATION,
@@ -144,10 +145,10 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
+        RequestEvents.start(binder, req, resp);
         // Simulate a poll listener firing during request handling.
         RequestInteraction.mark(ObservationNames.INTERACTION_POLL);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertEquals(
                 ObservationNames.REQUEST + "."
@@ -174,8 +175,8 @@ class RequestMetricsBinderObservationTest {
 
         // Leftover marker from a prior request on this thread.
         RequestInteraction.mark(ObservationNames.INTERACTION_POLL);
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertEquals(ObservationNames.INTERACTION_RPC,
                 recorder.tags.get(0).get(ObservationNames.KEY_INTERACTION));
@@ -199,15 +200,15 @@ class RequestMetricsBinderObservationTest {
         Assertions.assertNull(obs.getCurrentObservation(),
                 "precondition: no observation is current on this thread");
 
-        // A request whose requestEnd never ran (e.g. mid-request shutdown)
+        // A request whose ended event never ran (e.g. mid-request shutdown)
         // leaves its scope open on this thread.
-        binder.requestStart(req, resp);
+        RequestEvents.start(binder, req, resp);
         Assertions.assertNotNull(obs.getCurrentObservation(),
                 "precondition: the first request opened a scope");
 
         // The pooled thread now serves the next request.
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertEquals(1, recorder.parents.size());
         Assertions.assertNull(recorder.parents.get(0),
@@ -231,8 +232,8 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        // A request whose requestEnd never ran leaves its scope open.
-        binder.requestStart(req, resp);
+        // A request whose ended event never ran leaves its scope open.
+        RequestEvents.start(binder, req, resp);
 
         // Something live then becomes current on the pooled thread, the way a
         // Spring/Boot HTTP observation wraps the next request.
@@ -241,8 +242,8 @@ class RequestMetricsBinderObservationTest {
 
         // Cleaning up the leaked scope must not close it: close() would
         // reinstate its previous scope and evict the enclosing one.
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertEquals(1, recorder.parents.size());
         Assertions.assertSame(enclosing, recorder.parents.get(0),
@@ -270,15 +271,15 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
+        RequestEvents.start(binder, req, resp);
         // Nested instrumentation whose end callback never ran, e.g. an RPC
         // invocation interrupted mid-request.
         Observation nested = Observation.start("nested.rpc", obs);
         nested.openScope();
 
-        binder.requestEnd(req, resp, session);
+        RequestEvents.end(binder, req, resp, session);
 
-        // Waiting for the next requestStart to clean this up would leave a
+        // Waiting for the next request start to clean this up would leave a
         // dead observation current for anything running on this pooled thread
         // in between, so the leaked scope must be unwound here, innermost
         // first, and its handlers notified.
@@ -306,10 +307,9 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
-        binder.handleException(req, resp, session,
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session, null,
                 new IllegalStateException("boom"));
-        binder.requestEnd(req, resp, session);
 
         Assertions.assertEquals(ObservationNames.OUTCOME_ERROR,
                 recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
@@ -317,10 +317,38 @@ class RequestMetricsBinderObservationTest {
     }
 
     @Test
+    void theRequestHandlerSettlesTheSpanNameAndType() {
+        // The observation starts with what the URL tells, and the handler
+        // known at the end has the final word.
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(
+                new SimpleMeterRegistry(), obs,
+                ObservabilitySettings.builder().build());
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        Mockito.when(req.getPathInfo()).thenReturn("/anything");
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, null,
+                Mockito.mock(HeartbeatHandler.class), null);
+
+        Assertions.assertEquals(ObservationNames.REQUEST + ".heartbeat",
+                recorder.contextualNames.get(0));
+        Assertions.assertEquals("heartbeat",
+                recorder.tags.get(0).get(ObservationNames.KEY_REQUEST_TYPE));
+        Assertions.assertEquals(ObservationNames.INTERACTION_NONE,
+                recorder.tags.get(0).get(ObservationNames.KEY_INTERACTION));
+    }
+
+    @Test
     void handledListenerFailureMarksTheRequestSpanAsErrored() {
         // The exception a component listener throws is caught by Flow and
-        // routed to the session error handler, so it never reaches
-        // handleException. The request span must still report the failure
+        // routed to the session error handler, so it does not fail the
+        // request. The request span must still report the failure
         // rather than claiming outcome=success.
         ObservationRegistry obs = ObservationRegistry.create();
         RecordingHandler recorder = new RecordingHandler();
@@ -335,9 +363,9 @@ class RequestMetricsBinderObservationTest {
         VaadinSession session = Mockito.mock(VaadinSession.class);
         CurrentInstance.set(VaadinRequest.class, req);
         try {
-            binder.requestStart(req, resp);
+            RequestEvents.start(binder, req, resp);
             RequestError.markHandled(new IllegalStateException("boom"));
-            binder.requestEnd(req, resp, session);
+            RequestEvents.end(binder, req, resp, session);
         } finally {
             CurrentInstance.clearAll();
         }
@@ -369,8 +397,8 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         // Both values reach the span...
         Assertions.assertEquals("42", recorder.highCardinalityTags.get(0)
@@ -424,8 +452,8 @@ class RequestMetricsBinderObservationTest {
         Mockito.when(wrapped.getId()).thenReturn("abc123");
         Mockito.when(session.getSession()).thenReturn(wrapped);
 
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertEquals("abc123", recorder.highCardinalityTags.get(0)
                 .get(ObservationNames.KEY_SESSION_ID));
@@ -451,8 +479,8 @@ class RequestMetricsBinderObservationTest {
         Mockito.when(req.getWrappedSession(false)).thenReturn(wrapped);
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
 
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, null);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, null);
 
         Assertions.assertEquals("from-request", recorder.highCardinalityTags
                 .get(0).get(ObservationNames.KEY_SESSION_ID));
@@ -477,16 +505,16 @@ class RequestMetricsBinderObservationTest {
         RequestMetricsBinder byDefault = new RequestMetricsBinder(
                 new SimpleMeterRegistry(), obs,
                 ObservabilitySettings.builder().build());
-        byDefault.requestStart(req, resp);
-        byDefault.requestEnd(req, resp, session);
+        RequestEvents.start(byDefault, req, resp);
+        RequestEvents.end(byDefault, req, resp, session);
 
         // Enabled, but the session was invalidated during the request.
         Mockito.when(wrapped.getId()).thenThrow(new IllegalStateException());
         RequestMetricsBinder enabled = new RequestMetricsBinder(
                 new SimpleMeterRegistry(), obs,
                 ObservabilitySettings.builder().tracesSessionId(true).build());
-        enabled.requestStart(req, resp);
-        enabled.requestEnd(req, resp, session);
+        RequestEvents.start(enabled, req, resp);
+        RequestEvents.end(enabled, req, resp, session);
 
         Assertions.assertEquals(2, recorder.highCardinalityTags.size());
         recorder.highCardinalityTags.forEach(tags -> Assertions.assertFalse(
@@ -507,8 +535,8 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertTrue(recorder.names.isEmpty(),
                 "no observation should fire when traces are disabled");
@@ -534,8 +562,8 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
-        binder.requestEnd(req, resp, session);
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertTrue(recorder.names.isEmpty(),
                 "requests=false must stop the request observation (the span), "
@@ -577,10 +605,9 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
-        binder.handleException(req, resp, session,
+        RequestEvents.start(binder, req, resp);
+        RequestEvents.end(binder, req, resp, session, null,
                 new IllegalStateException("boom"));
-        binder.requestEnd(req, resp, session);
 
         Assertions.assertEquals(List.of("other"), enriched,
                 "the framework HTTP observation is Spring's own; enriching it "
@@ -595,9 +622,9 @@ class RequestMetricsBinderObservationTest {
     @Test
     void handledErrorIsRelayedToHttpObservationMarker() {
         // A user-triggered failure Flow routes to the session error handler
-        // never escapes request handling, so handleException never runs for
-        // it; the relay in requestEnd is its only path to root-span error
-        // monitoring. Exercised with requests=false, where it is also the
+        // does not fail the request, so the ended event does not report it;
+        // the relay is its only path to root-span error monitoring. Exercised
+        // with requests=false, where it is also the
         // failure's only trace-side signal of any kind.
         ObservationRegistry obs = ObservationRegistry.create();
         obs.observationConfig().observationHandler(new RecordingHandler());
@@ -619,7 +646,7 @@ class RequestMetricsBinderObservationTest {
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
         IllegalStateException failure = new IllegalStateException("boom");
-        binder.requestStart(req, resp);
+        RequestEvents.start(binder, req, resp);
         // markHandled only records while a request is current; req stays
         // strongly referenced by this frame, so the CurrentInstance weak
         // reference cannot be collected mid-test.
@@ -629,7 +656,7 @@ class RequestMetricsBinderObservationTest {
         } finally {
             CurrentInstance.clearAll();
         }
-        binder.requestEnd(req, resp, session);
+        RequestEvents.end(binder, req, resp, session);
 
         Assertions.assertEquals(List.of(failure), marked,
                 "a handled failure must reach the framework HTTP observation");
@@ -638,7 +665,7 @@ class RequestMetricsBinderObservationTest {
     @Test
     void aFailingHookDoesNotLeaveTheRequestObservationOpen() {
         // The hooks are overridable integration code that runs before the
-        // interceptor closes its scope and stops its observation; a hook that
+        // binder closes its scope and stops its observation; a hook that
         // throws must not leave either behind on the pooled thread.
         ObservationRegistry obs = ObservationRegistry.create();
         RecordingHandler recorder = new RecordingHandler();
@@ -665,7 +692,7 @@ class RequestMetricsBinderObservationTest {
         VaadinResponse resp = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, resp);
+        RequestEvents.start(binder, req, resp);
         CurrentInstance.set(VaadinRequest.class, req);
         try {
             RequestError.markHandled(new IllegalStateException("handled"));
@@ -673,7 +700,7 @@ class RequestMetricsBinderObservationTest {
             CurrentInstance.clearAll();
         }
         Assertions.assertDoesNotThrow(
-                () -> binder.requestEnd(req, resp, session));
+                () -> RequestEvents.end(binder, req, resp, session));
 
         Assertions.assertEquals(List.of(MeterNames.REQUEST_DURATION),
                 recorder.names, "the request observation must be stopped");
@@ -684,9 +711,9 @@ class RequestMetricsBinderObservationTest {
 
     @Test
     void escapedExceptionIsMarkedOnceNotTwice() {
-        // handleException marks the framework observation and sets the
-        // interceptor-error flag; the relay in requestEnd must not mark the
-        // same request again for a handled error arriving on top of it.
+        // A request that failed and also had a failure handled by the session
+        // error handler marks the framework observation with the one that
+        // failed it, and only once.
         ObservationRegistry obs = ObservationRegistry.create();
         obs.observationConfig().observationHandler(new RecordingHandler());
         List<Throwable> marked = new ArrayList<>();
@@ -707,15 +734,14 @@ class RequestMetricsBinderObservationTest {
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
         IllegalStateException escaped = new IllegalStateException("boom");
-        binder.requestStart(req, resp);
-        binder.handleException(req, resp, session, escaped);
+        RequestEvents.start(binder, req, resp);
         CurrentInstance.set(VaadinRequest.class, req);
         try {
             RequestError.markHandled(new IllegalStateException("handled"));
         } finally {
             CurrentInstance.clearAll();
         }
-        binder.requestEnd(req, resp, session);
+        RequestEvents.end(binder, req, resp, session, null, escaped);
 
         Assertions.assertEquals(List.of(escaped), marked,
                 "one failed request marks the framework observation once");

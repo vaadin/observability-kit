@@ -292,12 +292,12 @@ class ObservationContractTest {
         VaadinResponse response = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(request, response);
+        RequestEvents.start(binder, request, response);
         if (interactionMark != null) {
             // What the poll/navigation listeners do during request handling.
             RequestInteraction.mark(interactionMark);
         }
-        binder.requestEnd(request, response, session);
+        RequestEvents.end(binder, request, response, session);
     }
 
     @com.vaadin.flow.component.Tag("contract-view")

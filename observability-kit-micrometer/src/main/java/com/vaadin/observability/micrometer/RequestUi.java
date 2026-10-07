@@ -15,27 +15,26 @@ import com.vaadin.flow.component.UI;
 /**
  * Thread-local relay carrying the UI the in-flight UIDL request is handled for,
  * from the binders that see it during handling (RPC invocations, navigation,
- * polls) to {@code RequestMetricsBinder#requestEnd}, which resolves the active
- * route from it.
+ * polls) to {@code RequestMetricsBinder#requestEnded}, which resolves the
+ * active route from it.
  * <p>
  * The relay exists because {@link UI#getCurrent()} is only bound while the UIDL
  * handler processes the request inside the session lock, and is cleared again
- * before the request interceptors' {@code requestEnd} runs. UIDL processing is
- * synchronous on the request thread, so a UI marked during handling is visible
- * to {@code requestEnd} on the same thread. The interceptor clears the slot at
- * {@code requestStart} and consumes it at {@code requestEnd}, so a pooled
- * thread never leaks a UI reference across requests.
+ * before the request ends. UIDL processing is synchronous on the request
+ * thread, so a UI marked during handling is visible at the end of the request
+ * on the same thread. The request binder clears the slot when the request
+ * starts and consumes it when the request ends, so a pooled thread never leaks
+ * a UI reference across requests.
  */
 final class RequestUi {
 
     /**
      * Held weakly: {@code beforeEnter} also fires for a navigation started from
-     * a background thread through {@code UI.access()}, where no request
-     * interceptor ever drains this slot — a strong reference would pin the UI
-     * (and through it the session) to that pooled thread for the life of the
-     * server, the same hazard {@code NavigationMetricsBinder#pendingUis}
-     * documents. A stranded entry then costs a dead reference object, nothing
-     * more.
+     * a background thread through {@code UI.access()}, where no request ever
+     * ends to drain this slot — a strong reference would pin the UI (and
+     * through it the session) to that pooled thread for the life of the server,
+     * the same hazard {@code NavigationMetricsBinder#pendingUis} documents. A
+     * stranded entry then costs a dead reference object, nothing more.
      */
     private static final ThreadLocal<WeakReference<UI>> CURRENT = new ThreadLocal<>();
 

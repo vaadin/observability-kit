@@ -40,8 +40,8 @@ import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 
 /**
  * Verifies that failures Flow routes to the session {@code ErrorHandler} — the
- * ones a user triggers, which never reach a request interceptor — are counted
- * and attributed.
+ * ones a user triggers, which do not fail the request — are counted and
+ * attributed.
  */
 class ErrorMetricsBinderTest {
 
@@ -255,20 +255,20 @@ class ErrorMetricsBinderTest {
 
     @Test
     void anExceptionThatEscapedRequestHandlingIsCountedOnce() {
-        // Flow's handleExceptionDuringRequest notifies the request
-        // interceptors and then the session error handler with the same
-        // throwable; that is one failure, not two.
+        // Flow hands the exception that failed the request to the session
+        // error handler and then reports it in the request ended event; that
+        // is one failure, not two.
         RequestMetricsBinder requests = new RequestMetricsBinder(registry,
                 ObservabilitySettings.builder().traces(false).build());
         sessionInit();
         VaadinRequest request = Mockito.mock(VaadinRequest.class);
         VaadinResponse response = Mockito.mock(VaadinResponse.class);
+        CurrentInstance.set(VaadinRequest.class, request);
         IllegalStateException error = new IllegalStateException("boom");
 
-        requests.requestStart(request, response);
-        requests.handleException(request, response, session, error);
+        RequestEvents.start(requests, request, response);
         handler.get().error(new ErrorEvent(error));
-        requests.requestEnd(request, response, session);
+        RequestEvents.end(requests, request, response, session, null, error);
 
         Assertions.assertEquals(1.0,
                 registry.find(MeterNames.ERRORS)
@@ -289,9 +289,9 @@ class ErrorMetricsBinderTest {
         VaadinResponse response = Mockito.mock(VaadinResponse.class);
         CurrentInstance.set(VaadinRequest.class, request);
 
-        requests.requestStart(request, response);
+        RequestEvents.start(requests, request, response);
         handler.get().error(errorFor(new IllegalStateException("boom")));
-        requests.requestEnd(request, response, session);
+        RequestEvents.end(requests, request, response, session);
 
         Timer timer = registry.find(MeterNames.REQUEST_DURATION)
                 .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_ERROR).timer();
@@ -313,8 +313,8 @@ class ErrorMetricsBinderTest {
 
         handler.get().error(errorFor(new IllegalStateException("boom")));
 
-        requests.requestStart(request, response);
-        requests.requestEnd(request, response, session);
+        RequestEvents.start(requests, request, response);
+        RequestEvents.end(requests, request, response, session);
 
         Timer timer = registry.find(MeterNames.REQUEST_DURATION)
                 .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)

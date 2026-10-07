@@ -139,9 +139,9 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
      * Hook for DI integrations to enrich the framework-level HTTP observation
      * (e.g. Spring's {@code ServerHttpObservationFilter} span) with
      * Vaadin-specific information so the parent HTTP span renders informatively
-     * in the trace UI. Called from {@link RequestMetricsBinder} after the
-     * Vaadin request type has been determined and before the
-     * {@code vaadin.request.<type>} child observation is started.
+     * in the trace UI. Called from {@link RequestMetricsBinder} at the end of
+     * the request, once the request handler has settled the Vaadin request
+     * type, and before the framework stops its HTTP observation.
      * <p>
      * Default implementation no-ops, keeping the framework-agnostic core free
      * of Spring imports. The Spring/Boot integration modules override this to
@@ -283,10 +283,11 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             navigationBinder = uiBinder.getNavigationBinder();
         }
 
-        // One counter for vaadin.errors, shared by its two writers: the request
-        // interceptor, which sees the exceptions that escape request handling,
-        // and the error binder, which sees the ones Flow routes to the session
-        // error handler. One meter, one cardinality budget — a per-instance cap
+        // One counter for vaadin.errors, shared by its two writers: the error
+        // binder, which sees what Flow routes to the session error handler,
+        // and the request binder, which counts a failed request the error
+        // handler never saw. One meter, one cardinality budget — a per-instance
+        // cap
         // would let the same route or exception type be itself on one path and
         // _other on the other.
         //
@@ -315,22 +316,18 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     markHttpObservationError(request, failure);
                 }
             };
-            event.addVaadinRequestInterceptor(
-                    new RequestMetricsBinder(registry, observationRegistry,
-                            settings, hooks, errors, exceptionTags));
+            new RequestMetricsBinder(registry, observationRegistry, settings,
+                    hooks, errors, exceptionTags)
+                    .register(service.getEventBus());
         }
 
         if (navigationBinder != null) {
             // Navigations that are rerouted away or aborted by an exception
             // never reach afterNavigation; the interceptor gives the binder a
-            // request-scoped point to close them out.
-            //
-            // Registered after RequestMetricsBinder on purpose: Vaadin reverses
-            // the interceptor list, so the one added last runs first and the
-            // navigation scope is closed while the enclosing request scope is
-            // still open. The other order would restore the stopped request
-            // observation onto the thread, parenting every later request on
-            // that pooled thread under a dead observation.
+            // request-scoped point to close them out. Flow fires the request
+            // ended event before it calls the interceptors, so by then the
+            // request binder has already unwound a navigation scope left open
+            // above its own, and the backstop only stops the observation.
             event.addVaadinRequestInterceptor(navigationBinder);
         }
 
