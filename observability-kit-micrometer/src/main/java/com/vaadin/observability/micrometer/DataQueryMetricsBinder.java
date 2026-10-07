@@ -8,8 +8,6 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.time.Duration;
-
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -51,8 +49,12 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * summaries are tagged by route, whose cardinality is already bounded by
  * {@link RouteTagResolver}.
  * <p>
+ * Timers record the duration Flow measured for the query and reports on its
+ * ended event, so no timing state is kept here. When tracing is on, the query's
+ * observation is held from its started event to its ended event.
+ * <p>
  * <b>Threading.</b> The events of one query arrive on the same thread, so the
- * in-flight timing state is kept in thread locals. That thread is the request
+ * in-flight observation is kept in thread locals. That thread is the request
  * thread for count queries, but a component configured for asynchronous updates
  * runs its fetches on its own executor, so fetch state is kept separately from
  * count state rather than sharing one slot.
@@ -64,15 +66,11 @@ final class DataQueryMetricsBinder {
     private final boolean useObservation;
     private final RouteTagResolver routes;
 
-    private final ThreadLocal<Timer.Sample> countSample = new ThreadLocal<>();
     private final ThreadLocal<Observation> countObservation = new ThreadLocal<>();
     private final ThreadLocal<Observation.Scope> countScope = new ThreadLocal<>();
-    private final ThreadLocal<Long> countStart = new ThreadLocal<>();
 
-    private final ThreadLocal<Timer.Sample> fetchSample = new ThreadLocal<>();
     private final ThreadLocal<Observation> fetchObservation = new ThreadLocal<>();
     private final ThreadLocal<Observation.Scope> fetchScope = new ThreadLocal<>();
-    private final ThreadLocal<Long> fetchStart = new ThreadLocal<>();
 
     DataQueryMetricsBinder(MeterRegistry registry,
             ObservationRegistry observationRegistry,
@@ -129,10 +127,7 @@ final class DataQueryMetricsBinder {
             obs.start();
             countObservation.set(obs);
             countScope.set(obs.openScope());
-        } else {
-            countSample.set(Timer.start(registry));
         }
-        countStart.set(System.nanoTime());
     }
 
     void countFailed(DataCountFailedEvent event) {
@@ -148,10 +143,8 @@ final class DataQueryMetricsBinder {
         String outcome = failed ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
 
-        Timer.Sample sample = countSample.get();
         Observation obs = countObservation.get();
         Observation.Scope scope = countScope.get();
-        Long started = countStart.get();
         clearCount();
 
         boolean recording = obs != null && !obs.isNoop();
@@ -165,13 +158,12 @@ final class DataQueryMetricsBinder {
         ObservationScopes.closeWithNested(observationRegistry, scope);
         if (recording) {
             obs.stop();
-        } else if (sample != null) {
-            sample.stop(countTimer(event, outcome));
-        } else if (started != null) {
-            // Reached when the observation turned out to be a no-op, which
-            // records nothing: time it directly rather than lose the query.
-            countTimer(event, outcome)
-                    .record(Duration.ofNanos(System.nanoTime() - started));
+        } else if (obs != null || !useObservation) {
+            // Timed directly when tracing is off, and when the observation
+            // turned out to be a no-op, which records nothing. A traced query
+            // with no observation at all started before this binder was
+            // listening, and is skipped like on the RPC path.
+            countTimer(event, outcome).record(event.getDuration());
         }
     }
 
@@ -184,10 +176,8 @@ final class DataQueryMetricsBinder {
     }
 
     private void clearCount() {
-        countSample.remove();
         countObservation.remove();
         countScope.remove();
-        countStart.remove();
     }
 
     // ---------- fetch ----------
@@ -212,10 +202,7 @@ final class DataQueryMetricsBinder {
             obs.start();
             fetchObservation.set(obs);
             fetchScope.set(obs.openScope());
-        } else {
-            fetchSample.set(Timer.start(registry));
         }
-        fetchStart.set(System.nanoTime());
     }
 
     void fetchFailed(DataFetchFailedEvent event) {
@@ -231,10 +218,8 @@ final class DataQueryMetricsBinder {
         String outcome = failed ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
 
-        Timer.Sample sample = fetchSample.get();
         Observation obs = fetchObservation.get();
         Observation.Scope scope = fetchScope.get();
-        Long started = fetchStart.get();
         clearFetch();
 
         boolean recording = obs != null && !obs.isNoop();
@@ -249,12 +234,9 @@ final class DataQueryMetricsBinder {
         ObservationScopes.closeWithNested(observationRegistry, scope);
         if (recording) {
             obs.stop();
-        } else if (sample != null) {
-            sample.stop(fetchTimer(event, outcome));
-        } else if (started != null) {
+        } else if (obs != null || !useObservation) {
             // See countEnded: a no-op observation records nothing.
-            fetchTimer(event, outcome)
-                    .record(Duration.ofNanos(System.nanoTime() - started));
+            fetchTimer(event, outcome).record(event.getDuration());
         }
 
         if (!failed) {
@@ -283,10 +265,8 @@ final class DataQueryMetricsBinder {
     }
 
     private void clearFetch() {
-        fetchSample.remove();
         fetchObservation.remove();
         fetchScope.remove();
-        fetchStart.remove();
     }
 
     // ---------- shared ----------
