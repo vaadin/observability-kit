@@ -18,10 +18,10 @@ import com.vaadin.flow.component.UI;
  * Records {@link MeterNames#ERRORS}, the single counter for every server-side
  * failure the kit observes.
  * <p>
- * Errors reach the kit from two places — exceptions escaping request handling
- * ({@link RequestMetricsBinder}) and exceptions Flow routes to the session
- * error handler ({@link ErrorMetricsBinder}) — and both must produce the same
- * tag keys: Prometheus rejects same-named meters whose tag-key sets differ. The
+ * Errors reach the kit from two places — exceptions Flow routes to the session
+ * error handler ({@link ErrorMetricsBinder}) and failed requests that handler
+ * never saw ({@link RequestMetricsBinder}) — and both must produce the same tag
+ * keys: Prometheus rejects same-named meters whose tag-key sets differ. The
  * counter therefore always carries {@code exception}, {@code route} and
  * {@code component}, falling back to {@code _unknown} for whatever cannot be
  * resolved at the point the failure surfaced.

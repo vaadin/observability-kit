@@ -493,25 +493,48 @@ class NavigationMetricsBinderTest {
         obs.observationConfig().observationHandler(new RecordingHandler());
         NavigationMetricsBinder binder = tracingBinder(obs);
 
-        // The request scope RequestMetricsBinder opens at requestStart. Vaadin
-        // reverses the interceptor list, so the navigation binder — registered
-        // last — is the one that runs first at requestEnd, while this scope is
-        // still open.
+        // An enclosing scope that is still open when the backstop runs.
         Observation request = Observation.start(ObservationNames.REQUEST, obs);
         Observation.Scope requestScope = request.openScope();
 
         binder.beforeEnter(beforeEnter(FirstView.class));
         requestEnd(binder);
 
-        // Closing the navigation scope has to restore the enclosing request
-        // observation. Were the two closed in the opposite order, the stopped
-        // request observation would be put back as current here and every
-        // later request on this pooled thread would be parented under it.
+        // Closing the navigation scope has to restore the enclosing
+        // observation.
         assertSame(request, obs.getCurrentObservation());
 
         requestScope.close();
         request.stop();
         assertNull(obs.getCurrentObservation());
+    }
+
+    @Test
+    void requestEndAfterTheRequestUnwoundTheNavigationScopeLeavesNoScope() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+        NavigationMetricsBinder binder = tracingBinder(obs);
+        RequestMetricsBinder requests = new RequestMetricsBinder(registry, obs,
+                ObservabilitySettings.builder().build());
+        VaadinRequest request = Mockito.mock(VaadinRequest.class);
+        VaadinResponse response = Mockito.mock(VaadinResponse.class);
+
+        // Flow fires the request ended event before it calls the request
+        // interceptors, so the request binder closes its scope, and the
+        // navigation scope left open above it, before the backstop runs.
+        RequestEvents.start(requests, request, response);
+        binder.beforeEnter(beforeEnter(FirstView.class));
+        RequestEvents.end(requests, request, response, null);
+        requestEnd(binder);
+
+        // Closing the navigation scope a second time would put the stopped
+        // request observation back as current, and every later request on
+        // this pooled thread would be parented under it.
+        assertNull(obs.getCurrentObservation());
+        assertEquals(
+                List.of(MeterNames.REQUEST_DURATION, MeterNames.NAVIGATION),
+                recorder.names, "both observations are stopped");
     }
 
     @Test

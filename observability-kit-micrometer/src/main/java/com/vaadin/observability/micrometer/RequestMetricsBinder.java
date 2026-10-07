@@ -19,16 +19,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.BootstrapHandler;
+import com.vaadin.flow.server.RequestEndedEvent;
+import com.vaadin.flow.server.RequestHandler;
+import com.vaadin.flow.server.RequestStartedEvent;
 import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.server.VaadinRequestInterceptor;
-import com.vaadin.flow.server.VaadinResponse;
+import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.WrappedSession;
+import com.vaadin.flow.server.communication.HeartbeatHandler;
 import com.vaadin.flow.server.communication.StreamRequestHandler;
+import com.vaadin.flow.server.communication.UidlRequestHandler;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
- * Measures request duration and counts errors.
+ * Measures request duration and counts errors, from the
+ * {@link RequestStartedEvent} and {@link RequestEndedEvent} Flow fires on the
+ * {@link com.vaadin.flow.server.VaadinService#getEventBus() service event bus}.
  * <p>
  * Two modes:
  * <ul>
@@ -40,7 +48,8 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * the span-friendly name ({@code vaadin.request}) used by tracing
  * handlers.</li>
  * <li>Otherwise (no obs registry / traces disabled / observation handler
- * unavailable), the binder falls back to recording the Timer directly.</li>
+ * unavailable), the binder falls back to recording the Timer directly, with the
+ * duration Flow measured for the request.</li>
  * </ul>
  * <p>
  * Both modes are gated on the {@code requests} setting: with it off the binder
@@ -63,13 +72,13 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * {@code settings.isTracesSessionId()} the HTTP session id is attached the same
  * way.
  * <p>
- * This interceptor only ever sees exceptions that <em>escape</em> request
- * handling. The failures a user triggers are caught by Flow and routed to the
+ * The ended event only reports the exception that made handling the request
+ * fail. The failures a user triggers are caught by Flow and routed to the
  * session error handler, where {@link ErrorMetricsBinder} counts them and
  * relays them back here through {@link RequestError} so the request outcome
  * reflects them.
  */
-final class RequestMetricsBinder implements VaadinRequestInterceptor {
+final class RequestMetricsBinder {
 
     private static final Logger LOGGER = LoggerFactory
             .getLogger(RequestMetricsBinder.class);
@@ -133,16 +142,13 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
 
     private final HttpObservationHooks hooks;
     private final RouteTagResolver routes;
-    private final ThreadLocal<Timer.Sample> sample = new ThreadLocal<>();
-    private final ThreadLocal<Boolean> errored = ThreadLocal
-            .withInitial(() -> Boolean.FALSE);
-    // Type of the exception passed to handleException for the direct-recording
-    // path's error tag: its simple class name, as
-    // DefaultMeterObservationHandler
-    // tags the Observation path, but drawn from the shared bounded set so a
-    // flood of generated exception types collapses into _other. The
-    // Observation path's tag is written by that handler and is not bounded.
-    private final ThreadLocal<String> errorType = new ThreadLocal<>();
+    /**
+     * The type the request was classified as when it started, from its URL.
+     * Kept for the end of the request, where the request handler replaces it
+     * when it tells more. A push message is only recognisable at the start: it
+     * is the one request reported without a response there.
+     */
+    private final ThreadLocal<String> startType = new ThreadLocal<>();
     private final ThreadLocal<Observation> observation = new ThreadLocal<>();
     private final ThreadLocal<Observation.Scope> observationScope = new ThreadLocal<>();
 
@@ -190,9 +196,9 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
      *            {@code null} for none (standalone deployments)
      * @param errors
      *            the counter shared with {@link ErrorMetricsBinder}, or
-     *            {@code null} when error metrics are off — this interceptor is
-     *            also installed for request metrics alone, and then there is
-     *            nothing to count
+     *            {@code null} when error metrics are off — this binder is also
+     *            installed for request metrics alone, and then there is nothing
+     *            to count
      * @param exceptionTags
      *            the exception-type budget the {@code error} tag is drawn from,
      *            shared with {@code errors} and the RPC timer
@@ -215,15 +221,26 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         return settings.isTraces() && observationRegistry != null;
     }
 
-    @Override
-    public void requestStart(VaadinRequest request, VaadinResponse response) {
-        // Drop any stale thread-local state left by a previous request whose
-        // requestEnd was skipped (e.g. mid-request server shutdown). Without
-        // this a pooled thread could carry errored=TRUE into the next request
-        // and misreport it as an error.
-        errored.remove();
-        errorType.remove();
-        sample.remove();
+    /**
+     * Subscribes to the request events on the given bus.
+     *
+     * @param eventBus
+     *            the service event bus to listen on
+     * @return a handle removing every subscription made here
+     */
+    Registration register(VaadinServiceEventBus eventBus) {
+        return Registration.combine(
+                eventBus.addListener(RequestStartedEvent.class,
+                        this::requestStarted),
+                eventBus.addListener(RequestEndedEvent.class,
+                        this::requestEnded));
+    }
+
+    void requestStarted(RequestStartedEvent event) {
+        VaadinRequest request = event.getRequest();
+        // Flow fires the ended event for every started one, on the same
+        // thread, but drop any state a request cut short before it (e.g.
+        // mid-request server shutdown) left on this pooled thread anyway.
         observation.remove();
         // Close (not just drop) a leaked scope so the stale observation stops
         // being the registry's current one and this request's span is not
@@ -237,50 +254,45 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         RequestError.clear();
         // And for the UI reference the binders mark during handling.
         RequestUi.clear();
-        // Let DI integrations (Spring/Boot) lift the Vaadin type into the
-        // framework HTTP observation. Not gated on any kit setting: the hook
-        // enriches an observation the framework emits anyway (its uri tag on
-        // http.server.requests is a metric, not a span), and it defaults to a
-        // no-op for standalone deployments.
-        callHook(() -> hooks.requestType(request, requestType(request)));
-        if (useObservation()) {
-            String type = requestType(request);
-            if (!settings.isRequests()) {
-                // The requests setting turns off the kit's own request
-                // timing, which on this path means the whole request
-                // observation: the Timer is produced from it by the meter
-                // observation handler, so span and Timer cannot be split.
-                return;
-            }
-            Observation obs = Observation
-                    .createNotStarted(MeterNames.REQUEST_DURATION,
-                            observationRegistry)
-                    .contextualName(ObservationNames.REQUEST + "." + type)
-                    .lowCardinalityKeyValue(ObservationNames.KEY_REQUEST_TYPE,
-                            type)
-                    .lowCardinalityKeyValue(ObservationNames.KEY_HTTP_METHOD,
-                            httpMethod(request))
-                    // Span-only: the UI id is unbounded over an application's
-                    // lifetime and the client location is un-templated, so
-                    // neither may become a Timer tag.
-                    .highCardinalityKeyValue(ObservationNames.KEY_UI_ID,
-                            uiId(request))
-                    .highCardinalityKeyValue(
-                            ObservationNames.KEY_CLIENT_LOCATION,
-                            clientLocation(request))
-                    // Always emit the interaction key so every
-                    // vaadin.request.duration Timer shares one tag-key set
-                    // (Prometheus rejects same-named meters with differing
-                    // keys). UIDL requests override this in requestEnd once a
-                    // poll/navigation listener has resolved the real kind.
-                    .lowCardinalityKeyValue(ObservationNames.KEY_INTERACTION,
-                            ObservationNames.INTERACTION_NONE)
-                    .start();
-            observation.set(obs);
-            observationScope.set(obs.openScope());
-        } else if (settings.isRequests()) {
-            sample.set(Timer.start(registry));
+        // A message sent over a push connection is reported as a request of
+        // its own, and the only one without a response. Its URL is the one of
+        // the push connection, which says nothing about the message.
+        String type = event.getResponse().isPresent() ? requestType(request)
+                : ObservationNames.REQUEST_TYPE_PUSH;
+        startType.set(type);
+        if (!useObservation() || !settings.isRequests()) {
+            // The requests setting turns off the kit's own request timing,
+            // which on the Observation path means the whole request
+            // observation: the Timer is produced from it by the meter
+            // observation handler, so span and Timer cannot be split.
+            return;
         }
+        Observation obs = Observation
+                .createNotStarted(MeterNames.REQUEST_DURATION,
+                        observationRegistry)
+                // Provisional, like the type key below: requestEnded settles
+                // both once the request handler is known.
+                .contextualName(ObservationNames.REQUEST + "." + type)
+                .lowCardinalityKeyValue(ObservationNames.KEY_REQUEST_TYPE, type)
+                .lowCardinalityKeyValue(ObservationNames.KEY_HTTP_METHOD,
+                        httpMethod(request))
+                // Span-only: the UI id is unbounded over an application's
+                // lifetime and the client location is un-templated, so
+                // neither may become a Timer tag.
+                .highCardinalityKeyValue(ObservationNames.KEY_UI_ID,
+                        uiId(request))
+                .highCardinalityKeyValue(ObservationNames.KEY_CLIENT_LOCATION,
+                        clientLocation(request))
+                // Always emit the interaction key so every
+                // vaadin.request.duration Timer shares one tag-key set
+                // (Prometheus rejects same-named meters with differing keys).
+                // UIDL requests override this in requestEnded once a
+                // poll/navigation listener has resolved the real kind.
+                .lowCardinalityKeyValue(ObservationNames.KEY_INTERACTION,
+                        ObservationNames.INTERACTION_NONE)
+                .start();
+        observation.set(obs);
+        observationScope.set(obs.openScope());
     }
 
     private static String httpMethod(VaadinRequest request) {
@@ -369,46 +381,13 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         return referer.substring(pathStart, pathEnd);
     }
 
-    @Override
-    public void handleException(VaadinRequest request, VaadinResponse response,
-            VaadinSession vaadinSession, Exception exception) {
-        errored.set(Boolean.TRUE);
-        if (exception == null) {
-            return;
-        }
-        errorType.set(exceptionTags.tag(exception));
-        if (errors != null) {
-            // Flow reports the same throwable to the session error handler
-            // right after this call; mark it so ErrorMetricsBinder does not
-            // count the one failure a second time.
-            errors.increment(exception, null);
-            RequestError.markCounted(exception);
-        }
-        Observation obs = observation.get();
-        if (obs != null) {
-            obs.error(exception);
-        }
-        // Also mark the framework-level HTTP observation (e.g. Spring's
-        // ServerHttpObservationFilter span). For a UIDL request Vaadin
-        // swallows the exception and responds 200, so the framework would
-        // otherwise record it as successful — and several monitoring
-        // solutions (New Relic, DataDog) only watch root or server spans for
-        // errors. For other request types Vaadin rethrows as ServiceException
-        // and the framework records that itself; there this marker merely
-        // front-runs it with the root cause. No-op for standalone
-        // deployments, and deliberately not gated on the traces or errors
-        // settings: this corrects the status of an observation the framework
-        // emits anyway, rather than emitting new telemetry.
-        callHook(() -> hooks.error(request, exception));
-    }
-
     /**
      * Runs a call into the framework-level HTTP observation. The hooks are
-     * overridable integration code, and this interceptor still has cleanup to
-     * do after them — closing its scope and stopping its observation, which
-     * would otherwise stay current on the pooled thread — so a failing hook is
-     * logged and skipped rather than allowed to cut that short. Telemetry must
-     * never break the request it observes either.
+     * overridable integration code, and this binder still has cleanup to do
+     * after them — closing its scope and stopping its observation, which would
+     * otherwise stay current on the pooled thread — so a failing hook is logged
+     * and skipped rather than allowed to cut that short. Telemetry must never
+     * break the request it observes either.
      */
     private static void callHook(Runnable hook) {
         try {
@@ -419,41 +398,57 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         }
     }
 
-    @Override
-    public void requestEnd(VaadinRequest request, VaadinResponse response,
-            VaadinSession session) {
-        boolean interceptorError = errored.get();
-        errored.remove();
-        String error = errorType.get();
-        errorType.remove();
-        // An exception Flow routed to the session error handler (a failing
-        // component listener, UI.access body or navigation callback) never
-        // reaches handleException, yet the interaction the request carried did
-        // fail; without this the span would claim outcome=success.
-        Throwable handledError = RequestError.takeHandled();
-        boolean wasError = interceptorError || handledError != null;
-        if (error == null && handledError != null) {
-            // Parity with the Observation path, where the obs.error() below
-            // makes DefaultMeterObservationHandler add the error tag for us.
-            error = exceptionTags.tag(handledError);
+    void requestEnded(RequestEndedEvent event) {
+        VaadinRequest request = event.getRequest();
+        String startedAs = startType.get();
+        startType.remove();
+        String type = event.getHandler().map(RequestMetricsBinder::handlerType)
+                .orElse(startedAs != null ? startedAs : requestType(request));
+        // The exception that made handling the request fail, or else the one
+        // Flow routed to the session error handler (a failing component
+        // listener, UI.access body or navigation callback). The latter does
+        // not fail the request, yet the interaction the request carried did
+        // fail; without it the span would claim outcome=success.
+        Exception failure = event.getFailure().orElse(null);
+        Throwable handled = RequestError.takeHandled();
+        Throwable error = failure != null ? failure : handled;
+        if (failure != null && failure != handled && errors != null) {
+            // Flow hands a failure to the session error handler before it
+            // reports it here, and ErrorMetricsBinder counts it there. One the
+            // decorated handler never saw — there was no session to route it
+            // to — is counted here instead.
+            errors.increment(failure, null);
         }
-        if (handledError != null && !interceptorError) {
-            // A user-triggered failure Flow routed to the session error
-            // handler never escapes request handling, so handleException has
-            // not marked the framework HTTP observation for it. Relay it here
-            // — also when request timing is off and no vaadin.request span
-            // exists to carry it — so root-span error monitoring still sees
-            // the failure. Cannot double-mark: handleException sets
-            // interceptorError.
-            callHook(() -> hooks.error(request, handledError));
+        // Let DI integrations (Spring/Boot) lift the Vaadin type into the
+        // framework HTTP observation, which reads it when it stops, after this
+        // event. Not gated on any kit setting: the hook enriches an
+        // observation the framework emits anyway (its uri tag on
+        // http.server.requests is a metric, not a span), and it defaults to a
+        // no-op for standalone deployments.
+        callHook(() -> hooks.requestType(request, type));
+        if (error != null) {
+            // Also mark the framework-level HTTP observation (e.g. Spring's
+            // ServerHttpObservationFilter span). For a UIDL request Vaadin
+            // swallows the exception and responds 200, and a failure the
+            // session error handler got does not fail the request at all, so
+            // the framework would otherwise record it as successful — and
+            // several monitoring solutions (New Relic, DataDog) only watch root
+            // or server spans for errors. For other request types Vaadin
+            // rethrows as ServiceException and the framework records that
+            // itself; there this marker merely front-runs it with the root
+            // cause. No-op for standalone deployments, and deliberately not
+            // gated on the traces, requests or errors settings: this corrects
+            // the status of an observation the framework emits anyway, rather
+            // than emitting new telemetry.
+            callHook(() -> hooks.error(request, error));
         }
-        String outcome = wasError ? MeterNames.OUTCOME_ERROR
+        String outcome = error != null ? MeterNames.OUTCOME_ERROR
                 : MeterNames.OUTCOME_SUCCESS;
         Observation.Scope scope = observationScope.get();
         observationScope.remove();
         // Unwind anything nested instrumentation leaked on top of our scope
         // before closing it, so the thread is left exactly as it was found.
-        // Cleaning up only at the next requestStart would leave a dead
+        // Cleaning up only at the next requestStarted would leave a dead
         // observation current for whatever runs on this pooled thread in
         // between, including ContextSnapshot.captureAll() in TracingExecutor.
         ObservationScopes.closeWithNested(observationRegistry, scope);
@@ -463,7 +458,6 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
         // request so the span name reflects what actually happened instead
         // of the opaque protocol-level "uidl".
         String interaction = RequestInteraction.take();
-        String type = requestType(request);
         // The UI the handlers marked while processing this request. Consumed
         // unconditionally so a pooled thread never carries it over.
         UI ui = RequestUi.take();
@@ -494,37 +488,42 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
                 ? (interaction != null ? interaction
                         : ObservationNames.INTERACTION_RPC)
                 : ObservationNames.INTERACTION_NONE;
-        Timer.Sample s = sample.get();
-        sample.remove();
-        if (s != null) {
-            // Tag with the very constants the Observation path uses above, so
+        if (!useObservation() && settings.isRequests()) {
+            // Tag with the very constants the Observation path uses below, so
             // the two paths cannot drift into publishing
             // vaadin.request.duration under differing tag-key sets. The error
-            // tag replicates the one DefaultMeterObservationHandler adds for
-            // us there.
-            s.stop(Timer.builder(MeterNames.REQUEST_DURATION)
+            // tag replicates the one DefaultMeterObservationHandler adds there:
+            // the exception's simple class name, but drawn from the shared
+            // bounded set so a flood of generated exception types collapses
+            // into _other. The Observation path's tag is written by that
+            // handler and is not bounded.
+            Timer.builder(MeterNames.REQUEST_DURATION)
                     .tag(ObservationNames.KEY_REQUEST_TYPE, type)
                     .tag(ObservationNames.KEY_HTTP_METHOD, httpMethod(request))
                     .tag(ObservationNames.KEY_INTERACTION, kind)
                     .tag(ObservationNames.KEY_OUTCOME, outcome)
                     .tag(MeterNames.TAG_ERROR,
-                            error != null ? error : MeterNames.ERROR_NONE)
-                    .register(registry));
+                            error != null ? exceptionTags.tag(error)
+                                    : MeterNames.ERROR_NONE)
+                    .register(registry).record(event.getDuration());
         }
         if (obs != null) {
-            if (handledError != null && !interceptorError) {
-                obs.error(handledError);
+            if (error != null) {
+                obs.error(error);
             }
-            if (ObservationNames.REQUEST_TYPE_UIDL.equals(type)) {
-                obs.lowCardinalityKeyValue(ObservationNames.KEY_INTERACTION,
-                        kind);
-                obs.contextualName(ObservationNames.REQUEST + "." + kind);
-            }
+            // The type the observation started with was the URL's guess; the
+            // request handler has the final word.
+            obs.lowCardinalityKeyValue(ObservationNames.KEY_REQUEST_TYPE, type);
+            obs.lowCardinalityKeyValue(ObservationNames.KEY_INTERACTION, kind);
+            obs.contextualName(ObservationNames.REQUEST + "."
+                    + (ObservationNames.REQUEST_TYPE_UIDL.equals(type) ? kind
+                            : type));
             if (settings.isTracesSessionId()) {
                 // Resolved at request end so the page load that creates the
                 // session is attributed too. Span-only, like the UI id: a
                 // session id is unbounded and must never become a Timer tag.
-                String sessionId = sessionId(request, session);
+                String sessionId = sessionId(request,
+                        event.getSession().orElse(null));
                 if (sessionId != null) {
                     obs.highCardinalityKeyValue(ObservationNames.KEY_SESSION_ID,
                             sessionId);
@@ -536,12 +535,45 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
     }
 
     /**
-     * Classifies a request into the {@code vaadin.request.type} vocabulary:
-     * {@code push}, {@code heartbeat}, {@code stream} (a download or an
-     * upload), {@code uidl}, {@code bootstrap} (a page load), {@code static}
-     * and {@code other} for everything left. The order matters — a stream
-     * request lives under {@code /VAADIN/}, and a page load is only what none
-     * of the protocol-level types claimed.
+     * The request type the request handler that handled the request stands for,
+     * or {@code null} when the handler does not tell and the type is left to
+     * {@link #requestType(VaadinRequest)}.
+     * <p>
+     * The push handler is deliberately not referenced: it needs Atmosphere,
+     * which an application without push may not have on the classpath at all.
+     * Every request it handles carries {@code v-r=push}, which the URL
+     * classification recognises.
+     */
+    private static String handlerType(RequestHandler handler) {
+        if (handler instanceof UidlRequestHandler) {
+            return ObservationNames.REQUEST_TYPE_UIDL;
+        }
+        if (handler instanceof HeartbeatHandler) {
+            return ObservationNames.REQUEST_TYPE_HEARTBEAT;
+        }
+        if (handler instanceof StreamRequestHandler) {
+            return ObservationNames.REQUEST_TYPE_STREAM;
+        }
+        if (handler instanceof BootstrapHandler) {
+            // The index.html of a page load, the init request that has its UI
+            // created, and the bootstrap of an embedded web component.
+            return ObservationNames.REQUEST_TYPE_BOOTSTRAP;
+        }
+        return null;
+    }
+
+    /**
+     * Classifies a request from its URL and headers into the
+     * {@code vaadin.request.type} vocabulary: {@code push}, {@code heartbeat},
+     * {@code stream} (a download or an upload), {@code uidl}, {@code bootstrap}
+     * (a page load), {@code static} and {@code other} for everything left. The
+     * order matters — a stream request lives under {@code /VAADIN/}, and a page
+     * load is only what none of the protocol-level types claimed.
+     * <p>
+     * Used for the requests whose handler does not tell the type: one no
+     * handler handled (an expired session, say), one served by another handler,
+     * and the provisional type of the request observation until the handler is
+     * known.
      */
     private static String requestType(VaadinRequest request) {
         if (request == null) {
@@ -564,6 +596,11 @@ final class RequestMetricsBinder implements VaadinRequestInterceptor {
             }
         }
         String vr = request.getParameter("v-r");
+        if ("push".equals(vr)) {
+            // The push connection itself, any transport. Its path is under
+            // /VAADIN/, so it must be matched before the static prefixes.
+            return ObservationNames.REQUEST_TYPE_PUSH;
+        }
         if ("uidl".equals(vr)) {
             return ObservationNames.REQUEST_TYPE_UIDL;
         }

@@ -27,16 +27,17 @@ import com.vaadin.flow.shared.Registration;
  * Counts the failures a user actually experiences, by observing the session
  * {@link ErrorHandler}.
  * <p>
- * Only exceptions that escape request handling reach a
- * {@code VaadinRequestInterceptor}. Everything a user can trigger — a component
- * listener that throws, a {@code UI.access} body, a detach listener, a
- * {@code beforeEnter} callback — is caught by Flow and routed to
+ * Flow only reports the exception that made handling a request fail at the end
+ * of the request. Everything a user can trigger — a component listener that
+ * throws, a {@code UI.access} body, a detach listener, a {@code beforeEnter}
+ * callback — is caught by Flow and routed to
  * {@code VaadinSession.getErrorHandler()} instead, so those failures never
  * reached {@link MeterNames#ERRORS} and left the enclosing
- * {@code vaadin.request} span reporting {@code outcome=success}. The
- * {@link ErrorEvent} additionally carries the state node the failure happened
- * for, which is what lets the counter be tagged by component and route rather
- * than by exception class alone.
+ * {@code vaadin.request} span reporting {@code outcome=success}. The exception
+ * that made handling a request fail reaches the handler too, and is counted
+ * here as well. The {@link ErrorEvent} additionally carries the state node the
+ * failure happened for, which is what lets the counter be tagged by component
+ * and route rather than by exception class alone.
  * <p>
  * The session's handler is decorated (never replaced) at session init, and the
  * decoration is re-applied at UI init and on the
@@ -55,9 +56,9 @@ final class ErrorMetricsBinder implements SessionInitListener, UIInitListener {
 
     /**
      * @param errors
-     *            the counter to record into, shared with the request
-     *            interceptor so both writers of {@link MeterNames#ERRORS} draw
-     *            on one cardinality budget
+     *            the counter to record into, shared with the request binder so
+     *            both writers of {@link MeterNames#ERRORS} draw on one
+     *            cardinality budget
      */
     ErrorMetricsBinder(ErrorCounter errors) {
         this.errors = errors;
@@ -177,12 +178,10 @@ final class ErrorMetricsBinder implements SessionInitListener, UIInitListener {
             }
             try {
                 Throwable error = event.getThrowable();
-                // Flow reports an exception that escaped request handling to
-                // the request interceptors and to this handler; the
-                // interceptor got there first, so only relay the outcome.
-                if (!RequestError.isCounted(error)) {
-                    errors.increment(error, event.getComponent().orElse(null));
-                }
+                errors.increment(error, event.getComponent().orElse(null));
+                // Also tells the request binder not to count an exception
+                // that failed the request a second time: Flow reports it to
+                // this handler before the request ends.
                 RequestError.markHandled(error);
             } catch (RuntimeException | AssertionError e) {
                 // Instrumentation must never keep the application's own error
