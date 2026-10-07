@@ -255,6 +255,10 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     .register(service.getEventBus());
         }
 
+        if (settings.isResync()) {
+            new ResyncMetricsBinder(registry).register(service.getEventBus());
+        }
+
         // Browser errors are counted by the client collector and described
         // here: the message, the script and the first stack frame are what a
         // counter cannot hold, and they are the difference between knowing

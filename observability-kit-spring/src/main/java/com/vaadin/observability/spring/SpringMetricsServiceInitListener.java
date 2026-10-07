@@ -10,6 +10,7 @@ package com.vaadin.observability.spring;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
+import org.springframework.util.ClassUtils;
 
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
@@ -27,7 +28,9 @@ import com.vaadin.observability.micrometer.ObservabilitySettings;
  * {@link SpringHttpObservationEnricher}, making the parent HTTP span render as
  * e.g. {@code http post /vaadin/uidl} instead of the generic
  * {@code http post /**}, and marking it errored when Vaadin request handling
- * raises an exception the servlet chain never sees.
+ * raises an exception the servlet chain never sees. The enrichment is skipped
+ * when spring-web is not on the classpath: there is then no HTTP observation to
+ * enrich, and the enricher could not even be loaded.
  * <p>
  * This class is declared {@code public} so it can be reused by both
  * {@link ObservabilityConfiguration} (plain-Spring import) and the Boot
@@ -35,6 +38,16 @@ import com.vaadin.observability.micrometer.ObservabilitySettings;
  */
 public final class SpringMetricsServiceInitListener
         extends MetricsServiceInitListener {
+
+    /**
+     * Whether spring-web, which {@link SpringHttpObservationEnricher} links
+     * against, is on the classpath. Neither the starter nor vaadin-spring bring
+     * it at runtime, and a missing class would surface as a
+     * {@link NoClassDefFoundError} on the first request.
+     */
+    private static final boolean SPRING_WEB_PRESENT = ClassUtils.isPresent(
+            "org.springframework.web.filter.ServerHttpObservationFilter",
+            SpringMetricsServiceInitListener.class.getClassLoader());
 
     /**
      * Creates a new listener.
@@ -65,18 +78,24 @@ public final class SpringMetricsServiceInitListener
     @Override
     protected void enrichHttpObservation(VaadinRequest request,
             String requestType) {
-        SpringHttpObservationEnricher.enrich(request, requestType);
+        if (SPRING_WEB_PRESENT) {
+            SpringHttpObservationEnricher.enrich(request, requestType);
+        }
     }
 
     @Override
     protected void enrichHttpObservationRoute(VaadinRequest request,
             String routeTemplate) {
-        SpringHttpObservationEnricher.route(request, routeTemplate);
+        if (SPRING_WEB_PRESENT) {
+            SpringHttpObservationEnricher.route(request, routeTemplate);
+        }
     }
 
     @Override
     protected void markHttpObservationError(VaadinRequest request,
             Throwable failure) {
-        SpringHttpObservationEnricher.error(request, failure);
+        if (SPRING_WEB_PRESENT) {
+            SpringHttpObservationEnricher.error(request, failure);
+        }
     }
 }

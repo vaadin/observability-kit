@@ -23,7 +23,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.micrometer.metrics.autoconfigure.CompositeMeterRegistryAutoConfiguration;
 import org.springframework.boot.micrometer.metrics.autoconfigure.MetricsAutoConfiguration;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Role;
@@ -34,7 +33,6 @@ import com.vaadin.flow.server.VaadinService;
 import com.vaadin.observability.micrometer.MetricsServiceInitListener;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.spring.SpringMetricsServiceInitListener;
-import com.vaadin.observability.spring.SpringResyncDetectionFilter;
 
 /**
  * Auto-configures the Observability Kit {@link MetricsServiceInitListener} when
@@ -75,26 +73,6 @@ public class ObservabilityAutoConfiguration {
             ObservabilitySettings settings) {
         return new SpringMetricsServiceInitListener(registry,
                 observationRegistry.getIfAvailable(), settings);
-    }
-
-    /**
-     * Registers the prototype {@link SpringResyncDetectionFilter}, which
-     * observes UIDL message resends and client-requested resynchronizations by
-     * inspecting UIDL request bodies. Runs at highest precedence so it wraps
-     * the request before any other filter consumes the body, and gated by
-     * {@code vaadin.observability.resync} (default {@code true}).
-     */
-    @Bean
-    @ConditionalOnBean(MeterRegistry.class)
-    @ConditionalOnMissingBean
-    @ConditionalOnProperty(prefix = "vaadin.observability", name = "resync", havingValue = "true", matchIfMissing = true)
-    FilterRegistrationBean<SpringResyncDetectionFilter> resyncDetectionFilter(
-            MeterRegistry registry) {
-        FilterRegistrationBean<SpringResyncDetectionFilter> registration = new FilterRegistrationBean<>(
-                new SpringResyncDetectionFilter(registry));
-        registration.addUrlPatterns("/*");
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
-        return registration;
     }
 
     /**

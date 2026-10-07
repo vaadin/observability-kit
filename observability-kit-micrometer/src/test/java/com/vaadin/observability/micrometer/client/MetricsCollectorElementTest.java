@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer.client;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -18,12 +19,30 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasComponents;
+import com.vaadin.flow.component.Tag;
+import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.Command;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.observability.micrometer.MeterNames;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 class MetricsCollectorElementTest {
+
+    @Tag("div")
+    private static final class Layout extends Component
+            implements HasComponents {
+    }
+
+    /** The tasks {@code UI.access} queued, run by the test. */
+    private final List<Command> accessTasks = new ArrayList<>();
 
     private SimpleMeterRegistry registry;
     private ObservabilitySettings settings;
@@ -64,6 +83,28 @@ class MetricsCollectorElementTest {
         return Stream.generate(ClientSample::new).limit(count).toList();
     }
 
+    /**
+     * A UI whose session queues {@code UI.access} tasks for the test to run.
+     */
+    private UI uiQueueingAccessTasks() {
+        VaadinSession session = mock(VaadinSession.class, RETURNS_DEEP_STUBS);
+        when(session.hasLock()).thenReturn(true);
+        when(session.access(any())).thenAnswer(invocation -> {
+            accessTasks.add(invocation.getArgument(0));
+            return null;
+        });
+        UI ui = new UI();
+        ui.getInternals().setSession(session);
+        return ui;
+    }
+
+    /** Runs the queued tasks, including ones queued while running them. */
+    private void runAccessTasks() {
+        for (int i = 0; i < accessTasks.size() && i < 10; i++) {
+            accessTasks.get(i).execute();
+        }
+    }
+
     @Test
     void tabsOfOneSessionShareTheBudget() {
         VaadinSession.setCurrent(lockedSession());
@@ -97,5 +138,49 @@ class MetricsCollectorElementTest {
         element.recordSamples(samples(5));
 
         Assertions.assertEquals(2.0, throttled());
+    }
+
+    @Test
+    void removedElementIsAddedBackToItsUi() {
+        UI ui = uiQueueingAccessTasks();
+        MetricsCollectorElement element = tab();
+        ui.add(element);
+
+        ui.remove(element);
+        runAccessTasks();
+
+        Assertions.assertSame(ui, element.getParent().orElse(null));
+    }
+
+    @Test
+    void elementInARemovedLayoutIsAddedBackToItsUi() {
+        UI ui = uiQueueingAccessTasks();
+        Layout layout = new Layout();
+        MetricsCollectorElement element = tab();
+        layout.add(element);
+        ui.add(layout);
+
+        ui.remove(layout);
+        runAccessTasks();
+
+        Assertions.assertSame(ui, element.getParent().orElse(null));
+    }
+
+    /**
+     * A resynchronization detaches and re-attaches every node in place. The
+     * element is still in the UI then, so adding it again would only move it,
+     * detach it once more and queue another add, forever.
+     */
+    @Test
+    void resynchronizationDoesNotAddTheElementAgain() {
+        UI ui = uiQueueingAccessTasks();
+        MetricsCollectorElement element = tab();
+        ui.add(element);
+
+        ui.getInternals().getStateTree().prepareForResync();
+        runAccessTasks();
+
+        Assertions.assertEquals(1, accessTasks.size());
+        Assertions.assertSame(ui, element.getParent().orElse(null));
     }
 }

@@ -392,9 +392,9 @@ public final class MeterNames {
     public static final String TAG_TYPE = "type";
 
     /**
-     * Counter: UIDL message recovery events observed on incoming requests.
-     * Tagged by {@link #TAG_TYPE} with {@link #RESYNC_TYPE_RESEND} or
-     * {@link #RESYNC_TYPE_RESYNC}.
+     * Counter: client message recovery events. Tagged by {@link #TAG_TYPE} with
+     * {@link #RESYNC_TYPE_RESEND}, {@link #RESYNC_TYPE_RESYNC} or
+     * {@link #RESYNC_TYPE_OUT_OF_SYNC}.
      */
     public static final String RESYNC = "vaadin.resync";
 
@@ -411,6 +411,13 @@ public final class MeterNames {
      * full UI-state rebuild).
      */
     public static final String RESYNC_TYPE_RESYNC = "resync";
+
+    /**
+     * {@link #TAG_TYPE} value for a message with an id the server did not
+     * expect; the message is not processed and the user is shown the session
+     * synchronization error.
+     */
+    public static final String RESYNC_TYPE_OUT_OF_SYNC = "out_of_sync";
 
     private MeterNames() {
     }

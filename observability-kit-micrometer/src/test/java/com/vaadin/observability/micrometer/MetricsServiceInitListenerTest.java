@@ -15,6 +15,8 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.component.UI;
@@ -31,9 +33,12 @@ import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.communication.AbstractRpcInvocationEvent;
+import com.vaadin.flow.server.communication.ClientMessageResentEvent;
+import com.vaadin.flow.server.communication.MessageIdSyncErrorEvent;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
+import com.vaadin.flow.server.communication.UIResynchronizationEvent;
 import com.vaadin.observability.micrometer.insights.CapturedInteraction;
 import com.vaadin.observability.micrometer.insights.RecentInteractions;
 
@@ -198,6 +203,27 @@ class MetricsServiceInitListenerTest {
         Assertions.assertTrue(service.getEventBus()
                 .getListeners(SessionLockRequestedEvent.class).isEmpty(),
                 "sessions disabled should not subscribe the lock binder");
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { true, false })
+    void subscribesResyncBinderOnlyWhenResyncEnabled(boolean resync) {
+        ObservabilityKit.install(new SimpleMeterRegistry(),
+                ObservabilitySettings.builder().resync(resync).build());
+        VaadinService service = licensedService();
+        ServiceInitEvent event = mock(ServiceInitEvent.class);
+        when(event.getSource()).thenReturn(service);
+
+        new MetricsServiceInitListener().serviceInit(event);
+
+        VaadinServiceEventBus bus = service.getEventBus();
+        int expected = resync ? 1 : 0;
+        assertEquals(expected,
+                bus.getListeners(ClientMessageResentEvent.class).size());
+        assertEquals(expected,
+                bus.getListeners(UIResynchronizationEvent.class).size());
+        assertEquals(expected,
+                bus.getListeners(MessageIdSyncErrorEvent.class).size());
     }
 
     @Test
