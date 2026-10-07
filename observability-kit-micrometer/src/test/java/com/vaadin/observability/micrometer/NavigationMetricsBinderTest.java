@@ -33,22 +33,18 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.router.AfterNavigationEvent;
-import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.Location;
-import com.vaadin.flow.router.LocationChangeEvent;
-import com.vaadin.flow.router.NavigationHandler;
-import com.vaadin.flow.router.NavigationState;
+import com.vaadin.flow.router.NavigationEndedEvent;
+import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
 import com.vaadin.flow.router.NotFoundException;
-import com.vaadin.flow.router.Router;
-import com.vaadin.flow.router.internal.ErrorTargetEntry;
-import com.vaadin.flow.server.Command;
-import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.server.VaadinResponse;
-import com.vaadin.flow.server.VaadinSession;
+import com.vaadin.flow.server.RouteRegistry;
+import com.vaadin.flow.server.VaadinService;
+import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -58,9 +54,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Covers how {@link NavigationMetricsBinder} closes out navigations, in
- * particular the ones that never reach {@code afterNavigation} because they
- * were rerouted away or aborted.
+ * Covers how {@link NavigationMetricsBinder} times navigations from Flow's
+ * navigation events and maps their outcome.
  */
 class NavigationMetricsBinderTest {
 
@@ -72,8 +67,13 @@ class NavigationMetricsBinderTest {
     private static class SecondView extends Component {
     }
 
+    @Tag("not-found-view")
+    private static class NotFoundView extends Component {
+    }
+
     private static final String FIRST = FirstView.class.getSimpleName();
     private static final String SECOND = SecondView.class.getSimpleName();
+    private static final String NOT_FOUND = NotFoundView.class.getSimpleName();
 
     private static final class RecordingHandler
             implements ObservationHandler<Observation.Context> {
@@ -100,20 +100,21 @@ class NavigationMetricsBinderTest {
     }
 
     private SimpleMeterRegistry registry;
-    private Router router;
+    private VaadinServiceEventBus eventBus;
     private UI ui;
 
     @BeforeEach
     void setUp() {
         registry = new SimpleMeterRegistry();
-        router = Mockito.mock(Router.class);
-        ui = new UI();
+        eventBus = new VaadinServiceEventBus(Mockito.mock(VaadinService.class));
+        ui = routedUi();
     }
 
     @AfterEach
     void tearDown() {
         UI.setCurrent(null);
         RequestInteraction.clear();
+        RequestUi.clear();
         // Micrometer keeps the current scope in a static thread-local shared by
         // every registry; a scope a failing test leaves open would otherwise
         // become the parent of the next test's observations.
@@ -121,47 +122,68 @@ class NavigationMetricsBinderTest {
     }
 
     private NavigationMetricsBinder binder() {
-        return new NavigationMetricsBinder(registry, new RouteTagResolver(100));
+        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
+                new RouteTagResolver(100));
+        binder.register(eventBus);
+        return binder;
     }
 
     private NavigationMetricsBinder tracingBinder(ObservationRegistry obs) {
-        return new NavigationMetricsBinder(registry, obs,
-                ObservabilitySettings.builder().traces(true).build(),
+        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
+                obs, ObservabilitySettings.builder().traces(true).build(),
                 new RouteTagResolver(100));
+        binder.register(eventBus);
+        return binder;
     }
 
-    private BeforeEnterEvent beforeEnter(Class<? extends Component> target) {
-        return beforeEnter(target, ui);
-    }
-
-    private BeforeEnterEvent beforeEnter(Class<? extends Component> target,
-            UI targetUi) {
-        return new BeforeEnterEvent(router, NavigationTrigger.UI_NAVIGATE,
-                new Location("view"), target, targetUi, List.of());
+    private static ObservationRegistry recording(RecordingHandler recorder) {
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(recorder);
+        return obs;
     }
 
     /**
-     * Marks the event as rerouted the way Flow does once a listener called
-     * {@code rerouteTo}, without needing a live route registry.
+     * A UI whose router resolves {@code first} and {@code second} to their
+     * views and nothing else, and which shows {@code shown} (may be empty).
      */
-    private void rerouteAway(BeforeEnterEvent event) {
-        event.rerouteTo(Mockito.mock(NavigationHandler.class),
-                Mockito.mock(NavigationState.class));
+    private static UI routedUi(HasElement... shown) {
+        UI routed = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
+        RouteRegistry routes = Mockito.mock(RouteRegistry.class);
+        Mockito.doReturn(Optional.empty()).when(routes)
+                .getNavigationTarget(Mockito.anyString());
+        Mockito.doReturn(Optional.of(FirstView.class)).when(routes)
+                .getNavigationTarget("first");
+        Mockito.doReturn(Optional.of(SecondView.class)).when(routes)
+                .getNavigationTarget("second");
+        Mockito.when(routed.getInternals().getRouter().getRegistry())
+                .thenReturn(routes);
+        Mockito.when(routed.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.of(shown));
+        return routed;
     }
 
-    private void forwardAway(BeforeEnterEvent event) {
-        event.forwardTo(Mockito.mock(NavigationHandler.class),
-                Mockito.mock(NavigationState.class));
+    private void start(UI target, String path) {
+        eventBus.fireEvent(new NavigationStartedEvent(target,
+                new Location(path), NavigationTrigger.UI_NAVIGATE));
     }
 
-    private AfterNavigationEvent afterNavigation() {
-        return afterNavigationOn(ui);
+    /** Ends a navigation the way Flow does: listeners in reverse order. */
+    private void end(UI target, String path,
+            NavigationEndedEvent.Outcome outcome) {
+        eventBus.fireEventInReverseOrder(new NavigationEndedEvent(target,
+                new Location(path), NavigationTrigger.UI_NAVIGATE, outcome,
+                outcome instanceof NavigationEndedEvent.Failed ? 500 : 200));
     }
 
-    private AfterNavigationEvent afterNavigationOn(UI targetUi) {
-        return new AfterNavigationEvent(new LocationChangeEvent(router,
-                targetUi, NavigationTrigger.UI_NAVIGATE, new Location("view"),
-                List.of()));
+    private void navigate(UI target, String path,
+            NavigationEndedEvent.Outcome outcome) {
+        start(target, path);
+        end(target, path, outcome);
+    }
+
+    private static NavigationEndedEvent.Completed shown(
+            Class<? extends Component> view) {
+        return new NavigationEndedEvent.Completed(view);
     }
 
     private double timerCount(String route, String outcome) {
@@ -172,341 +194,220 @@ class NavigationMetricsBinderTest {
         return timer == null ? 0 : timer.count();
     }
 
-    private void requestEnd(NavigationMetricsBinder binder) {
-        binder.requestEnd(Mockito.mock(VaadinRequest.class),
-                Mockito.mock(VaadinResponse.class),
-                Mockito.mock(VaadinSession.class));
+    private int timerSamples() {
+        return registry.find(MeterNames.NAVIGATION).timers().stream()
+                .mapToInt(timer -> (int) timer.count()).sum();
     }
 
     @Test
-    void completedNavigationRecordsSuccess() {
-        NavigationMetricsBinder binder = binder();
+    void showingTheRequestedViewRecordsSuccess() {
+        binder();
 
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigation());
+        navigate(ui, "first", shown(FirstView.class));
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
     }
 
     @Test
-    void rerouteRecordsSupersededNavigationAsRerouted() {
-        NavigationMetricsBinder binder = binder();
+    void showingAnotherViewRecordsTheRequestedRouteAsRerouted() {
+        binder();
 
-        // rerouteTo re-runs the chain: beforeEnter fires twice and only the
-        // second navigation reaches afterNavigation.
-        BeforeEnterEvent first = beforeEnter(FirstView.class);
-        binder.beforeEnter(first);
-        rerouteAway(first);
-        binder.beforeEnter(beforeEnter(SecondView.class));
-        binder.afterNavigation(afterNavigation());
+        // A rerouteTo or forwardTo runs inside the navigation, so Flow ends
+        // it once, with the view that was shown in the end.
+        navigate(ui, "first", shown(SecondView.class));
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_REROUTED));
-        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(1, timerSamples());
     }
 
     @Test
-    void forwardRecordsSupersededNavigationAsForwarded() {
-        NavigationMetricsBinder binder = binder();
+    void showingNoViewRecordsForwarded() {
+        binder();
 
-        BeforeEnterEvent first = beforeEnter(FirstView.class);
-        binder.beforeEnter(first);
-        forwardAway(first);
-        binder.beforeEnter(beforeEnter(SecondView.class));
-        binder.afterNavigation(afterNavigation());
-
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_FORWARDED));
-        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
-    }
-
-    @Test
-    void externalForwardIsRecordedAsForwardedAtRequestEnd() {
-        NavigationMetricsBinder binder = binder();
-
-        // forwardToUrl redirects the browser instead of re-running the chain,
-        // so nothing supersedes this navigation within the request.
-        BeforeEnterEvent event = beforeEnter(FirstView.class);
-        binder.beforeEnter(event);
-        event.forwardToUrl("https://example.com/elsewhere");
-        requestEnd(binder);
+        // forwardToUrl or a hand-off to a client-side route.
+        navigate(ui, "first", new NavigationEndedEvent.NotShown());
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_FORWARDED));
     }
 
     @Test
-    void rerouteToErrorIsRecordedAsError() {
-        NavigationMetricsBinder binder = binder();
-        // rerouteToError resolves the error view through the router, so this
-        // event needs a UI whose internals hand one back.
-        UI mockUi = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
-        Mockito.when(mockUi.getInternals().getRouter()).thenReturn(router);
-        Mockito.when(router.getErrorNavigationTarget(Mockito.any()))
-                .thenReturn(Optional.of(new ErrorTargetEntry(SecondView.class,
-                        NotFoundException.class)));
-        BeforeEnterEvent event = beforeEnter(FirstView.class, mockUi);
+    void failedNavigationRecordsError() {
+        binder();
 
-        binder.beforeEnter(event);
-        event.rerouteToError(NotFoundException.class);
-        binder.beforeEnter(beforeEnter(SecondView.class, mockUi));
-
-        // The error view is a reroute target, but the navigation genuinely
-        // failed, so it must not be filed under the routing outcomes.
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_REROUTED));
-    }
-
-    @Test
-    void abandonedNavigationIsRecordedAsErrorAtRequestEnd() {
-        NavigationMetricsBinder binder = binder();
-
-        // No afterNavigation: the view blew up while being instantiated.
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        requestEnd(binder);
+        navigate(ui, "first", new NavigationEndedEvent.Failed(
+                new IllegalStateException("view constructor failed")));
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(1, timerSamples());
     }
 
     @Test
-    void requestEndWithoutNavigationRecordsNothing() {
-        NavigationMetricsBinder binder = binder();
+    void postponedNavigationRecordsUnknown() {
+        binder();
 
-        requestEnd(binder);
-
-        assertNull(registry.find(MeterNames.NAVIGATION).timer());
-    }
-
-    @Test
-    void completedNavigationIsNotRecordedTwiceAtRequestEnd() {
-        NavigationMetricsBinder binder = binder();
-
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigation());
-        requestEnd(binder);
-
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
-    }
-
-    @Test
-    void rerouteStopsSupersededObservationAndClosesItsScope() {
-        ObservationRegistry obs = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        obs.observationConfig().observationHandler(recorder);
-        NavigationMetricsBinder binder = tracingBinder(obs);
-
-        BeforeEnterEvent first = beforeEnter(FirstView.class);
-        binder.beforeEnter(first);
-        rerouteAway(first);
-        binder.beforeEnter(beforeEnter(SecondView.class));
-        binder.afterNavigation(afterNavigation());
-
-        assertEquals(List.of(MeterNames.NAVIGATION, MeterNames.NAVIGATION),
-                recorder.names);
-        assertEquals(FIRST,
-                recorder.tags.get(0).get(ObservationNames.KEY_ROUTE));
-        assertEquals(ObservationNames.OUTCOME_REROUTED,
-                recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
-        assertEquals(SECOND,
-                recorder.tags.get(1).get(ObservationNames.KEY_ROUTE));
-        assertEquals(ObservationNames.OUTCOME_SUCCESS,
-                recorder.tags.get(1).get(ObservationNames.KEY_OUTCOME));
-        // Both scopes were closed, so nothing dangles on the request thread.
-        assertNull(obs.getCurrentObservation());
-    }
-
-    @Test
-    void abandonedObservationIsStoppedAndUnscopedAtRequestEnd() {
-        ObservationRegistry obs = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        obs.observationConfig().observationHandler(recorder);
-        NavigationMetricsBinder binder = tracingBinder(obs);
-
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        requestEnd(binder);
-
-        assertEquals(1, recorder.names.size());
-        assertEquals(ObservationNames.OUTCOME_ERROR,
-                recorder.tags.get(0).get(ObservationNames.KEY_OUTCOME));
-        assertNull(obs.getCurrentObservation());
-    }
-
-    @Test
-    void requestStartDropsStaleMarkerFromPreviousRequest() {
-        NavigationMetricsBinder binder = binder();
-
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        // A new request on the same (pooled) thread must not close out a
-        // navigation left behind by the previous one.
-        binder.requestStart(Mockito.mock(VaadinRequest.class),
-                Mockito.mock(VaadinResponse.class));
-        requestEnd(binder);
-
-        assertNull(registry.find(MeterNames.NAVIGATION).timer());
-    }
-
-    @Test
-    void reEntrantNavigationRecordsSupersededNavigationAsUnknown() {
-        NavigationMetricsBinder binder = binder();
-
-        // UI.navigate() from a view's beforeEnter or onAttach nests a second
-        // navigation inside the first, which sets no redirect flag: the first
-        // was superseded, not failed, so it must not be tagged as an error.
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.beforeEnter(beforeEnter(SecondView.class));
-        binder.afterNavigation(afterNavigation());
+        navigate(ui, "first", new NavigationEndedEvent.Postponed());
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void aLocationWithoutViewIsRecordedUnderTheViewShownInTheEnd() {
+        binder();
+        UI showingNotFound = routedUi(new NotFoundView());
+
+        navigate(showingNotFound, "no/such/view",
+                new NavigationEndedEvent.Failed(
+                        new NotFoundException("no route")));
+
+        assertEquals(1, timerCount(NOT_FOUND, MeterNames.OUTCOME_ERROR));
+    }
+
+    @Test
+    void aLocationWithoutViewIsRecordedAsCompletedUnderTheViewShown() {
+        binder();
+
+        // The redirect that adds or removes a trailing slash: the requested
+        // location resolves to no view, the one shown is the right one.
+        navigate(ui, "second/", shown(SecondView.class));
+
         assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
     }
 
     @Test
-    void afterNavigationOnAnotherUiKeepsThisUisBackstop() {
-        NavigationMetricsBinder binder = binder();
-        UI other = new UI();
+    void aLocationWithoutViewThatShowedNothingNewIsAnUnknownRoute() {
+        binder();
+        // Still showing the view of an earlier navigation, which says nothing
+        // about this one.
+        UI showingSecond = routedUi(new SecondView());
 
-        // One request touching two UIs: an afterNavigation for a UI with
-        // nothing pending must not drop the marker of the UI that does have a
-        // navigation open, or requestEnd can no longer close it out.
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigationOn(other));
-        requestEnd(binder);
+        navigate(showingSecond, "no/such/view",
+                new NavigationEndedEvent.NotShown());
+        // Thrown on instead of showing an error view: no status code.
+        start(showingSecond, "no/such/view");
+        eventBus.fireEventInReverseOrder(
+                new NavigationEndedEvent(showingSecond,
+                        new Location("no/such/view"),
+                        NavigationTrigger.UI_NAVIGATE,
+                        new NavigationEndedEvent.Failed(
+                                new IllegalStateException("no error view")),
+                        -1));
 
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(1, timerCount(MeterNames.ROUTE_UNKNOWN,
+                MeterNames.OUTCOME_FORWARDED));
+        assertEquals(1,
+                timerCount(MeterNames.ROUTE_UNKNOWN, MeterNames.OUTCOME_ERROR));
+        assertEquals(2, timerSamples());
     }
 
     @Test
-    void requestEndClosesOutEveryUiItLeftOpen() {
-        NavigationMetricsBinder binder = binder();
-        UI other = new UI();
+    void anEndWithoutAStartRecordsNothing() {
+        binder();
 
-        // Access tasks queued for several UIs of a session run on the request
-        // thread, so two UIs can have a navigation open at the same time. Both
-        // have to be closed out, not just the one marked last.
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.beforeEnter(beforeEnter(SecondView.class, other));
-        requestEnd(binder);
+        // Started before the binder was subscribed.
+        end(ui, "first", shown(FirstView.class));
 
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
-        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_ERROR));
+        assertNull(registry.find(MeterNames.NAVIGATION).timer());
     }
 
     @Test
-    void detachClosesOutANavigationLeftOpenOffRequest() {
-        NavigationMetricsBinder binder = binder();
+    void navigationsAreRecordedPerRoute() {
+        binder();
 
-        // A navigation started from UI.access() never reaches requestEnd, so
-        // detach is what keeps the entry from outliving the UI. Nothing about
-        // a detached UI says the navigation failed, hence unknown.
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.uiDetached(ui);
+        navigate(ui, "first", shown(FirstView.class));
+        navigate(ui, "first", shown(FirstView.class));
+        navigate(ui, "second", shown(SecondView.class));
 
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
-    }
-
-    /**
-     * A UI whose session hands back the access tasks queued on it, so a test
-     * can run them the way Flow does when the lock is released.
-     */
-    private UI uiQueuingAccessTasksInto(List<Command> queued) {
-        VaadinSession session = Mockito.mock(VaadinSession.class);
-        Mockito.when(session.access(Mockito.any())).thenAnswer(call -> {
-            queued.add(call.getArgument(0));
-            return null;
-        });
-        UI sessionUi = Mockito.mock(UI.class);
-        Mockito.when(sessionUi.getSession()).thenReturn(session);
-        return sessionUi;
+        assertEquals(2, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
     }
 
     @Test
-    void aNavigationAbandonedOffRequestIsClosedOutWhenItsLockIsReleased() {
-        ObservationRegistry obs = ObservationRegistry.create();
-        obs.observationConfig().observationHandler(new RecordingHandler());
+    void removingTheRegistrationStopsRecording() {
+        Registration registration = new NavigationMetricsBinder(registry,
+                new RouteTagResolver(100)).register(eventBus);
+        registration.remove();
+
+        navigate(ui, "first", shown(FirstView.class));
+
+        assertNull(registry.find(MeterNames.NAVIGATION).timer());
+    }
+
+    @Test
+    void nestedNavigationsOfTwoUisAreRecordedSeparately() {
+        ObservationRegistry obs = recording(new RecordingHandler());
         obs.observationConfig().observationHandler(
                 new DefaultMeterObservationHandler(registry));
-        NavigationMetricsBinder binder = tracingBinder(obs);
-        List<Command> queued = new ArrayList<>();
-        UI accessUi = uiQueuingAccessTasksInto(queued);
+        tracingBinder(obs);
+        UI other = routedUi();
 
-        // A UI.access() task on a background thread: no requestStart, and
-        // the navigation never reaches afterNavigation.
-        binder.beforeEnter(beforeEnter(FirstView.class, accessUi));
-        assertNotNull(obs.getCurrentObservation(),
-                "the navigation scope is open while the task runs");
+        // One UI navigating another, e.g. from an AfterNavigationEvent
+        // listener: Flow ends the inner navigation first.
+        start(ui, "first");
+        start(other, "second");
+        end(other, "second", new NavigationEndedEvent.Failed(
+                new IllegalStateException("boom")));
+        end(ui, "first", shown(FirstView.class));
 
-        queued.forEach(Command::execute);
-
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_ERROR));
+        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
         assertNull(obs.getCurrentObservation(),
-                "the scope must not stay open on the pooled thread");
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+                "both scopes are closed, so nothing dangles on the thread");
     }
 
     @Test
-    void aNavigationCompletedOffRequestIsLeftToAfterNavigation() {
-        NavigationMetricsBinder binder = binder();
-        List<Command> queued = new ArrayList<>();
-        UI accessUi = uiQueuingAccessTasksInto(queued);
+    void observationIsTaggedWithRouteAndOutcomeAndItsScopeIsClosed() {
+        RecordingHandler recorder = new RecordingHandler();
+        ObservationRegistry obs = recording(recorder);
+        tracingBinder(obs);
 
-        binder.beforeEnter(beforeEnter(FirstView.class, accessUi));
-        binder.afterNavigation(afterNavigationOn(accessUi));
-        queued.forEach(Command::execute);
+        start(ui, "first");
+        assertNotNull(obs.getCurrentObservation(),
+                "the navigation scope is open while the navigation runs");
+        end(ui, "first", shown(SecondView.class));
 
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
+        assertEquals(List.of(MeterNames.NAVIGATION), recorder.names);
+        // The meter name alone would leave every navigation span looking
+        // alike in a trace view.
+        assertEquals(ObservationNames.NAVIGATION + " " + FIRST,
+                recorder.contextualNames.get(0));
+        assertEquals(
+                Map.of(ObservationNames.KEY_ROUTE, FIRST,
+                        ObservationNames.KEY_OUTCOME,
+                        ObservationNames.OUTCOME_REROUTED),
+                recorder.tags.get(0));
+        assertNull(obs.getCurrentObservation());
     }
 
     @Test
-    void aNavigationInARequestIsLeftToRequestEnd() {
-        NavigationMetricsBinder binder = binder();
-        List<Command> queued = new ArrayList<>();
-        UI requestUi = uiQueuingAccessTasksInto(queued);
+    void observationOfALocationWithoutViewIsNamedAfterTheViewShown() {
+        RecordingHandler recorder = new RecordingHandler();
+        tracingBinder(recording(recorder));
+        UI showingNotFound = routedUi(new NotFoundView());
 
-        binder.requestStart(Mockito.mock(VaadinRequest.class),
-                Mockito.mock(VaadinResponse.class));
-        binder.beforeEnter(beforeEnter(FirstView.class, requestUi));
-        requestEnd(binder);
+        navigate(showingNotFound, "no/such/view",
+                new NavigationEndedEvent.Failed(
+                        new NotFoundException("no route")));
 
-        assertTrue(queued.isEmpty(),
-                "requestEnd is the backstop on a request thread");
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_ERROR));
+        assertEquals(ObservationNames.NAVIGATION + " " + NOT_FOUND,
+                recorder.contextualNames.get(0));
+        assertEquals(NOT_FOUND,
+                recorder.tags.get(0).get(ObservationNames.KEY_ROUTE));
     }
 
     @Test
-    void detachRecordsANavigationOnlyOnce() {
-        NavigationMetricsBinder binder = binder();
+    void navigationScopeClosesInsideTheEnclosingRequestScope() {
+        ObservationRegistry obs = recording(new RecordingHandler());
+        tracingBinder(obs);
 
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigation());
-        binder.uiDetached(ui);
-
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
-        assertEquals(0, timerCount(FIRST, MeterNames.OUTCOME_UNKNOWN));
-    }
-
-    @Test
-    void requestEndClosesNavigationScopeInsideTheEnclosingRequestScope() {
-        ObservationRegistry obs = ObservationRegistry.create();
-        obs.observationConfig().observationHandler(new RecordingHandler());
-        NavigationMetricsBinder binder = tracingBinder(obs);
-
-        // The request scope RequestMetricsBinder opens at requestStart. Vaadin
-        // reverses the interceptor list, so the navigation binder — registered
-        // last — is the one that runs first at requestEnd, while this scope is
-        // still open.
+        // The request scope RequestMetricsBinder opens at requestStart.
         Observation request = Observation.start(ObservationNames.REQUEST, obs);
         Observation.Scope requestScope = request.openScope();
 
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        requestEnd(binder);
+        navigate(ui, "first", new NavigationEndedEvent.Failed(
+                new IllegalStateException("boom")));
 
         // Closing the navigation scope has to restore the enclosing request
-        // observation. Were the two closed in the opposite order, the stopped
-        // request observation would be put back as current here and every
-        // later request on this pooled thread would be parented under it.
+        // observation, also when the navigation failed.
         assertSame(request, obs.getCurrentObservation());
 
         requestScope.close();
@@ -515,29 +416,29 @@ class NavigationMetricsBinderTest {
     }
 
     @Test
-    void aNavigationAbandonedOffRequestDoesNotPinItsUiToThatThread()
+    void aNavigationOnABackgroundThreadDoesNotPinItsUiToThatThread()
             throws Exception {
-        NavigationMetricsBinder binder = binder();
+        binder();
         ExecutorService executor = Executors.newSingleThreadExecutor();
         // The UI is reached through a holder so that the task handed to the
         // executor captures no reference of its own.
         UI[] offRequest = { new UI() };
         try {
-            // A navigation started from UI.access() on a background thread
-            // marks that thread, and no requestEnd ever runs there to drain
-            // the marker.
-            executor.submit(() -> binder
-                    .beforeEnter(beforeEnter(FirstView.class, offRequest[0])))
-                    .get(10, TimeUnit.SECONDS);
-            // Detach runs on whichever thread drops the UI, so it closes the
-            // navigation out but cannot reach the executor thread's marker.
-            binder.uiDetached(offRequest[0]);
+            // A navigation from UI.access() on a background thread: Flow
+            // fires both events there, and nothing else ever runs on that
+            // thread to clean up after it.
+            executor.submit(() -> {
+                start(offRequest[0], "first");
+                end(offRequest[0], "first", shown(FirstView.class));
+                RequestUi.clear();
+            }).get(10, TimeUnit.SECONDS);
 
             WeakReference<UI> ref = new WeakReference<>(offRequest[0]);
             offRequest[0] = null;
 
+            assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
             assertTrue(collected(ref),
-                    "a marker left on a pooled thread must not keep the UI alive");
+                    "a pooled thread must not keep the UI alive");
         } finally {
             executor.shutdownNow();
         }
@@ -557,51 +458,26 @@ class NavigationMetricsBinderTest {
     void directTimerPathRecordsTimerAndSkipsObservation(boolean traces,
             boolean withObservationRegistry) {
         RecordingHandler recorder = new RecordingHandler();
-        ObservationRegistry obs = null;
-        if (withObservationRegistry) {
-            obs = ObservationRegistry.create();
-            obs.observationConfig().observationHandler(recorder);
-        }
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                obs, ObservabilitySettings.builder().traces(traces).build(),
-                new RouteTagResolver(100));
+        ObservationRegistry obs = withObservationRegistry ? recording(recorder)
+                : null;
+        new NavigationMetricsBinder(registry, obs,
+                ObservabilitySettings.builder().traces(traces).build(),
+                new RouteTagResolver(100)).register(eventBus);
 
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigation());
+        navigate(ui, "first", shown(FirstView.class));
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
         assertTrue(recorder.names.isEmpty(),
                 "no observation may be started outside the observation path");
     }
 
-    /**
-     * A navigation target Flow could not resolve has to land under
-     * {@link MeterNames#ROUTE_UNKNOWN} rather than drop the meter or throw.
-     */
-    @Test
-    void aNullNavigationTargetIsRecordedAsAnUnknownRoute() {
-        NavigationMetricsBinder binder = binder();
-        // The real event asserts a non-null target, so this input can only be
-        // expressed through a mock.
-        BeforeEnterEvent event = Mockito.mock(BeforeEnterEvent.class);
-        Mockito.when(event.getUI()).thenReturn(ui);
-
-        binder.beforeEnter(event);
-        binder.afterNavigation(afterNavigation());
-
-        assertEquals(1, timerCount(MeterNames.ROUTE_UNKNOWN,
-                MeterNames.OUTCOME_SUCCESS));
-    }
-
     @Test
     void theShortConstructorRecordsDirectlyDespiteTracesDefaultingOn() {
         // Tracing is on by default, so the absent ObservationRegistry is the
         // only thing keeping this binder off the observation path.
-        NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
-                new RouteTagResolver(100));
+        binder();
 
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigation());
+        navigate(ui, "first", shown(FirstView.class));
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
         assertNull(RequestInteraction.take(),
@@ -610,74 +486,34 @@ class NavigationMetricsBinderTest {
     }
 
     @Test
-    void navigationsToDifferentRoutesAreRecordedSeparately() {
-        NavigationMetricsBinder binder = binder();
+    void startMarksTheRequestInteractionAsNavigation() {
+        tracingBinder(recording(new RecordingHandler()));
 
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigation());
-        binder.beforeEnter(beforeEnter(SecondView.class));
-        binder.afterNavigation(afterNavigation());
-
-        assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
-        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_SUCCESS));
-    }
-
-    @Test
-    void navigationsToTheSameRouteAccumulate() {
-        NavigationMetricsBinder binder = binder();
-
-        for (int i = 0; i < 3; i++) {
-            binder.beforeEnter(beforeEnter(FirstView.class));
-            binder.afterNavigation(afterNavigation());
-        }
-
-        assertEquals(3, timerCount(FIRST, MeterNames.OUTCOME_SUCCESS));
-    }
-
-    @Test
-    void observationPathNamesTheSpanAfterTheRoute() {
-        ObservationRegistry obs = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        obs.observationConfig().observationHandler(recorder);
-        NavigationMetricsBinder binder = tracingBinder(obs);
-
-        binder.beforeEnter(beforeEnter(FirstView.class));
-        binder.afterNavigation(afterNavigation());
-
-        // The meter name alone would leave every navigation span looking
-        // alike in a trace view.
-        assertEquals(ObservationNames.NAVIGATION + " " + FIRST,
-                recorder.contextualNames.get(0));
-    }
-
-    @Test
-    void beforeEnterMarksTheRequestInteractionAsNavigation() {
-        ObservationRegistry obs = ObservationRegistry.create();
-        obs.observationConfig().observationHandler(new RecordingHandler());
-        NavigationMetricsBinder binder = tracingBinder(obs);
-
-        binder.beforeEnter(beforeEnter(FirstView.class));
+        start(ui, "first");
 
         assertEquals(ObservationNames.INTERACTION_NAVIGATION,
                 RequestInteraction.take(),
                 "the enclosing request span has to learn that this UIDL "
                         + "request was a navigation");
+        assertSame(ui, RequestUi.take(),
+                "request end resolves the route from the navigated UI");
 
-        binder.afterNavigation(afterNavigation());
+        end(ui, "first", shown(FirstView.class));
     }
 
     @Test
-    void beforeEnterPublishesTheRouteToTheTelemetryContext() {
-        NavigationMetricsBinder binder = binder();
+    void telemetryContextFollowsTheViewBeingShown() {
+        binder();
         UI.setCurrent(ui);
 
         // Set before the view renders, so instrumentation outside the Flow
         // runtime can attribute construction-time work to the target view.
-        binder.beforeEnter(beforeEnter(FirstView.class));
-
+        start(ui, "first");
         assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
 
-        binder.afterNavigation(afterNavigation());
+        // And to the view it was sent to for the work after the navigation.
+        end(ui, "first", shown(SecondView.class));
+        assertEquals(SECOND, VaadinTelemetryContext.currentRoute());
     }
 
     /**

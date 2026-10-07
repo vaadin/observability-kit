@@ -25,8 +25,8 @@ import com.vaadin.observability.micrometer.insights.ClientErrorCollector;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
- * Tracks per-UI lifecycle metrics and, when navigation metrics are enabled,
- * attaches a {@link NavigationMetricsBinder} to each newly initialized UI.
+ * Tracks per-UI lifecycle metrics and attaches the per-UI client and poll
+ * instrumentation to each newly initialized UI.
  */
 final class UiMetricsBinder implements UIInitListener {
 
@@ -35,7 +35,6 @@ final class UiMetricsBinder implements UIInitListener {
     private final ObservabilitySettings settings;
     private final Counter created;
     private final AtomicLong active = new AtomicLong();
-    private final NavigationMetricsBinder navigationBinder;
     private final ClientMetricsBinder clientBinder;
 
     /**
@@ -69,28 +68,11 @@ final class UiMetricsBinder implements UIInitListener {
                 .register(registry);
         Gauge.builder(MeterNames.UI_ACTIVE, active, AtomicLong::get)
                 .register(registry);
-        this.navigationBinder = settings.isNavigation()
-                ? new NavigationMetricsBinder(registry, observationRegistry,
-                        settings,
-                        new RouteTagResolver(
-                                settings.getRouteCardinalityLimit()))
-                : null;
         this.clientBinder = settings.isClient()
                 ? new ClientMetricsBinder(registry, settings, clientErrors)
                 : null;
         this.collectErrorMessages = clientErrors != null
                 && settings.isInsightsDetails();
-    }
-
-    /**
-     * The navigation binder attached to every UI, or {@code null} when
-     * navigation metrics are disabled. Exposed so the service init listener can
-     * also register it as a request interceptor: a navigation that never
-     * reaches {@code afterNavigation} has to be closed out before the request
-     * thread is recycled.
-     */
-    NavigationMetricsBinder getNavigationBinder() {
-        return navigationBinder;
     }
 
     @Override
@@ -100,15 +82,6 @@ final class UiMetricsBinder implements UIInitListener {
             created.increment();
             active.incrementAndGet();
             ui.addDetachListener(e -> active.decrementAndGet());
-        }
-        if (navigationBinder != null) {
-            ui.addBeforeEnterListener(navigationBinder);
-            ui.addAfterNavigationListener(navigationBinder);
-            // A navigation started from UI.access() on a background thread
-            // never passes through requestStart/requestEnd, so the
-            // request-scoped backstop cannot close it out. Detach is the last
-            // point at which such a leftover can still be recorded.
-            ui.addDetachListener(e -> navigationBinder.uiDetached(ui));
         }
         if (settings.isTraces() && observationRegistry != null) {
             // Polls are the high-frequency UIDL noise; labelling them lets the

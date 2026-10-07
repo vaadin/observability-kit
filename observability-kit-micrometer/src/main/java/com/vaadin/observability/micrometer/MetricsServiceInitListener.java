@@ -274,13 +274,16 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             ObservabilityKit.setRecentClientErrors(browserErrors);
         }
 
-        NavigationMetricsBinder navigationBinder = null;
         if (settings.isUis() || settings.isNavigation()
                 || settings.isClient()) {
-            UiMetricsBinder uiBinder = new UiMetricsBinder(registry,
-                    observationRegistry, settings, clientErrors);
-            service.addUIInitListener(uiBinder);
-            navigationBinder = uiBinder.getNavigationBinder();
+            service.addUIInitListener(new UiMetricsBinder(registry,
+                    observationRegistry, settings, clientErrors));
+        }
+
+        if (settings.isNavigation()) {
+            new NavigationMetricsBinder(registry, observationRegistry, settings,
+                    new RouteTagResolver(settings.getRouteCardinalityLimit()))
+                    .register(service.getEventBus());
         }
 
         // One counter for vaadin.errors, shared by its two writers: the request
@@ -318,20 +321,6 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             event.addVaadinRequestInterceptor(
                     new RequestMetricsBinder(registry, observationRegistry,
                             settings, hooks, errors, exceptionTags));
-        }
-
-        if (navigationBinder != null) {
-            // Navigations that are rerouted away or aborted by an exception
-            // never reach afterNavigation; the interceptor gives the binder a
-            // request-scoped point to close them out.
-            //
-            // Registered after RequestMetricsBinder on purpose: Vaadin reverses
-            // the interceptor list, so the one added last runs first and the
-            // navigation scope is closed while the enclosing request scope is
-            // still open. The other order would restore the stopped request
-            // observation onto the thread, parenting every later request on
-            // that pooled thread under a dead observation.
-            event.addVaadinRequestInterceptor(navigationBinder);
         }
 
         if (settings.isRequests()) {

@@ -38,12 +38,10 @@ import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
-import com.vaadin.flow.router.AfterNavigationEvent;
-import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.Location;
-import com.vaadin.flow.router.LocationChangeEvent;
+import com.vaadin.flow.router.NavigationEndedEvent;
+import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
-import com.vaadin.flow.router.Router;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -310,16 +308,12 @@ class ObservationContractTest {
 
         UI ui = Mockito.mock(UI.class);
         UI.setCurrent(ui);
-        BeforeEnterEvent enter = Mockito.mock(BeforeEnterEvent.class);
-        Mockito.when(enter.getUI()).thenReturn(ui);
-        // doReturn: the wildcard in Class<? extends Component> makes the
-        // type-safe when(...).thenReturn(...) form uncompilable here.
-        Mockito.doReturn(ContractView.class).when(enter).getNavigationTarget();
-
-        binder.beforeEnter(enter);
-        binder.afterNavigation(new AfterNavigationEvent(new LocationChangeEvent(
-                Mockito.mock(Router.class), ui, NavigationTrigger.UI_NAVIGATE,
-                new Location("view"), List.of())));
+        Location location = new Location("view");
+        binder.navigationStarted(new NavigationStartedEvent(ui, location,
+                NavigationTrigger.UI_NAVIGATE));
+        binder.navigationEnded(new NavigationEndedEvent(ui, location,
+                NavigationTrigger.UI_NAVIGATE,
+                new NavigationEndedEvent.Completed(ContractView.class), 200));
     }
 
     /**

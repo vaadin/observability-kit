@@ -8,55 +8,58 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.lang.ref.WeakReference;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Iterator;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
-import com.vaadin.flow.component.ComponentUtil;
+import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.router.AfterNavigationEvent;
-import com.vaadin.flow.router.AfterNavigationListener;
-import com.vaadin.flow.router.BeforeEnterEvent;
-import com.vaadin.flow.router.BeforeEnterListener;
-import com.vaadin.flow.server.VaadinRequest;
-import com.vaadin.flow.server.VaadinRequestInterceptor;
-import com.vaadin.flow.server.VaadinResponse;
-import com.vaadin.flow.server.VaadinSession;
+import com.vaadin.flow.router.NavigationEndedEvent;
+import com.vaadin.flow.router.NavigationStartedEvent;
+import com.vaadin.flow.router.Router;
+import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 /**
- * Times each navigation from {@code beforeEnter} to {@code afterNavigation}.
+ * Times each navigation from the {@link NavigationStartedEvent} to the
+ * {@link NavigationEndedEvent} that Flow fires on the
+ * {@link com.vaadin.flow.server.VaadinService#getEventBus() service event bus}.
  * <p>
  * When an {@link ObservationRegistry} is supplied and
  * {@link ObservabilitySettings#isTraces()} is on, the navigation is observed
  * (producing both a span and, through a registered
  * {@code DefaultMeterObservationHandler}, the Timer). Otherwise the binder
- * falls back to direct Timer recording. Per-UI state is stored as a UI
- * attribute so concurrent UIs are tracked independently.
+ * falls back to direct Timer recording.
  * <p>
- * Not every navigation reaches {@code afterNavigation}: a {@code rerouteTo} or
- * {@code forwardTo} restarts the chain (so {@code beforeEnter} fires again),
- * and an exception thrown while instantiating the view abandons it altogether.
- * Such a navigation is closed out by the {@code beforeEnter} that supersedes
- * it, by {@code requestEnd} as a request-scoped backstop, or — for one started
- * outside a request, e.g. through {@code UI.access()} — by an access task
- * queued for it that runs when its thread releases the session lock, with
- * {@code uiDetached} as the last resort. Without that, its span would never be
- * stopped and its {@link Observation.Scope} would stay open on the request
- * thread.
+ * Flow fires both events on the same thread, and the ended event also when the
+ * navigation throws, so the navigations in flight are kept on a thread-local
+ * stack and the observation scope is always closed on the thread that opened
+ * it. A forward, a reroute or an error view is part of the navigation that
+ * caused it and fires no events of its own, so each navigation is recorded
+ * once.
  * <p>
- * The recorded {@link Outcome} comes from the navigation's own redirect state.
- * One carrying no redirect flag at all is classified by where it was closed out
- * from: {@code error} at {@code requestEnd}, where the view being instantiated
- * is what failed the navigation, and {@code unknown} otherwise, where it was
- * merely superseded or its UI went away.
+ * The {@code route} tag is the view the requested location resolves to, so a
+ * navigation that was redirected elsewhere is recorded under the view that was
+ * asked for. A location no view resolves to, such as an unknown URL, is
+ * recorded under the view the navigation showed, e.g. the "not found" error
+ * view, or as {@link MeterNames#ROUTE_UNKNOWN} when it showed none. The
+ * {@code outcome} tag maps Flow's {@link NavigationEndedEvent.Outcome}:
+ * <ul>
+ * <li>{@code success}: the requested view was shown;</li>
+ * <li>{@code rerouted}: another view was shown, after a {@code rerouteTo} or
+ * {@code forwardTo};</li>
+ * <li>{@code forwarded}: no view was shown, e.g. after a {@code forwardToUrl}
+ * or a hand-off to a client-side route;</li>
+ * <li>{@code error}: the navigation failed;</li>
+ * <li>{@code unknown}: the navigation was postponed by a
+ * {@code BeforeLeaveEvent} listener.</li>
+ * </ul>
  * <p>
  * Both paths publish {@link MeterNames#NAVIGATION} with the same tag keys:
  * {@code route}, {@code outcome} and {@code error}. A failed navigation is
@@ -66,76 +69,35 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * Observation path, and a metrics backend such as Prometheus rejects same-named
  * meters whose tag-key sets differ.
  */
-final class NavigationMetricsBinder implements BeforeEnterListener,
-        AfterNavigationListener, VaadinRequestInterceptor {
-
-    private static final String PENDING_KEY = NavigationMetricsBinder.class
-            .getName() + ".pending";
+final class NavigationMetricsBinder {
 
     /**
-     * How a navigation ended, reported as the {@code outcome} tag. Rerouting
-     * and forwarding are ordinary routing decisions (an access guard sending
-     * the user elsewhere), so they are kept apart from genuine failures.
-     * <p>
-     * One value per outcome, used for both the Timer tag and the span
-     * attribute: {@link ObservationNames} aliases the outcome vocabulary from
-     * {@link MeterNames}, so there is nothing to keep in step here.
+     * Transient state of a navigation in flight on this thread.
+     *
+     * @param target
+     *            the view the requested location resolves to, or {@code null}
+     *            if none does
+     * @param route
+     *            the route tag of {@code target}, or {@code null} if there is
+     *            none
      */
-    private enum Outcome {
-
-        SUCCESS(MeterNames.OUTCOME_SUCCESS),
-        ERROR(MeterNames.OUTCOME_ERROR),
-        REROUTED(MeterNames.OUTCOME_REROUTED),
-        FORWARDED(MeterNames.OUTCOME_FORWARDED),
-        UNKNOWN(MeterNames.OUTCOME_UNKNOWN);
-
-        private final String value;
-
-        Outcome(String value) {
-            this.value = value;
-        }
-    }
-
-    /**
-     * Transient state of the navigation currently in flight on a UI. The
-     * observation, its scope and the timer sample are all tied to the thread
-     * that started them, which is recorded so a leftover navigation is never
-     * unwound on a foreign thread. The event is kept because Flow only marks it
-     * as forwarded or rerouted after the listener chain has returned, i.e.
-     * after {@code beforeEnter} finished.
-     */
-    private record Pending(String route, BeforeEnterEvent event,
-            Timer.Sample sample, Observation observation,
-            Observation.Scope scope, Thread thread) {
+    private record Pending(UI ui, Class<? extends Component> target,
+            String route, Timer.Sample sample, Observation observation,
+            Observation.Scope scope) {
     }
 
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings config;
     private final RouteTagResolver routes;
-    /**
-     * The UIs with an unfinished navigation on this thread. A request can touch
-     * more than one UI of the same session — the access tasks queued for it are
-     * run on the request thread — so this is a set rather than a single slot:
-     * one UI completing must not cost another its backstop.
-     *
-     * <p>
-     * The UIs are held weakly. A navigation started off-request through
-     * {@code UI.access()} marks the executor thread that ran the access task,
-     * and no {@code requestEnd} ever runs there to drain the set: a strong
-     * reference would pin every such UI to a pooled thread for the life of the
-     * server. Ordered, so nested scopes unwind most-recent-first.
-     */
-    private final ThreadLocal<Set<WeakReference<UI>>> pendingUis = new ThreadLocal<>();
 
     /**
-     * Whether this thread is inside a request this interceptor saw start, so
-     * {@code requestEnd} will close out what it leaves open. A navigation
-     * started anywhere else — a {@code UI.access()} task on a background
-     * thread, a push message — gets a backstop of its own instead; see
-     * {@link #closeOutOffRequest}.
+     * The navigations in flight on this thread, innermost last. Navigations of
+     * different UIs can nest, e.g. one UI navigating another from an
+     * {@code AfterNavigationEvent} listener, and Flow ends them in reverse
+     * order. Removed once empty, so a pooled thread keeps no UI reachable.
      */
-    private final ThreadLocal<Boolean> inRequest = new ThreadLocal<>();
+    private final ThreadLocal<Deque<Pending>> pending = new ThreadLocal<>();
 
     NavigationMetricsBinder(MeterRegistry registry, RouteTagResolver routes) {
         this(registry, null, ObservabilitySettings.builder().build(), routes);
@@ -150,241 +112,195 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         this.routes = routes;
     }
 
+    /**
+     * Subscribes to the navigation events on the given bus.
+     *
+     * @param eventBus
+     *            the service event bus to listen on
+     * @return a handle removing every subscription made here
+     */
+    Registration register(VaadinServiceEventBus eventBus) {
+        return Registration.combine(
+                eventBus.addListener(NavigationStartedEvent.class,
+                        this::navigationStarted),
+                eventBus.addListener(NavigationEndedEvent.class,
+                        this::navigationEnded));
+    }
+
     private boolean useObservation() {
         return config.isTraces() && observationRegistry != null;
     }
 
-    @Override
-    public void beforeEnter(BeforeEnterEvent event) {
+    void navigationStarted(NavigationStartedEvent event) {
         UI ui = event.getUI();
-        // rerouteTo/forwardTo re-runs the navigation chain, so beforeEnter can
-        // fire more than once per request. The superseded navigation never
-        // reaches afterNavigation: close it out before overwriting the state,
-        // or its span dangles and its scope stays open on this thread.
-        // Without a redirect flag it was superseded by a re-entrant
-        // UI.navigate() rather than failed, hence UNKNOWN rather than ERROR.
-        finish(ui, null, Outcome.UNKNOWN);
-        String route = routes.tagFor(event.getNavigationTarget());
-        // Persist the route up front (before the view renders) so
-        // out-of-runtime
-        // instrumentation (e.g. the DataSource fetch-size proxy) attributes
-        // even
-        // construction-time queries on this request thread to the target view.
-        VaadinTelemetryContext.setCurrentRoute(ui, route);
+        Class<? extends Component> target = requestedTarget(event);
+        String route = target == null ? null : routes.tagFor(target);
+        if (route != null) {
+            // Persist the route up front (before the view renders) so
+            // out-of-runtime instrumentation (e.g. the DataSource fetch-size
+            // proxy) attributes even construction-time queries on this
+            // request thread to the target view.
+            VaadinTelemetryContext.setCurrentRoute(ui, route);
+        }
         // Relay the UI for route resolution at request end. Unconditional:
         // the HTTP route enrichment works without tracing.
         RequestUi.mark(ui);
-        Pending pending;
+        Pending started;
         if (useObservation()) {
             // Tell the enclosing request span this UIDL request navigated.
             RequestInteraction.mark(ObservationNames.INTERACTION_NAVIGATION);
-            Observation obs = Observation
-                    .createNotStarted(MeterNames.NAVIGATION,
-                            observationRegistry)
-                    .contextualName(ObservationNames.NAVIGATION + " " + route)
-                    .lowCardinalityKeyValue(ObservationNames.KEY_ROUTE, route)
-                    .start();
-            pending = new Pending(route, event, null, obs, obs.openScope(),
-                    Thread.currentThread());
+            Observation obs = Observation.createNotStarted(
+                    MeterNames.NAVIGATION, observationRegistry);
+            if (route != null) {
+                nameAfterRoute(obs, route);
+            }
+            obs.start();
+            started = new Pending(ui, target, route, null, obs,
+                    obs.openScope());
         } else {
-            pending = new Pending(route, event, Timer.start(registry), null,
-                    null, Thread.currentThread());
+            started = new Pending(ui, target, route, Timer.start(registry),
+                    null, null);
         }
-        ComponentUtil.setData(ui, PENDING_KEY, pending);
-        Set<WeakReference<UI>> marked = pendingUis.get();
-        if (marked == null) {
-            marked = new LinkedHashSet<>();
-            pendingUis.set(marked);
+        Deque<Pending> inFlight = pending.get();
+        if (inFlight == null) {
+            inFlight = new ArrayDeque<>();
+            pending.set(inFlight);
         }
-        marked.add(new WeakReference<>(ui));
-        if (!Boolean.TRUE.equals(inRequest.get())) {
-            closeOutOffRequest(ui, pending);
-        }
+        inFlight.addLast(started);
     }
 
-    /**
-     * Gives a navigation started outside a request a backstop on its own
-     * thread. Nothing calls {@code requestEnd} there, and {@code uiDetached}
-     * usually runs on another thread, where the navigation's scope may not be
-     * closed — so a navigation abandoned without reaching
-     * {@code afterNavigation} would leave its scope current on a pooled thread,
-     * parenting every later span there under it.
-     * <p>
-     * An access task is queued for it: the session lock is held here, so Flow
-     * runs the task when this thread releases the lock, after the work that
-     * started the navigation has returned, and still under the lock. A
-     * navigation that has completed or been superseded by then is no longer the
-     * pending one, and the task leaves it alone.
-     */
-    private void closeOutOffRequest(UI ui, Pending pending) {
-        VaadinSession session = ui.getSession();
-        if (session == null) {
+    void navigationEnded(NavigationEndedEvent event) {
+        Pending ended = take(event.getUI());
+        if (ended == null) {
+            // Started before this binder was subscribed.
             return;
         }
-        session.access(() -> {
-            if (ComponentUtil.getData(ui, PENDING_KEY) == pending) {
-                finish(ui, null, Outcome.UNKNOWN);
+        NavigationEndedEvent.Outcome outcome = event.getOutcome();
+        String shown = outcome instanceof NavigationEndedEvent.Completed completed
+                ? routes.tagFor(completed.navigationTarget())
+                : shownRoute(ended.ui());
+        if (shown != null) {
+            // The view the UI shows now: the requested one, the one it was
+            // redirected to, an error view, or the previous view when nothing
+            // new was shown.
+            VaadinTelemetryContext.setCurrentRoute(ended.ui(), shown);
+        }
+        // A location without a view falls back to the view this navigation
+        // showed: the redirected one or the error view. A navigation that
+        // showed nothing new, or threw instead of showing an error view (no
+        // status code), leaves the previous view, which says nothing about it.
+        boolean showedView = outcome instanceof NavigationEndedEvent.Completed
+                || outcome instanceof NavigationEndedEvent.Failed
+                        && event.getStatusCode() != -1;
+        String route = ended.route() != null ? ended.route()
+                : showedView && shown != null ? shown
+                        : MeterNames.ROUTE_UNKNOWN;
+        String resolved = outcomeOf(outcome, ended.target());
+        if (ended.sample() != null) {
+            ended.sample().stop(registry.timer(MeterNames.NAVIGATION,
+                    MeterNames.TAG_ROUTE, route, MeterNames.TAG_OUTCOME,
+                    resolved, MeterNames.TAG_ERROR, MeterNames.ERROR_NONE));
+        }
+        if (ended.observation() != null) {
+            ended.scope().close();
+            if (ended.route() == null) {
+                nameAfterRoute(ended.observation(), route);
             }
-        });
-    }
-
-    @Override
-    public void afterNavigation(AfterNavigationEvent event) {
-        finish(event.getLocationChangeEvent().getUI(), Outcome.SUCCESS, null);
-    }
-
-    @Override
-    public void requestStart(VaadinRequest request, VaadinResponse response) {
-        // Drop any markers left by a previous request whose requestEnd was
-        // skipped (e.g. mid-request server shutdown), so this request never
-        // unwinds a navigation belonging to another one.
-        pendingUis.remove();
-        inRequest.set(Boolean.TRUE);
-        // Also drain the UI relay: this interceptor is registered whenever
-        // navigation is on, so stale entries are cleared on request threads
-        // even when RequestMetricsBinder is not registered. Cleared only at
-        // request start — requestEnd here runs before RequestMetricsBinder's,
-        // which still needs the value for route resolution.
-        RequestUi.clear();
-    }
-
-    @Override
-    public void handleException(VaadinRequest request, VaadinResponse response,
-            VaadinSession session, Exception t) {
-        // Nothing to do: requestEnd closes the pending navigation, if any.
-    }
-
-    @Override
-    public void requestEnd(VaadinRequest request, VaadinResponse response,
-            VaadinSession session) {
-        // Backstop for a navigation that started but never completed, e.g. one
-        // aborted by an exception while the view was being instantiated, or
-        // forwarded to an external URL (which redirects instead of re-running
-        // the chain). It has to be unwound here, on the thread that opened the
-        // scope, before the thread is recycled.
-        //
-        // This interceptor is registered after RequestMetricsBinder so that
-        // Flow, which runs interceptors in reverse registration order, calls
-        // this method first: the navigation scope has to close while the
-        // enclosing request scope is still open, or closing it would restore
-        // the already stopped request observation onto the thread.
-        inRequest.remove();
-        Set<WeakReference<UI>> marked = pendingUis.get();
-        if (marked == null) {
-            return;
+            ended.observation().lowCardinalityKeyValue(
+                    ObservationNames.KEY_OUTCOME, resolved).stop();
         }
-        // Over a copy: finish removes the UI it closes out from the set. The
-        // most recently marked UI first, so nested scopes unwind in order.
-        List<WeakReference<UI>> refs = new ArrayList<>(marked);
-        for (int i = refs.size() - 1; i >= 0; i--) {
-            finish(refs.get(i).get(), null, Outcome.ERROR);
-        }
-        // Every marked UI has been closed out, and a reference cleared in the
-        // meantime leaves nothing to close: the request is over either way.
-        pendingUis.remove();
     }
 
     /**
-     * Closes out a navigation left open on a UI that is going away, so the
-     * entry cannot outlive the UI.
-     * <p>
-     * A navigation started from {@code UI.access()} on a background thread
-     * never passes through {@code requestStart}/{@code requestEnd}, so the
-     * request-scoped backstop cannot reach it. Nothing about a detached UI says
-     * whether its last navigation succeeded, hence {@link Outcome#UNKNOWN}.
-     *
-     * @param ui
-     *            the UI being detached
+     * Removes and returns the innermost navigation in flight on this thread for
+     * {@code ui}, or {@code null} if there is none.
      */
-    void uiDetached(UI ui) {
-        finish(ui, null, Outcome.UNKNOWN);
-    }
-
-    /**
-     * Stops the navigation in flight on {@code ui}, if any. Safe to call when
-     * nothing is pending.
-     *
-     * @param outcome
-     *            the outcome to record, or {@code null} to derive it from the
-     *            navigation's own redirect state
-     * @param abandoned
-     *            the outcome for a navigation carrying no redirect flag at all;
-     *            what that means depends on where it is closed out from, so the
-     *            caller decides. Unused when {@code outcome} is given.
-     */
-    private void finish(UI ui, Outcome outcome, Outcome abandoned) {
-        if (ui == null) {
-            return;
+    private Pending take(UI ui) {
+        Deque<Pending> inFlight = pending.get();
+        if (inFlight == null) {
+            return null;
         }
-        Object data = ComponentUtil.getData(ui, PENDING_KEY);
-        ComponentUtil.setData(ui, PENDING_KEY, null);
-        // Only this UI's marker may be dropped: a request that touches two UIs
-        // would otherwise lose the first UI's marker to the second UI's
-        // afterNavigation, and the requestEnd backstop would never fire for it.
-        Set<WeakReference<UI>> marked = pendingUis.get();
-        if (marked != null) {
-            // Cleared references go with it: on an executor thread nothing else
-            // ever prunes them.
-            marked.removeIf(ref -> {
-                UI referent = ref.get();
-                return referent == null || referent == ui;
-            });
-            if (marked.isEmpty()) {
-                pendingUis.remove();
+        Pending found = null;
+        for (Iterator<Pending> it = inFlight.descendingIterator(); it
+                .hasNext();) {
+            Pending candidate = it.next();
+            if (candidate.ui() == ui) {
+                it.remove();
+                found = candidate;
+                break;
             }
         }
-        if (!(data instanceof Pending pending)) {
-            return;
+        if (inFlight.isEmpty()) {
+            pending.remove();
         }
-        Outcome resolved = outcome != null ? outcome
-                : outcomeOf(pending.event(), abandoned);
-        if (pending.sample() != null) {
-            pending.sample()
-                    .stop(registry.timer(MeterNames.NAVIGATION,
-                            MeterNames.TAG_ROUTE, pending.route(),
-                            MeterNames.TAG_OUTCOME, resolved.value,
-                            MeterNames.TAG_ERROR, MeterNames.ERROR_NONE));
-        }
-        // A scope may only be closed on the thread that opened it; doing it
-        // from another thread would restore that thread's observation onto
-        // this one. Leftovers from a dead request are dropped instead.
-        if (pending.scope() != null
-                && pending.thread() == Thread.currentThread()) {
-            pending.scope().close();
-        }
-        if (pending.observation() != null) {
-            pending.observation().lowCardinalityKeyValue(
-                    ObservationNames.KEY_OUTCOME, resolved.value).stop();
+        return found;
+    }
+
+    private static void nameAfterRoute(Observation obs, String route) {
+        obs.contextualName(ObservationNames.NAVIGATION + " " + route)
+                .lowCardinalityKeyValue(ObservationNames.KEY_ROUTE, route);
+    }
+
+    /**
+     * The view the requested location resolves to, or {@code null} when none
+     * does or it cannot be resolved. Resolved through the UI's router, whose
+     * registry includes the session-scoped routes while the session is bound to
+     * this thread, as it is while Flow navigates.
+     */
+    private static Class<? extends Component> requestedTarget(
+            NavigationStartedEvent event) {
+        try {
+            Router router = event.getUI().getInternals().getRouter();
+            if (router == null) {
+                return null;
+            }
+            return router.getRegistry()
+                    .getNavigationTarget(event.getLocation().getPath())
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            // Best-effort enrichment of a measurement; never break navigation.
+            return null;
         }
     }
 
     /**
-     * Classifies a navigation that never reached {@code afterNavigation} by
-     * what the listener chain did to it.
-     *
-     * @param abandoned
-     *            the outcome to fall back to when the chain left no redirect
-     *            flag behind
+     * The route of the view a UI shows after a navigation that did not show the
+     * requested view, or {@code null} when it cannot be resolved.
      */
-    private static Outcome outcomeOf(BeforeEnterEvent event,
-            Outcome abandoned) {
-        if (event.hasErrorParameter()) {
-            // rerouteToError(...): the navigation failed and was handed to an
-            // error view, so this really is an error.
-            return Outcome.ERROR;
+    private String shownRoute(UI ui) {
+        try {
+            return routes.tagForUi(ui, null);
+        } catch (RuntimeException e) {
+            return null;
         }
-        if (event.hasForwardTarget() || event.hasUnknownForward()
-                || event.hasExternalForwardUrl()) {
-            // An unknown forward target is a hand-off to a client-side route:
-            // the server-side navigation genuinely ends here.
-            return Outcome.FORWARDED;
-        }
-        if (event.hasRerouteTarget()) {
-            // hasUnknownReroute() is deliberately not checked: Flow only logs
-            // an unknown reroute target and carries on, so such a navigation
-            // still reaches afterNavigation and is never classified here.
-            return Outcome.REROUTED;
-        }
-        return abandoned;
+    }
+
+    /**
+     * Maps Flow's outcome to the {@code outcome} tag value.
+     *
+     * @param requested
+     *            the view the requested location resolves to, or {@code null}
+     */
+    private static String outcomeOf(NavigationEndedEvent.Outcome outcome,
+            Class<? extends Component> requested) {
+        return switch (outcome) {
+        // A target other than the requested one means a listener sent the
+        // navigation elsewhere: a routing decision (an access guard sending
+        // the user to the login view), not a failure. Flow does not tell a
+        // rerouteTo from a forwardTo here, so both are rerouted.
+        case NavigationEndedEvent.Completed completed ->
+            requested == null || requested == completed.navigationTarget()
+                    ? MeterNames.OUTCOME_SUCCESS
+                    : MeterNames.OUTCOME_REROUTED;
+        // Handed off without a server-side view: forwardToUrl, a client-side
+        // route, or a @PreserveOnRefresh view waiting for the window name.
+        case NavigationEndedEvent.NotShown notShown ->
+            MeterNames.OUTCOME_FORWARDED;
+        case NavigationEndedEvent.Failed failed -> MeterNames.OUTCOME_ERROR;
+        // Neither success nor failure: the navigation may still be resumed
+        // later, which Flow does not report as a navigation of its own.
+        case NavigationEndedEvent.Postponed postponed ->
+            MeterNames.OUTCOME_UNKNOWN;
+        };
     }
 }
