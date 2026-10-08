@@ -30,7 +30,7 @@ concurrency:
 jobs:
   native-smoke:
     name: Build native image and verify metrics
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Check secrets
         if: ${{ !github.event.pull_request.head.repo.fork }}
