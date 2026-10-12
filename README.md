@@ -515,7 +515,7 @@ ended:
 | `outcome` | Recorded for |
 | --- | --- |
 | `success` | The requested view was shown. |
-| `rerouted` | Another view was shown: a listener called `rerouteTo` or `forwardTo`. A routing decision (an access guard sending the user elsewhere), not a failure. |
+| `rerouted` | Another view, or the requested view with other route parameters, was shown: a listener called `rerouteTo` or `forwardTo`. A routing decision (an access guard sending the user elsewhere), not a failure. |
 | `forwarded` | No view was shown: a listener called `forwardToUrl`, the location is a client-side route, or a `@PreserveOnRefresh` view first asked the browser for its window name. |
 | `error` | The navigation failed: `rerouteToError`, an exception while the view was being built, or a location without a view. |
 | `unknown` | A `BeforeLeaveEvent` listener postponed the navigation. Resuming it with `proceed()` is not recorded again. |

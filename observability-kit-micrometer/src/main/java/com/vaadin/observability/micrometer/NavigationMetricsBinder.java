@@ -17,11 +17,17 @@ import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
-import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.router.AfterNavigationEvent;
+import com.vaadin.flow.router.AfterNavigationListener;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterListener;
 import com.vaadin.flow.router.NavigationEndedEvent;
 import com.vaadin.flow.router.NavigationStartedEvent;
+import com.vaadin.flow.router.RouteParameters;
 import com.vaadin.flow.router.Router;
+import com.vaadin.flow.router.internal.NavigationRouteTarget;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
@@ -48,18 +54,26 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * navigation that was redirected elsewhere is recorded under the view that was
  * asked for. A location no view resolves to, such as an unknown URL, is
  * recorded under the view the navigation showed, e.g. the "not found" error
- * view, or as {@link MeterNames#ROUTE_UNKNOWN} when it showed none. The
- * {@code outcome} tag maps Flow's {@link NavigationEndedEvent.Outcome}:
+ * view, or as {@link MeterNames#ROUTE_UNKNOWN} when it showed none. Such a
+ * navigation is tagged {@link MeterNames#ROUTE_UNKNOWN} until it ends, so that
+ * meters registered when it starts, like the
+ * {@code DefaultMeterObservationHandler}'s long task timer, carry the same tag
+ * keys as for any other navigation. The {@code outcome} tag maps Flow's
+ * {@link NavigationEndedEvent.Outcome}:
  * <ul>
  * <li>{@code success}: the requested view was shown;</li>
- * <li>{@code rerouted}: another view was shown, after a {@code rerouteTo} or
- * {@code forwardTo};</li>
+ * <li>{@code rerouted}: another view, or the same view with other route
+ * parameters, was shown after a {@code rerouteTo} or {@code forwardTo};</li>
  * <li>{@code forwarded}: no view was shown, e.g. after a {@code forwardToUrl}
  * or a hand-off to a client-side route;</li>
  * <li>{@code error}: the navigation failed;</li>
  * <li>{@code unknown}: the navigation was postponed by a
  * {@code BeforeLeaveEvent} listener.</li>
  * </ul>
+ * <p>
+ * While a navigation runs, {@link VaadinTelemetryContext} follows the view it
+ * enters, through a {@code BeforeEnterEvent} listener added to the UI for the
+ * duration of the navigation; see {@link RouteTracker}.
  * <p>
  * Both paths publish {@link MeterNames#NAVIGATION} with the same tag keys:
  * {@code route}, {@code outcome} and {@code error}. A failed navigation is
@@ -71,19 +85,96 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  */
 final class NavigationMetricsBinder {
 
+    private static final String ROUTE_TRACKER_KEY = NavigationMetricsBinder.class
+            .getName() + ".routeTracker";
+
     /**
      * Transient state of a navigation in flight on this thread.
      *
-     * @param target
-     *            the view the requested location resolves to, or {@code null}
-     *            if none does
+     * @param requested
+     *            the view the requested location resolves to and its route
+     *            parameters, or {@code null} if no view does
      * @param route
-     *            the route tag of {@code target}, or {@code null} if there is
-     *            none
+     *            the route tag of the requested view, or {@code null} if there
+     *            is none
      */
-    private record Pending(UI ui, Class<? extends Component> target,
-            String route, Timer.Sample sample, Observation observation,
+    private record Pending(UI ui, NavigationRouteTarget requested, String route,
+            RouteTracker tracker, Timer.Sample sample, Observation observation,
             Observation.Scope scope) {
+    }
+
+    /**
+     * Keeps {@link VaadinTelemetryContext} on the view a navigation of a UI is
+     * entering. Flow fires the UI's {@code BeforeEnterEvent} listeners for
+     * every view a navigation enters, before building it: the requested view,
+     * the target of a {@code rerouteTo} or {@code forwardTo}, and an error
+     * view, including the "not found" view of an unknown location. So work done
+     * while building any of them, like a query in a constructor, is attributed
+     * to that view.
+     * <p>
+     * Added when a navigation starts and removed when it ends. A navigation
+     * postponed by a {@code BeforeLeaveEvent} listener keeps it, because
+     * {@code proceed()} resumes the navigation without any navigation events:
+     * it is removed once the resumed navigation has shown its view, or when the
+     * UI starts its next navigation.
+     */
+    private final class RouteTracker
+            implements BeforeEnterListener, AfterNavigationListener {
+
+        private final UI ui;
+        private final Registration beforeEnter;
+        private Registration afterNavigation;
+
+        RouteTracker(UI ui) {
+            this.ui = ui;
+            Registration added;
+            try {
+                added = ui.addBeforeEnterListener(this);
+            } catch (RuntimeException e) {
+                // Best-effort enrichment of a measurement: Flow navigates
+                // under the session lock that adding a listener requires, so
+                // only a navigation started without it loses the route here.
+                added = null;
+            }
+            this.beforeEnter = added;
+            ComponentUtil.setData(ui, ROUTE_TRACKER_KEY, this);
+        }
+
+        @Override
+        public void beforeEnter(BeforeEnterEvent event) {
+            VaadinTelemetryContext.setCurrentRoute(ui,
+                    routes.tagFor(event.getNavigationTarget()));
+        }
+
+        /** Keeps tracking until a resumed navigation has shown its view. */
+        void awaitResume() {
+            if (beforeEnter != null && afterNavigation == null) {
+                afterNavigation = ui.addAfterNavigationListener(this);
+            }
+        }
+
+        @Override
+        public void afterNavigation(AfterNavigationEvent event) {
+            // Only listened to after a postponed navigation. Its resumption
+            // shows a view without a NavigationEndedEvent to update the route.
+            String shown = shownRoute(ui);
+            if (shown != null) {
+                VaadinTelemetryContext.setCurrentRoute(ui, shown);
+            }
+            remove();
+        }
+
+        void remove() {
+            if (beforeEnter != null) {
+                beforeEnter.remove();
+            }
+            if (afterNavigation != null) {
+                afterNavigation.remove();
+            }
+            if (ComponentUtil.getData(ui, ROUTE_TRACKER_KEY) == this) {
+                ComponentUtil.setData(ui, ROUTE_TRACKER_KEY, null);
+            }
+        }
     }
 
     private final MeterRegistry registry;
@@ -133,15 +224,16 @@ final class NavigationMetricsBinder {
 
     void navigationStarted(NavigationStartedEvent event) {
         UI ui = event.getUI();
-        Class<? extends Component> target = requestedTarget(event);
-        String route = target == null ? null : routes.tagFor(target);
-        if (route != null) {
-            // Persist the route up front (before the view renders) so
-            // out-of-runtime instrumentation (e.g. the DataSource fetch-size
-            // proxy) attributes even construction-time queries on this
-            // request thread to the target view.
-            VaadinTelemetryContext.setCurrentRoute(ui, route);
+        NavigationRouteTarget requested = requestedTarget(event);
+        String route = requested == null ? null
+                : routes.tagFor(requested.getRouteTarget().getTarget());
+        // A navigation postponed earlier and never resumed has been
+        // superseded by this one.
+        if (ComponentUtil.getData(ui,
+                ROUTE_TRACKER_KEY) instanceof RouteTracker leftover) {
+            leftover.remove();
         }
+        RouteTracker tracker = new RouteTracker(ui);
         // Relay the UI for route resolution at request end. Unconditional:
         // the HTTP route enrichment works without tracing.
         RequestUi.mark(ui);
@@ -149,17 +241,17 @@ final class NavigationMetricsBinder {
         if (useObservation()) {
             // Tell the enclosing request span this UIDL request navigated.
             RequestInteraction.mark(ObservationNames.INTERACTION_NAVIGATION);
-            Observation obs = Observation.createNotStarted(
-                    MeterNames.NAVIGATION, observationRegistry);
-            if (route != null) {
-                nameAfterRoute(obs, route);
-            }
-            obs.start();
-            started = new Pending(ui, target, route, null, obs,
+            // Always tagged with a route: the meters registered on start must
+            // have the same tag keys as the ones registered on stop.
+            Observation obs = nameAfterRoute(
+                    Observation.createNotStarted(MeterNames.NAVIGATION,
+                            observationRegistry),
+                    route != null ? route : MeterNames.ROUTE_UNKNOWN).start();
+            started = new Pending(ui, requested, route, tracker, null, obs,
                     obs.openScope());
         } else {
-            started = new Pending(ui, target, route, Timer.start(registry),
-                    null, null);
+            started = new Pending(ui, requested, route, tracker,
+                    Timer.start(registry), null, null);
         }
         Deque<Pending> inFlight = pending.get();
         if (inFlight == null) {
@@ -176,38 +268,52 @@ final class NavigationMetricsBinder {
             return;
         }
         NavigationEndedEvent.Outcome outcome = event.getOutcome();
-        String shown = outcome instanceof NavigationEndedEvent.Completed completed
-                ? routes.tagFor(completed.navigationTarget())
-                : shownRoute(ended.ui());
-        if (shown != null) {
-            // The view the UI shows now: the requested one, the one it was
-            // redirected to, an error view, or the previous view when nothing
-            // new was shown.
-            VaadinTelemetryContext.setCurrentRoute(ended.ui(), shown);
-        }
-        // A location without a view falls back to the view this navigation
-        // showed: the redirected one or the error view. A navigation that
-        // showed nothing new, or threw instead of showing an error view (no
-        // status code), leaves the previous view, which says nothing about it.
-        boolean showedView = outcome instanceof NavigationEndedEvent.Completed
-                || outcome instanceof NavigationEndedEvent.Failed
-                        && event.getStatusCode() != -1;
         String route = ended.route() != null ? ended.route()
-                : showedView && shown != null ? shown
-                        : MeterNames.ROUTE_UNKNOWN;
-        String resolved = outcomeOf(outcome, ended.target());
-        if (ended.sample() != null) {
-            ended.sample().stop(registry.timer(MeterNames.NAVIGATION,
-                    MeterNames.TAG_ROUTE, route, MeterNames.TAG_OUTCOME,
-                    resolved, MeterNames.TAG_ERROR, MeterNames.ERROR_NONE));
-        }
-        if (ended.observation() != null) {
-            ended.scope().close();
-            if (ended.route() == null) {
-                nameAfterRoute(ended.observation(), route);
+                : MeterNames.ROUTE_UNKNOWN;
+        String resolved = MeterNames.OUTCOME_UNKNOWN;
+        try {
+            if (outcome instanceof NavigationEndedEvent.Postponed) {
+                ended.tracker().awaitResume();
+            } else {
+                ended.tracker().remove();
             }
-            ended.observation().lowCardinalityKeyValue(
-                    ObservationNames.KEY_OUTCOME, resolved).stop();
+            String shown = outcome instanceof NavigationEndedEvent.Completed completed
+                    ? routes.tagFor(completed.navigationTarget())
+                    : shownRoute(ended.ui());
+            if (shown != null) {
+                // The view the UI shows now: the requested one, the one it was
+                // redirected to, an error view, or the previous view when
+                // nothing new was shown.
+                VaadinTelemetryContext.setCurrentRoute(ended.ui(), shown);
+            }
+            // A location without a view falls back to the view this
+            // navigation showed: the redirected one or the error view. A
+            // navigation that showed nothing new, or threw instead of showing
+            // an error view (no status code), leaves the previous view, which
+            // says nothing about it.
+            boolean showedView = outcome instanceof NavigationEndedEvent.Completed
+                    || outcome instanceof NavigationEndedEvent.Failed
+                            && event.getStatusCode() != -1;
+            route = ended.route() != null ? ended.route()
+                    : showedView && shown != null ? shown
+                            : MeterNames.ROUTE_UNKNOWN;
+            resolved = outcomeOf(outcome, ended.requested(),
+                    shownParameters(ended.ui()));
+        } finally {
+            // Whatever failed above, the scope must not stay open on this
+            // thread, where it would parent every later span.
+            if (ended.sample() != null) {
+                ended.sample().stop(registry.timer(MeterNames.NAVIGATION,
+                        MeterNames.TAG_ROUTE, route, MeterNames.TAG_OUTCOME,
+                        resolved, MeterNames.TAG_ERROR, MeterNames.ERROR_NONE));
+            }
+            if (ended.observation() != null) {
+                ended.scope().close();
+                nameAfterRoute(ended.observation(), route)
+                        .lowCardinalityKeyValue(ObservationNames.KEY_OUTCOME,
+                                resolved)
+                        .stop();
+            }
         }
     }
 
@@ -236,27 +342,27 @@ final class NavigationMetricsBinder {
         return found;
     }
 
-    private static void nameAfterRoute(Observation obs, String route) {
-        obs.contextualName(ObservationNames.NAVIGATION + " " + route)
+    private static Observation nameAfterRoute(Observation obs, String route) {
+        return obs.contextualName(ObservationNames.NAVIGATION + " " + route)
                 .lowCardinalityKeyValue(ObservationNames.KEY_ROUTE, route);
     }
 
     /**
-     * The view the requested location resolves to, or {@code null} when none
-     * does or it cannot be resolved. Resolved through the UI's router, whose
-     * registry includes the session-scoped routes while the session is bound to
-     * this thread, as it is while Flow navigates.
+     * The view the requested location resolves to, with its route parameters,
+     * or {@code null} when none does or it cannot be resolved. Resolved through
+     * the UI's router, whose registry includes the session-scoped routes while
+     * the session is bound to this thread, as it is while Flow navigates.
      */
-    private static Class<? extends Component> requestedTarget(
+    private static NavigationRouteTarget requestedTarget(
             NavigationStartedEvent event) {
         try {
             Router router = event.getUI().getInternals().getRouter();
             if (router == null) {
                 return null;
             }
-            return router.getRegistry()
-                    .getNavigationTarget(event.getLocation().getPath())
-                    .orElse(null);
+            NavigationRouteTarget target = router.getRegistry()
+                    .getNavigationRouteTarget(event.getLocation().getPath());
+            return target != null && target.hasTarget() ? target : null;
         } catch (RuntimeException e) {
             // Best-effort enrichment of a measurement; never break navigation.
             return null;
@@ -276,22 +382,42 @@ final class NavigationMetricsBinder {
     }
 
     /**
+     * The route parameters of the view a UI shows, or {@code null} when they
+     * cannot be resolved.
+     */
+    private static RouteParameters shownParameters(UI ui) {
+        try {
+            return ui.getInternals().getRouterStateSignal().peek()
+                    .routeParameters();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
      * Maps Flow's outcome to the {@code outcome} tag value.
      *
      * @param requested
      *            the view the requested location resolves to, or {@code null}
+     * @param shownParameters
+     *            the route parameters of the view shown, or {@code null} if
+     *            unknown
      */
     private static String outcomeOf(NavigationEndedEvent.Outcome outcome,
-            Class<? extends Component> requested) {
+            NavigationRouteTarget requested, RouteParameters shownParameters) {
         return switch (outcome) {
-        // A target other than the requested one means a listener sent the
-        // navigation elsewhere: a routing decision (an access guard sending
-        // the user to the login view), not a failure. Flow does not tell a
-        // rerouteTo from a forwardTo here, so both are rerouted.
+        // A target or route parameters other than the requested ones mean a
+        // listener sent the navigation elsewhere: a routing decision (an
+        // access guard sending the user to the login view), not a failure.
+        // Flow does not tell a rerouteTo from a forwardTo here, so both are
+        // rerouted.
         case NavigationEndedEvent.Completed completed ->
-            requested == null || requested == completed.navigationTarget()
-                    ? MeterNames.OUTCOME_SUCCESS
-                    : MeterNames.OUTCOME_REROUTED;
+            requested == null || requested.getRouteTarget()
+                    .getTarget() == completed.navigationTarget()
+                    && (shownParameters == null || shownParameters
+                            .equals(requested.getRouteParameters()))
+                                    ? MeterNames.OUTCOME_SUCCESS
+                                    : MeterNames.OUTCOME_REROUTED;
         // Handed off without a server-side view: forwardToUrl, a client-side
         // route, or a @PreserveOnRefresh view waiting for the window name.
         case NavigationEndedEvent.NotShown notShown ->

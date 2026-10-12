@@ -303,9 +303,10 @@ public final class MeterNames {
 
     /**
      * {@link #TAG_OUTCOME} value for a navigation that showed another view than
-     * the requested one, after a {@code rerouteTo} or {@code forwardTo}. Kept
-     * apart from {@link #OUTCOME_ERROR} because redirecting is a normal routing
-     * decision (an access guard sending the user elsewhere), not a failure.
+     * the requested one, or the requested view with other route parameters,
+     * after a {@code rerouteTo} or {@code forwardTo}. Kept apart from
+     * {@link #OUTCOME_ERROR} because redirecting is a normal routing decision
+     * (an access guard sending the user elsewhere), not a failure.
      */
     public static final String OUTCOME_REROUTED = "rerouted";
 

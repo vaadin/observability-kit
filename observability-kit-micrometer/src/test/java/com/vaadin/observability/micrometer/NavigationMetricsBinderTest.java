@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -30,17 +29,26 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.router.AfterNavigationEvent;
+import com.vaadin.flow.router.AfterNavigationListener;
+import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.BeforeEnterListener;
 import com.vaadin.flow.router.Location;
 import com.vaadin.flow.router.NavigationEndedEvent;
 import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
 import com.vaadin.flow.router.NotFoundException;
+import com.vaadin.flow.router.RouteParameters;
+import com.vaadin.flow.router.RouterState;
+import com.vaadin.flow.router.internal.NavigationRouteTarget;
+import com.vaadin.flow.router.internal.RouteTarget;
 import com.vaadin.flow.server.RouteRegistry;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
@@ -52,6 +60,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * Covers how {@link NavigationMetricsBinder} times navigations from Flow's
@@ -144,22 +154,63 @@ class NavigationMetricsBinderTest {
 
     /**
      * A UI whose router resolves {@code first} and {@code second} to their
-     * views and nothing else, and which shows {@code shown} (may be empty).
+     * views, {@code first/<id>} to the first view with an {@code id} route
+     * parameter, and nothing else, and which shows {@code shown} (may be
+     * empty).
      */
     private static UI routedUi(HasElement... shown) {
         UI routed = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
         RouteRegistry routes = Mockito.mock(RouteRegistry.class);
-        Mockito.doReturn(Optional.empty()).when(routes)
-                .getNavigationTarget(Mockito.anyString());
-        Mockito.doReturn(Optional.of(FirstView.class)).when(routes)
-                .getNavigationTarget("first");
-        Mockito.doReturn(Optional.of(SecondView.class)).when(routes)
-                .getNavigationTarget("second");
+        Mockito.when(routes.getNavigationRouteTarget(Mockito.anyString()))
+                .thenAnswer(invocation -> {
+                    String path = invocation.getArgument(0);
+                    if (path.equals("first")) {
+                        return routeTarget(path, FirstView.class, Map.of());
+                    }
+                    if (path.equals("second")) {
+                        return routeTarget(path, SecondView.class, Map.of());
+                    }
+                    if (path.startsWith("first/")) {
+                        return routeTarget(path, FirstView.class,
+                                Map.of("id", path.substring(6)));
+                    }
+                    return new NavigationRouteTarget(path, null, Map.of());
+                });
         Mockito.when(routed.getInternals().getRouter().getRegistry())
                 .thenReturn(routes);
         Mockito.when(routed.getInternals().getActiveRouterTargetsChain())
                 .thenReturn(List.of(shown));
+        Mockito.when(routed.getInternals().getRouterStateSignal().peek())
+                .thenReturn(null);
         return routed;
+    }
+
+    private static NavigationRouteTarget routeTarget(String path,
+            Class<? extends Component> view, Map<String, String> parameters) {
+        return new NavigationRouteTarget(path, new RouteTarget(view),
+                parameters);
+    }
+
+    /** Makes {@code target} report it shows {@code view} with an id. */
+    private static void showing(UI target, Class<? extends Component> view,
+            String id) {
+        Mockito.when(target.getInternals().getRouterStateSignal().peek())
+                .thenReturn(new RouterState(new Location("first/" + id),
+                        new RouteParameters("id", id), List.of(), view));
+    }
+
+    /**
+     * Fires the {@code BeforeEnterEvent} that Flow sends to the UI's listeners
+     * before it builds {@code view}.
+     */
+    private static void entering(UI target, Class<? extends Component> view) {
+        ArgumentCaptor<BeforeEnterListener> listener = ArgumentCaptor
+                .forClass(BeforeEnterListener.class);
+        verify(target, Mockito.atLeastOnce())
+                .addBeforeEnterListener(listener.capture());
+        BeforeEnterEvent event = Mockito.mock(BeforeEnterEvent.class);
+        Mockito.doReturn(view).when(event).getNavigationTarget();
+        listener.getValue().beforeEnter(event);
     }
 
     private void start(UI target, String path) {
@@ -217,6 +268,22 @@ class NavigationMetricsBinderTest {
         navigate(ui, "first", shown(SecondView.class));
 
         assertEquals(1, timerCount(FIRST, MeterNames.OUTCOME_REROUTED));
+        assertEquals(1, timerSamples());
+    }
+
+    @ParameterizedTest(name = "shown id={0}")
+    @CsvSource({ "1, success", "2, rerouted" })
+    void showingTheRequestedViewWithOtherParametersRecordsRerouted(
+            String shownId, String outcome) {
+        binder();
+
+        // rerouteTo(FirstView.class, otherParameters): the same view, but not
+        // the one that was asked for.
+        start(ui, "first/1");
+        showing(ui, FirstView.class, shownId);
+        end(ui, "first/1", shown(FirstView.class));
+
+        assertEquals(1, timerCount(FIRST, outcome));
         assertEquals(1, timerSamples());
     }
 
@@ -502,18 +569,89 @@ class NavigationMetricsBinderTest {
     }
 
     @Test
-    void telemetryContextFollowsTheViewBeingShown() {
+    void telemetryContextFollowsTheViewBeingEnteredAndShown() {
         binder();
         UI.setCurrent(ui);
+        Registration tracking = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(tracking);
 
-        // Set before the view renders, so instrumentation outside the Flow
-        // runtime can attribute construction-time work to the target view.
+        // Set before each view is built, so instrumentation outside the Flow
+        // runtime can attribute construction-time work to it: the requested
+        // view, then the error view a failure or an unknown location sends
+        // the navigation to.
         start(ui, "first");
+        entering(ui, FirstView.class);
         assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
+        entering(ui, NotFoundView.class);
+        assertEquals(NOT_FOUND, VaadinTelemetryContext.currentRoute());
 
-        // And to the view it was sent to for the work after the navigation.
+        // And to the view shown for the work after the navigation.
         end(ui, "first", shown(SecondView.class));
         assertEquals(SECOND, VaadinTelemetryContext.currentRoute());
+        verify(tracking).remove();
+    }
+
+    @Test
+    void telemetryContextFollowsAPostponedNavigationWhenItIsResumed() {
+        binder();
+        UI.setCurrent(ui);
+        Registration tracking = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(tracking);
+
+        navigate(ui, "second", new NavigationEndedEvent.Postponed());
+        verify(tracking, never()).remove();
+
+        // proceed() resumes the navigation without navigation events, but
+        // with the UI's own navigation listeners.
+        entering(ui, SecondView.class);
+        assertEquals(SECOND, VaadinTelemetryContext.currentRoute());
+        ArgumentCaptor<AfterNavigationListener> resumed = ArgumentCaptor
+                .forClass(AfterNavigationListener.class);
+        verify(ui).addAfterNavigationListener(resumed.capture());
+        Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.of(new SecondView()));
+        resumed.getValue()
+                .afterNavigation(Mockito.mock(AfterNavigationEvent.class));
+
+        assertEquals(SECOND, VaadinTelemetryContext.currentRoute());
+        verify(tracking).remove();
+    }
+
+    @Test
+    void aNewNavigationSupersedesAPostponedOne() {
+        binder();
+        Registration tracking = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(tracking);
+
+        navigate(ui, "second", new NavigationEndedEvent.Postponed());
+        start(ui, "first");
+
+        // The listener of the postponed navigation is gone, so the UI tracks
+        // one navigation at a time.
+        verify(tracking).remove();
+        end(ui, "first", shown(FirstView.class));
+    }
+
+    @Test
+    void aFailureWhileEndingStillClosesTheScope() {
+        RecordingHandler recorder = new RecordingHandler();
+        ObservationRegistry obs = recording(recorder);
+        tracingBinder(obs);
+        Registration failing = Mockito.mock(Registration.class);
+        Mockito.doThrow(new IllegalStateException("boom")).when(failing)
+                .remove();
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(failing);
+
+        navigate(ui, "first", new NavigationEndedEvent.NotShown());
+
+        assertNull(obs.getCurrentObservation(),
+                "the scope must not stay open on the thread");
+        assertEquals(List.of(MeterNames.NAVIGATION), recorder.names,
+                "the observation is stopped");
     }
 
     /**

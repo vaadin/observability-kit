@@ -289,26 +289,11 @@ class MetricsServiceInitListenerTest {
     }
 
     @Test
-    void registersUiInitListenerWhenNavigationEnabledAndUisDisabled() {
+    void skipsUiInitListenerWhenUisAndClientDisabled() {
+        // Navigation attaches nothing to a UI when it is initialized, so it
+        // does not need the binder either.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().uis(false).navigation(true)
-                        .build());
-        VaadinService service = licensedService();
-        ServiceInitEvent event = mock(ServiceInitEvent.class);
-        when(event.getSource()).thenReturn(service);
-
-        new MetricsServiceInitListener().serviceInit(event);
-
-        Assertions.assertTrue(
-                registeredUiInitListeners(service).stream()
-                        .anyMatch(l -> l instanceof UiMetricsBinder),
-                "navigation enabled should register the UiMetricsBinder");
-    }
-
-    @Test
-    void skipsUiInitListenerWhenUisAndNavigationAndClientDisabled() {
-        ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().uis(false).navigation(false)
                         .client(false).build());
         VaadinService service = licensedService();
         ServiceInitEvent event = mock(ServiceInitEvent.class);

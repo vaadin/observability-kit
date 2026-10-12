@@ -33,7 +33,8 @@ public final class VaadinTelemetryContext {
 
     /**
      * Records the route template the current UI last navigated to. Called from
-     * {@link NavigationMetricsBinder} when a navigation starts and ends.
+     * {@link NavigationMetricsBinder} as a navigation enters a view and when it
+     * ends.
      */
     static void setCurrentRoute(UI ui, String route) {
         if (ui != null) {

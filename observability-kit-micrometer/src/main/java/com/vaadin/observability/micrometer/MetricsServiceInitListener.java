@@ -274,8 +274,7 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             ObservabilityKit.setRecentClientErrors(browserErrors);
         }
 
-        if (settings.isUis() || settings.isNavigation()
-                || settings.isClient()) {
+        if (settings.isUis() || settings.isClient()) {
             service.addUIInitListener(new UiMetricsBinder(registry,
                     observationRegistry, settings, clientErrors));
         }
