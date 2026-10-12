@@ -302,18 +302,28 @@ class ObservationContractTest {
     private static final class ContractView extends Component {
     }
 
+    @com.vaadin.flow.component.Tag("other-contract-view")
+    private static final class OtherContractView extends Component {
+    }
+
+    /**
+     * A navigation rerouted from {@code view} to another view. The span is
+     * named after the requested view, so the name in the golden file only holds
+     * while the requested location resolves to its view.
+     */
     private void driveNavigation() {
         NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
                 observations, settings, new RouteTagResolver(10));
 
-        UI ui = Mockito.mock(UI.class);
+        UI ui = RoutedUis.routedUi(Map.of("view", ContractView.class));
         UI.setCurrent(ui);
         Location location = new Location("view");
         binder.navigationStarted(new NavigationStartedEvent(ui, location,
                 NavigationTrigger.UI_NAVIGATE));
         binder.navigationEnded(new NavigationEndedEvent(ui, location,
                 NavigationTrigger.UI_NAVIGATE,
-                new NavigationEndedEvent.Completed(ContractView.class), 200));
+                new NavigationEndedEvent.Completed(OtherContractView.class),
+                200));
     }
 
     /**

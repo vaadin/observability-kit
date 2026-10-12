@@ -274,7 +274,10 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             ObservabilityKit.setRecentClientErrors(browserErrors);
         }
 
-        if (settings.isUis() || settings.isClient()) {
+        // Tracing needs it too: it labels poll requests, so that their request
+        // span is named and enriched with the UI and its route.
+        if (settings.isUis() || settings.isClient()
+                || settings.isTraces() && observationRegistry != null) {
             service.addUIInitListener(new UiMetricsBinder(registry,
                     observationRegistry, settings, clientErrors));
         }

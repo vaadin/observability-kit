@@ -288,13 +288,15 @@ class MetricsServiceInitListenerTest {
                 "UIs enabled should register the UiMetricsBinder");
     }
 
-    @Test
-    void skipsUiInitListenerWhenUisAndClientDisabled() {
+    @ParameterizedTest(name = "traces={0}")
+    @ValueSource(booleans = { false, true })
+    void registersUiInitListenerWithUisAndClientDisabledOnlyWhenTracing(
+            boolean traces) {
         // Navigation attaches nothing to a UI when it is initialized, so it
-        // does not need the binder either.
+        // does not need the binder; tracing does, to label poll requests.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().uis(false).navigation(true)
-                        .client(false).build());
+                        .client(false).traces(traces).build());
         VaadinService service = licensedService();
         ServiceInitEvent event = mock(ServiceInitEvent.class);
         when(event.getSource()).thenReturn(service);
@@ -303,10 +305,8 @@ class MetricsServiceInitListenerTest {
 
         // The error binder also hooks UI init, so assert on the type rather
         // than on the hook being unused.
-        Assertions.assertTrue(
-                registeredUiInitListeners(service).stream()
-                        .noneMatch(l -> l instanceof UiMetricsBinder),
-                "UI metrics disabled should not register the UiMetricsBinder");
+        Assertions.assertEquals(traces, registeredUiInitListeners(service)
+                .stream().anyMatch(l -> l instanceof UiMetricsBinder));
     }
 
     @Test

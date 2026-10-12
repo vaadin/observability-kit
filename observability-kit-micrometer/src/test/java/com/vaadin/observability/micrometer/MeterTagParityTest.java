@@ -28,9 +28,6 @@ import com.vaadin.flow.router.Location;
 import com.vaadin.flow.router.NavigationEndedEvent;
 import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
-import com.vaadin.flow.router.internal.NavigationRouteTarget;
-import com.vaadin.flow.router.internal.RouteTarget;
-import com.vaadin.flow.server.RouteRegistry;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -205,29 +202,6 @@ class MeterTagParityTest {
     }
 
     /**
-     * A UI whose router resolves {@code view} to {@link ParityView} and nothing
-     * else.
-     */
-    private static UI routedUi() {
-        UI ui = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
-        RouteRegistry routes = Mockito.mock(RouteRegistry.class);
-        Mockito.when(routes.getNavigationRouteTarget(Mockito.anyString()))
-                .thenAnswer(invocation -> {
-                    String path = invocation.getArgument(0);
-                    return new NavigationRouteTarget(path,
-                            path.equals("view")
-                                    ? new RouteTarget(ParityView.class)
-                                    : null,
-                            Map.of());
-                });
-        Mockito.when(ui.getInternals().getRouter().getRegistry())
-                .thenReturn(routes);
-        Mockito.when(ui.getInternals().getRouterStateSignal().peek())
-                .thenReturn(null);
-        return ui;
-    }
-
-    /**
      * Runs one navigation to {@code path} that shows {@code shown} through the
      * binder into {@code registry}. {@code traces} picks the recording path.
      */
@@ -238,7 +212,7 @@ class MeterTagParityTest {
                 ObservabilitySettings.builder().traces(traces).build(),
                 new RouteTagResolver(10));
 
-        UI ui = routedUi();
+        UI ui = RoutedUis.routedUi(Map.of("view", ParityView.class));
         UI.setCurrent(ui);
         Location location = new Location(path);
         binder.navigationStarted(new NavigationStartedEvent(ui, location,

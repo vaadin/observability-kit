@@ -71,9 +71,10 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * {@code BeforeLeaveEvent} listener.</li>
  * </ul>
  * <p>
- * While a navigation runs, {@link VaadinTelemetryContext} follows the view it
- * enters, through a {@code BeforeEnterEvent} listener added to the UI for the
- * duration of the navigation; see {@link RouteTracker}.
+ * When a navigation starts, {@link VaadinTelemetryContext} is set to the
+ * requested view. While it runs, the context follows the view it enters,
+ * through a {@code BeforeEnterEvent} listener added to the UI for the duration
+ * of the navigation; see {@link RouteTracker}.
  * <p>
  * Both paths publish {@link MeterNames#NAVIGATION} with the same tag keys:
  * {@code route}, {@code outcome} and {@code error}. A failed navigation is
@@ -116,17 +117,36 @@ final class NavigationMetricsBinder {
      * postponed by a {@code BeforeLeaveEvent} listener keeps it, because
      * {@code proceed()} resumes the navigation without any navigation events:
      * it is removed once the resumed navigation has shown its view, or when the
-     * UI starts its next navigation.
+     * UI starts its next navigation. A navigation started from inside the
+     * resumed one, e.g. by a {@code BeforeEnterEvent} listener, gets a tracker
+     * of its own and leaves the resumed one in place, once.
+     * <p>
+     * Static and {@link java.io.Serializable}, as the UI listeners it is
+     * registered as are: a postponed navigation keeps it on the UI across
+     * requests, so it is serialized with the session. The resolver is not
+     * carried along; a deserialized tracker only cleans up after itself.
      */
-    private final class RouteTracker
+    private static final class RouteTracker
             implements BeforeEnterListener, AfterNavigationListener {
 
         private final UI ui;
+        private final transient RouteTagResolver routes;
+        /** The resumed navigation's tracker this one runs inside, if any. */
+        private final RouteTracker outer;
         private final Registration beforeEnter;
         private Registration afterNavigation;
+        /** The navigation that runs inside this one, if any. */
+        private RouteTracker inner;
+        /** The postponed navigation has entered a view since it resumed. */
+        private boolean resumed;
+        /** A navigation has already been run inside this one. */
+        private boolean hostedInner;
+        private boolean removed;
 
-        RouteTracker(UI ui) {
+        RouteTracker(UI ui, RouteTagResolver routes, RouteTracker outer) {
             this.ui = ui;
+            this.routes = routes;
+            this.outer = outer;
             Registration added;
             try {
                 added = ui.addBeforeEnterListener(this);
@@ -137,27 +157,57 @@ final class NavigationMetricsBinder {
                 added = null;
             }
             this.beforeEnter = added;
+            if (outer != null) {
+                outer.inner = this;
+                outer.hostedInner = true;
+            }
             ComponentUtil.setData(ui, ROUTE_TRACKER_KEY, this);
+        }
+
+        /**
+         * Whether a navigation starting now runs inside the resumed navigation
+         * this tracker follows, rather than superseding it.
+         */
+        boolean hostsNavigationStartingNow() {
+            return resumed && !hostedInner && inner == null && !removed;
         }
 
         @Override
         public void beforeEnter(BeforeEnterEvent event) {
+            if (inner != null || routes == null) {
+                // The inner navigation's tracker follows its views.
+                return;
+            }
             VaadinTelemetryContext.setCurrentRoute(ui,
                     routes.tagFor(event.getNavigationTarget()));
+            if (afterNavigation != null) {
+                resumed = true;
+            }
         }
 
         /** Keeps tracking until a resumed navigation has shown its view. */
         void awaitResume() {
-            if (beforeEnter != null && afterNavigation == null) {
+            if (beforeEnter == null || afterNavigation != null) {
+                return;
+            }
+            try {
                 afterNavigation = ui.addAfterNavigationListener(this);
+            } catch (RuntimeException e) {
+                // Without it the tracker could never tell that the resumed
+                // navigation is over.
+                remove();
             }
         }
 
         @Override
         public void afterNavigation(AfterNavigationEvent event) {
+            if (inner != null) {
+                // Shown by the navigation running inside the resumed one.
+                return;
+            }
             // Only listened to after a postponed navigation. Its resumption
             // shows a view without a NavigationEndedEvent to update the route.
-            String shown = shownRoute(ui);
+            String shown = routes == null ? null : shownRoute(routes, ui);
             if (shown != null) {
                 VaadinTelemetryContext.setCurrentRoute(ui, shown);
             }
@@ -165,14 +215,22 @@ final class NavigationMetricsBinder {
         }
 
         void remove() {
+            if (removed) {
+                return;
+            }
+            removed = true;
             if (beforeEnter != null) {
                 beforeEnter.remove();
             }
             if (afterNavigation != null) {
                 afterNavigation.remove();
             }
+            if (outer != null && outer.inner == this) {
+                outer.inner = null;
+            }
             if (ComponentUtil.getData(ui, ROUTE_TRACKER_KEY) == this) {
-                ComponentUtil.setData(ui, ROUTE_TRACKER_KEY, null);
+                ComponentUtil.setData(ui, ROUTE_TRACKER_KEY,
+                        outer != null && !outer.removed ? outer : null);
             }
         }
     }
@@ -227,32 +285,35 @@ final class NavigationMetricsBinder {
         NavigationRouteTarget requested = requestedTarget(event);
         String route = requested == null ? null
                 : routes.tagFor(requested.getRouteTarget().getTarget());
-        // A navigation postponed earlier and never resumed has been
-        // superseded by this one.
-        if (ComponentUtil.getData(ui,
-                ROUTE_TRACKER_KEY) instanceof RouteTracker leftover) {
-            leftover.remove();
-        }
-        RouteTracker tracker = new RouteTracker(ui);
+        // Up front, before any BeforeEnterEvent listener runs: one added when
+        // the UI was initialized, like an access check looking up the user,
+        // runs before the tracker added below. A location without a view is
+        // not attributed to the view being left.
+        VaadinTelemetryContext.setCurrentRoute(ui,
+                route != null ? route : MeterNames.ROUTE_UNKNOWN);
         // Relay the UI for route resolution at request end. Unconditional:
         // the HTTP route enrichment works without tracing.
         RequestUi.mark(ui);
-        Pending started;
+        Timer.Sample sample = null;
+        Observation obs = null;
+        Observation.Scope scope = null;
         if (useObservation()) {
             // Tell the enclosing request span this UIDL request navigated.
             RequestInteraction.mark(ObservationNames.INTERACTION_NAVIGATION);
             // Always tagged with a route: the meters registered on start must
             // have the same tag keys as the ones registered on stop.
-            Observation obs = nameAfterRoute(
+            obs = nameAfterRoute(
                     Observation.createNotStarted(MeterNames.NAVIGATION,
                             observationRegistry),
                     route != null ? route : MeterNames.ROUTE_UNKNOWN).start();
-            started = new Pending(ui, requested, route, tracker, null, obs,
-                    obs.openScope());
+            scope = obs.openScope();
         } else {
-            started = new Pending(ui, requested, route, tracker,
-                    Timer.start(registry), null, null);
+            sample = Timer.start(registry);
         }
+        // Last, so nothing can fail between adding the tracker and storing
+        // the navigation that removes it.
+        Pending started = new Pending(ui, requested, route, track(ui), sample,
+                obs, scope);
         Deque<Pending> inFlight = pending.get();
         if (inFlight == null) {
             inFlight = new ArrayDeque<>();
@@ -279,7 +340,7 @@ final class NavigationMetricsBinder {
             }
             String shown = outcome instanceof NavigationEndedEvent.Completed completed
                     ? routes.tagFor(completed.navigationTarget())
-                    : shownRoute(ended.ui());
+                    : shownRoute(routes, ended.ui());
             if (shown != null) {
                 // The view the UI shows now: the requested one, the one it was
                 // redirected to, an error view, or the previous view when
@@ -315,6 +376,23 @@ final class NavigationMetricsBinder {
                         .stop();
             }
         }
+    }
+
+    /**
+     * Adds the tracker of a navigation of {@code ui} that starts now. A tracker
+     * left by a postponed navigation is removed, as this navigation supersedes
+     * it, unless this navigation runs inside its resumption.
+     */
+    private RouteTracker track(UI ui) {
+        Object leftover = ComponentUtil.getData(ui, ROUTE_TRACKER_KEY);
+        while (leftover instanceof RouteTracker tracker
+                && !tracker.hostsNavigationStartingNow()) {
+            // Removing an inner tracker brings back its outer one.
+            tracker.remove();
+            leftover = ComponentUtil.getData(ui, ROUTE_TRACKER_KEY);
+        }
+        return new RouteTracker(ui, routes,
+                leftover instanceof RouteTracker outer ? outer : null);
     }
 
     /**
@@ -373,7 +451,7 @@ final class NavigationMetricsBinder {
      * The route of the view a UI shows after a navigation that did not show the
      * requested view, or {@code null} when it cannot be resolved.
      */
-    private String shownRoute(UI ui) {
+    private static String shownRoute(RouteTagResolver routes, UI ui) {
         try {
             return routes.tagForUi(ui, null);
         } catch (RuntimeException e) {

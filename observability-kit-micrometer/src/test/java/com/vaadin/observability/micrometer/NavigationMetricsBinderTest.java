@@ -8,6 +8,9 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.io.IOException;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,9 +50,6 @@ import com.vaadin.flow.router.NavigationTrigger;
 import com.vaadin.flow.router.NotFoundException;
 import com.vaadin.flow.router.RouteParameters;
 import com.vaadin.flow.router.RouterState;
-import com.vaadin.flow.router.internal.NavigationRouteTarget;
-import com.vaadin.flow.router.internal.RouteTarget;
-import com.vaadin.flow.server.RouteRegistry;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.shared.Registration;
@@ -85,7 +85,7 @@ class NavigationMetricsBinderTest {
     private static final String SECOND = SecondView.class.getSimpleName();
     private static final String NOT_FOUND = NotFoundView.class.getSimpleName();
 
-    private static final class RecordingHandler
+    private static class RecordingHandler
             implements ObservationHandler<Observation.Context> {
 
         final List<String> names = new ArrayList<>();
@@ -159,36 +159,22 @@ class NavigationMetricsBinderTest {
      * empty).
      */
     private static UI routedUi(HasElement... shown) {
-        UI routed = Mockito.mock(UI.class, Mockito.RETURNS_DEEP_STUBS);
-        RouteRegistry routes = Mockito.mock(RouteRegistry.class);
-        Mockito.when(routes.getNavigationRouteTarget(Mockito.anyString()))
-                .thenAnswer(invocation -> {
-                    String path = invocation.getArgument(0);
-                    if (path.equals("first")) {
-                        return routeTarget(path, FirstView.class, Map.of());
-                    }
-                    if (path.equals("second")) {
-                        return routeTarget(path, SecondView.class, Map.of());
-                    }
-                    if (path.startsWith("first/")) {
-                        return routeTarget(path, FirstView.class,
-                                Map.of("id", path.substring(6)));
-                    }
-                    return new NavigationRouteTarget(path, null, Map.of());
-                });
-        Mockito.when(routed.getInternals().getRouter().getRegistry())
-                .thenReturn(routes);
+        UI routed = RoutedUis.routedUi(path -> {
+            if (path.equals("first")) {
+                return RoutedUis.routeTarget(path, FirstView.class, Map.of());
+            }
+            if (path.equals("second")) {
+                return RoutedUis.routeTarget(path, SecondView.class, Map.of());
+            }
+            if (path.startsWith("first/")) {
+                return RoutedUis.routeTarget(path, FirstView.class,
+                        Map.of("id", path.substring(6)));
+            }
+            return RoutedUis.routeTarget(path, null, Map.of());
+        });
         Mockito.when(routed.getInternals().getActiveRouterTargetsChain())
                 .thenReturn(List.of(shown));
-        Mockito.when(routed.getInternals().getRouterStateSignal().peek())
-                .thenReturn(null);
         return routed;
-    }
-
-    private static NavigationRouteTarget routeTarget(String path,
-            Class<? extends Component> view, Map<String, String> parameters) {
-        return new NavigationRouteTarget(path, new RouteTarget(view),
-                parameters);
     }
 
     /** Makes {@code target} report it shows {@code view} with an id. */
@@ -581,6 +567,9 @@ class NavigationMetricsBinderTest {
         // view, then the error view a failure or an unknown location sends
         // the navigation to.
         start(ui, "first");
+        // Already when it starts, for the BeforeEnterEvent listeners added
+        // when the UI was initialized, which run before the binder's.
+        assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
         entering(ui, FirstView.class);
         assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
         entering(ui, NotFoundView.class);
@@ -633,6 +622,129 @@ class NavigationMetricsBinderTest {
         // one navigation at a time.
         verify(tracking).remove();
         end(ui, "first", shown(FirstView.class));
+    }
+
+    @Test
+    void aLocationWithoutViewIsNotAttributedToTheViewBeingLeft() {
+        binder();
+        UI.setCurrent(ui);
+
+        navigate(ui, "first", shown(FirstView.class));
+        start(ui, "no/such/view");
+
+        assertEquals(MeterNames.ROUTE_UNKNOWN,
+                VaadinTelemetryContext.currentRoute());
+    }
+
+    @Test
+    void aNavigationStartedInsideAResumedOneKeepsItsTracker() {
+        binder();
+        UI.setCurrent(ui);
+        Registration resumedTracking = Mockito.mock(Registration.class);
+        Registration innerTracking = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(resumedTracking, innerTracking);
+
+        navigate(ui, "second", new NavigationEndedEvent.Postponed());
+        ArgumentCaptor<BeforeEnterListener> resumedEnter = ArgumentCaptor
+                .forClass(BeforeEnterListener.class);
+        verify(ui).addBeforeEnterListener(resumedEnter.capture());
+        ArgumentCaptor<AfterNavigationListener> resumedShown = ArgumentCaptor
+                .forClass(AfterNavigationListener.class);
+        verify(ui).addAfterNavigationListener(resumedShown.capture());
+
+        // proceed() enters the second view, whose BeforeEnterEvent listener
+        // navigates on its own, with navigation events of its own.
+        BeforeEnterEvent enteringSecond = Mockito.mock(BeforeEnterEvent.class);
+        Mockito.doReturn(SecondView.class).when(enteringSecond)
+                .getNavigationTarget();
+        resumedEnter.getValue().beforeEnter(enteringSecond);
+        start(ui, "first");
+        verify(resumedTracking, never()).remove();
+        // The inner navigation's views are its own tracker's: Flow fires the
+        // UI's listeners, the resumed tracker's included, for them too.
+        BeforeEnterEvent enteringFirst = Mockito.mock(BeforeEnterEvent.class);
+        Mockito.doReturn(FirstView.class).when(enteringFirst)
+                .getNavigationTarget();
+        resumedEnter.getValue().beforeEnter(enteringFirst);
+        resumedShown.getValue()
+                .afterNavigation(Mockito.mock(AfterNavigationEvent.class));
+        end(ui, "first", shown(FirstView.class));
+        verify(innerTracking).remove();
+        verify(resumedTracking, never()).remove();
+
+        // The resumed navigation then shows its view.
+        Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.of(new SecondView()));
+        resumedShown.getValue()
+                .afterNavigation(Mockito.mock(AfterNavigationEvent.class));
+        assertEquals(SECOND, VaadinTelemetryContext.currentRoute());
+        verify(resumedTracking).remove();
+    }
+
+    @Test
+    void aTrackerThatCannotAwaitTheResumptionIsRemoved() {
+        binder();
+        Registration tracking = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(tracking);
+        Mockito.when(ui.addAfterNavigationListener(Mockito.any()))
+                .thenThrow(new IllegalStateException("boom"));
+
+        navigate(ui, "second", new NavigationEndedEvent.Postponed());
+
+        verify(tracking).remove();
+    }
+
+    @Test
+    void aNavigationThatFailsToStartAddsNoTracker() {
+        ObservationRegistry obs = ObservationRegistry.create();
+        obs.observationConfig().observationHandler(new RecordingHandler() {
+            @Override
+            public void onStart(Observation.Context ctx) {
+                throw new IllegalStateException("boom");
+            }
+        });
+        tracingBinder(obs);
+
+        start(ui, "first");
+
+        verify(ui, never()).addBeforeEnterListener(Mockito.any());
+    }
+
+    @Test
+    void aPostponedNavigationsTrackerSerializesWithoutTheBinder()
+            throws IOException {
+        binder();
+
+        navigate(ui, "second", new NavigationEndedEvent.Postponed());
+        ArgumentCaptor<BeforeEnterListener> tracker = ArgumentCaptor
+                .forClass(BeforeEnterListener.class);
+        verify(ui).addBeforeEnterListener(tracker.capture());
+
+        // It stays on the UI until the navigation is resumed, so it is
+        // serialized with the session. The mocks stand in for the UI and
+        // the listener registrations, which Flow serializes itself.
+        List<Object> written = new ArrayList<>();
+        try (ObjectOutputStream out = new ObjectOutputStream(
+                OutputStream.nullOutputStream()) {
+            {
+                enableReplaceObject(true);
+            }
+
+            @Override
+            protected Object replaceObject(Object obj) {
+                written.add(obj);
+                return Mockito.mockingDetails(obj).isMock() ? "mock" : obj;
+            }
+        }) {
+            out.writeObject(tracker.getValue());
+        }
+        assertTrue(
+                written.stream()
+                        .noneMatch(obj -> obj instanceof NavigationMetricsBinder
+                                || obj instanceof RouteTagResolver),
+                "the binder and its resolver stay out of the session");
     }
 
     @Test
