@@ -43,6 +43,15 @@ public final class VaadinTelemetryContext {
     }
 
     /**
+     * The route recorded for {@code ui}, or {@code null} when none has been.
+     */
+    static String currentRoute(UI ui) {
+        return ComponentUtil.getData(ui, CURRENT_ROUTE_KEY) instanceof String r
+                ? r
+                : null;
+    }
+
+    /**
      * Returns the route template of the view bound to the current thread, or
      * {@link MeterNames#ROUTE_UNKNOWN} when there is no current UI or no
      * navigation has been recorded yet.

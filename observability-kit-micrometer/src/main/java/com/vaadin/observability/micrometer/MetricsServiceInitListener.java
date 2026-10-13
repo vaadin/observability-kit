@@ -283,9 +283,14 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
         }
 
         if (settings.isNavigation()) {
-            new NavigationMetricsBinder(registry, observationRegistry, settings,
-                    new RouteTagResolver(settings.getRouteCardinalityLimit()))
-                    .register(service.getEventBus());
+            NavigationMetricsBinder navigation = new NavigationMetricsBinder(
+                    registry, observationRegistry, settings,
+                    new RouteTagResolver(settings.getRouteCardinalityLimit()));
+            navigation.register(service.getEventBus());
+            // Track the route from the start, so the tracker's listeners come
+            // before as many of the UI's own listeners as possible.
+            service.addUIInitListener(
+                    uiInit -> navigation.track(uiInit.getUI()));
         }
 
         // One counter for vaadin.errors, shared by its two writers: the request

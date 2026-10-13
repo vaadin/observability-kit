@@ -85,9 +85,10 @@ class MetricsServiceInitListenerLicenseTest {
             new MetricsServiceInitListener().serviceInit(event);
         }
 
-        // Two UI init listeners: the UiMetricsBinder and the ErrorMetricsBinder
-        // (which re-instruments the session error handler).
-        verify(service, times(2)).addUIInitListener(any(UIInitListener.class));
+        // Three UI init listeners: the UiMetricsBinder, the ErrorMetricsBinder
+        // (which re-instruments the session error handler) and the navigation
+        // route tracker.
+        verify(service, times(3)).addUIInitListener(any(UIInitListener.class));
         // One request interceptor: request timing and errors.
         verify(event).addVaadinRequestInterceptor(
                 any(VaadinRequestInterceptor.class));
@@ -107,8 +108,8 @@ class MetricsServiceInitListenerLicenseTest {
             licenseChecker.verifyNoInteractions();
         }
 
-        // The UiMetricsBinder and the ErrorMetricsBinder.
-        verify(service, times(2)).addUIInitListener(any(UIInitListener.class));
+        // The UiMetricsBinder, the ErrorMetricsBinder and the route tracker.
+        verify(service, times(3)).addUIInitListener(any(UIInitListener.class));
     }
 
     @Test
