@@ -23,6 +23,7 @@ import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.AfterNavigationListener;
 import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.BeforeEnterListener;
+import com.vaadin.flow.router.ListenerPriority;
 import com.vaadin.flow.router.NavigationEndedEvent;
 import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.RouteParameters;
@@ -72,7 +73,8 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * </ul>
  * <p>
  * {@link VaadinTelemetryContext} names the view whose code runs: the view being
- * left until the navigation enters another one, then each view it enters; see
+ * left while its {@code BeforeLeaveEvent} listeners run, then each view the
+ * navigation enters, from its first {@code BeforeEnterEvent} listener on; see
  * {@link RouteTracker}.
  * <p>
  * Both paths publish {@link MeterNames#NAVIGATION} with the same tag keys:
@@ -117,21 +119,28 @@ final class NavigationMetricsBinder {
      * before, like an autosave, are still attributed to the view being left.
      * The {@code AfterNavigationEvent} listener settles on the view shown.
      * <p>
-     * One per UI, added when the UI is initialized or at the latest when it
-     * first navigates, and kept for the life of the UI. So it also follows a
-     * postponed navigation resumed with {@code proceed()}, which fires no
-     * navigation events, and any navigation started from inside another one. A
-     * {@code BeforeEnterEvent} listener added to the UI before it, such as an
-     * access check added when the UI is initialized, still runs while the
-     * context names the view being left.
+     * It is annotated with the highest {@link ListenerPriority}, so Flow runs
+     * it before every other {@code BeforeEnterEvent} listener of the UI, in
+     * whatever order they were added. A listener such as an access check that
+     * looks up the user is then attributed to the view being entered, while the
+     * view being left keeps its {@code BeforeLeaveEvent} listeners, which run
+     * before any of them.
+     * <p>
+     * One per UI, added when the UI first navigates and kept for the life of
+     * the UI. So it also follows a postponed navigation resumed with
+     * {@code proceed()}, which fires no navigation events, and any navigation
+     * started from inside another one.
      * <p>
      * Static and {@link java.io.Serializable}, as the UI listeners it is
      * registered as are, so it is serialized with the session without the
      * binder. The resolver is not carried along: a deserialized tracker does
      * nothing, and is replaced when its UI next navigates.
      */
+    @ListenerPriority(Integer.MAX_VALUE)
     private static final class RouteTracker
             implements BeforeEnterListener, AfterNavigationListener {
+
+        private static final long serialVersionUID = 1L;
 
         private final UI ui;
         private final transient RouteTagResolver routes;
@@ -325,14 +334,16 @@ final class NavigationMetricsBinder {
 
     /**
      * Adds the {@link RouteTracker} of {@code ui}, unless it has a working one
-     * already. Best-effort enrichment of a measurement, so it never throws: a
-     * tracker that could not be added, e.g. without the session lock that
-     * adding a listener requires, is tried again on the UI's next navigation.
+     * already. Called when a navigation starts, before Flow collects the UI's
+     * listeners for it. Best-effort enrichment of a measurement, so it never
+     * throws: a tracker that could not be added, e.g. without the session lock
+     * that adding a listener requires, is tried again on the UI's next
+     * navigation.
      *
      * @param ui
      *            the UI to track
      */
-    void track(UI ui) {
+    private void track(UI ui) {
         try {
             if (ComponentUtil.getData(ui,
                     ROUTE_TRACKER_KEY) instanceof RouteTracker existing) {

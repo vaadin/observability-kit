@@ -50,8 +50,10 @@ import com.vaadin.flow.router.NavigationTrigger;
 import com.vaadin.flow.router.NotFoundException;
 import com.vaadin.flow.router.RouteParameters;
 import com.vaadin.flow.router.RouterState;
+import com.vaadin.flow.router.internal.BeforeEnterHandler;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
+import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
@@ -617,6 +619,30 @@ class NavigationMetricsBinderTest {
     }
 
     @Test
+    void theTrackerRunsBeforeTheBeforeEnterListenersAddedBeforeIt() {
+        binder();
+        // A real UI, so that Flow orders its listeners. The mocked session
+        // only stands in for the lock that adding a listener checks.
+        UI real = new UI();
+        real.getInternals().setSession(Mockito.mock(VaadinSession.class));
+        UI.setCurrent(real);
+        List<String> seenByAccessCheck = new ArrayList<>();
+        // Like an access check added when the UI was initialized.
+        real.addBeforeEnterListener(event -> seenByAccessCheck
+                .add(VaadinTelemetryContext.currentRoute()));
+
+        start(real, "first");
+        BeforeEnterEvent entering = Mockito.mock(BeforeEnterEvent.class);
+        Mockito.doReturn(FirstView.class).when(entering).getNavigationTarget();
+        // What Flow does when the navigation enters the view.
+        real.getNavigationListeners(BeforeEnterHandler.class)
+                .forEach(listener -> listener.beforeEnter(entering));
+        end(real, "first", new NavigationEndedEvent.NotShown());
+
+        assertEquals(List.of(FIRST), seenByAccessCheck);
+    }
+
+    @Test
     void telemetryContextFollowsAPostponedNavigationWhenItIsResumed() {
         binder();
         UI.setCurrent(ui);
@@ -635,11 +661,10 @@ class NavigationMetricsBinderTest {
 
     @Test
     void eachUiGetsOneTrackerForAllItsNavigations() {
-        NavigationMetricsBinder binder = binder();
+        binder();
 
-        // Added when the UI is initialized, and kept: postponed, resumed and
+        // Added when the UI first navigates, and kept: postponed, resumed and
         // nested navigations all run with the same listeners.
-        binder.track(ui);
         navigate(ui, "first", new NavigationEndedEvent.Postponed());
         start(ui, "second");
         navigate(ui, "first", shown(FirstView.class));
