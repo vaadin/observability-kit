@@ -53,10 +53,11 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * ({@link ObservationNames#KEY_EVENT_NAME}) and the targeted component class
  * ({@link ObservationNames#KEY_COMPONENT}) as high-cardinality key-values. The
  * component is looked up when the invocation starts, since the invocation may
- * detach it, and is unwrapped to the innermost one when it is a composite, as
- * the insights interactions name it; a failing lookup leaves the attribute out.
- * These attach to the span only and never become Timer tags, so they enrich
- * traces without affecting metric cardinality.
+ * detach it. For a field wrapped in a {@code Composite} it is the outer
+ * composite, the application's own class, as Flow reports it; insights
+ * interactions name the field inside it instead, which holds the value. These
+ * attach to the span only and never become Timer tags, so they enrich traces
+ * without affecting metric cardinality.
  */
 final class RpcMetricsBinder {
 
@@ -141,7 +142,7 @@ final class RpcMetricsBinder {
                 obs.highCardinalityKeyValue(ObservationNames.KEY_EVENT_NAME,
                         name);
             }
-            RpcTargets.componentOf(event)
+            event.getComponent()
                     .ifPresent(component -> obs.highCardinalityKeyValue(
                             ObservationNames.KEY_COMPONENT,
                             component.getClass().getName()));

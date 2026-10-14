@@ -16,6 +16,8 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.ComponentUtil;
+import com.vaadin.flow.component.Composite;
 import com.vaadin.flow.component.HasElement;
 import com.vaadin.flow.component.PollEvent;
 import com.vaadin.flow.component.UI;
@@ -28,7 +30,6 @@ import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.ObservabilitySettings;
 import com.vaadin.observability.micrometer.RouteTagResolver;
-import com.vaadin.observability.micrometer.RpcTargets;
 import com.vaadin.observability.micrometer.client.MetricsCollectorElement;
 
 /**
@@ -178,13 +179,32 @@ public class InteractionCollector {
         // Defensively clear stale state left by an invocation whose
         // invocationEnded was skipped (e.g. mid-request server shutdown).
         errored.remove();
-        Component component = RpcTargets.componentOf(event).orElse(null);
+        Component component = componentOf(event);
         target.set(component);
         // What the field held before this invocation ran, which is how the
         // invocations that change one are told from the ones that do not.
         valueAtStart.set(
                 screenDetail ? ComponentCaptions.valueOf(component) : null);
         startNanos.set(System.nanoTime());
+    }
+
+    /**
+     * The component the invocation targets, unwrapped to the innermost one when
+     * it is a {@code Composite}: the composite itself has no caption and holds
+     * no value, while the field it wraps does.
+     */
+    private static Component componentOf(AbstractRpcInvocationEvent event) {
+        try {
+            return event.getComponent()
+                    .map(component -> component instanceof Composite<?> c
+                            ? ComponentUtil.getInnermostComponent(c)
+                            : component)
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            // Resolution is best-effort enrichment; an interaction whose
+            // target cannot be resolved is still captured, without it.
+            return null;
+        }
     }
 
     /**

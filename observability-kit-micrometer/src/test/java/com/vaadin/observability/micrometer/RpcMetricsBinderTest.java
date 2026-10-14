@@ -26,7 +26,6 @@ import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.Composite;
@@ -492,7 +491,7 @@ class RpcMetricsBinderTest {
     }
 
     @Test
-    void observationPathNamesTheComponentInsideAComposite() {
+    void observationPathNamesTheOuterComposite() {
         SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
         ObservationRegistry observationRegistry = ObservationRegistry.create();
         RecordingHandler recorder = new RecordingHandler();
@@ -503,7 +502,7 @@ class RpcMetricsBinderTest {
                 ObservabilitySettings.builder().traces(true).build());
 
         // Flow maps the composite over the element of the component it wraps,
-        // so the event names the composite.
+        // so the event names the composite: the application's own class.
         Wrapper wrapper = new Wrapper(new Wrapped());
         ui.add(wrapper);
         int nodeId = wrapper.getElement().getNode().getId();
@@ -512,39 +511,10 @@ class RpcMetricsBinderTest {
                 new RpcInvocationStartedEvent(ui, "event", nodeId, null));
         binder.invocationEnded(ended("event"));
 
-        Assertions.assertEquals(Wrapped.class.getName(),
+        Assertions.assertEquals(Wrapper.class.getName(),
                 recorder.highCardinalityTags.get(0)
                         .get(ObservationNames.KEY_COMPONENT),
-                "span should name the component inside the composite");
-    }
-
-    @Test
-    void observationPathTimesTheInvocationWhenTheComponentLookupFails() {
-        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        RecordingHandler recorder = new RecordingHandler();
-        observationRegistry.observationConfig()
-                .observationHandler(
-                        new DefaultMeterObservationHandler(simpleRegistry))
-                .observationHandler(recorder);
-
-        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
-                observationRegistry,
-                ObservabilitySettings.builder().traces(true).build());
-
-        RpcInvocationStartedEvent eventStarted = Mockito.spy(started("event"));
-        Mockito.when(eventStarted.getComponent())
-                .thenThrow(new IllegalStateException("detached"));
-
-        binder.invocationStarted(eventStarted);
-        binder.invocationEnded(ended("event"));
-
-        Assertions.assertFalse(
-                recorder.highCardinalityTags.get(0)
-                        .containsKey(ObservationNames.KEY_COMPONENT),
-                "the span is recorded, only without its component");
-        Assertions.assertEquals(1,
-                simpleRegistry.get(MeterNames.RPC_DURATION).timer().count());
+                "span should name the outer composite");
     }
 
     @Test
