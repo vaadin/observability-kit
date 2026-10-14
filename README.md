@@ -476,7 +476,9 @@ Every request Vaadin handles is classified, and the class becomes the
 on, the `vaadin.request.<type>` span name and the request type lifted into the
 framework's own HTTP observation. The type comes from the Flow request handler
 that handled the request, and from the request's URL and headers when the
-handler does not tell (no handler handled it, or it is not one of Flow's own).
+handler does not tell: no handler handled it, or the handler is not one of the
+uidl, heartbeat, stream or bootstrap handlers (an application's own, or one of
+Flow's others, such as the push or PWA handler).
 The types differ so much in what they do that one average across all of them
 means nothing:
 
@@ -494,7 +496,7 @@ A page load is a request Flow answers with `index.html`, whether a browser, an
 uptime check, a crawler or a `fetch()` (the service worker caching the page,
 say) sent it: each one costs the server a page load. Flow does not answer a
 request the browser marks as a script, style, image or similar resource with
-`index.html`. When no Flow handler handled the request, a page load is
+`index.html`. When the handler does not tell the type, a page load is
 recognised from the browser's `Sec-Fetch-Dest` header (falling back to an
 `Accept` header that asks for `text/html` first, for browsers old enough not to
 send it), so a `fetch()` to an application endpoint that happens to sit under
