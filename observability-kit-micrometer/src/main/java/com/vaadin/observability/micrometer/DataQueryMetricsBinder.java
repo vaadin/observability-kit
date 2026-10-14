@@ -49,9 +49,11 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  * summaries are tagged by route, whose cardinality is already bounded by
  * {@link RouteTagResolver}.
  * <p>
- * Timers record the duration Flow measured for the query and reports on its
- * ended event, so no timing state is kept here. When tracing is on, the query's
- * observation is held from its started event to its ended event.
+ * With tracing off, or when the query's observation is a no-op, the timers
+ * record the duration Flow measured for the query and reports on its ended
+ * event, so no timing state is kept here. With tracing on, the timers come from
+ * the query's observation, which is started on its started event, held until
+ * its ended event and stopped there, so they measure the time between the two.
  * <p>
  * <b>Threading.</b> The events of one query arrive on the same thread, so the
  * in-flight observation is kept in thread locals. That thread is the request

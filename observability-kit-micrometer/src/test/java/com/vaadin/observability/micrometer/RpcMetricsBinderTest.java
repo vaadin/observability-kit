@@ -26,8 +26,10 @@ import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
+import com.vaadin.flow.component.Composite;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.dom.ElementFactory;
@@ -465,6 +467,84 @@ class RpcMetricsBinderTest {
                 recorder.tags.get(0)
                         .containsKey(ObservationNames.KEY_COMPONENT),
                 "component class must not be a low-cardinality Timer tag");
+    }
+
+    /**
+     * A component wrapped in a composite, the way applications build fields.
+     */
+    private static class Wrapper extends Composite<Component> {
+        private final Component content;
+
+        Wrapper(Component content) {
+            this.content = content;
+        }
+
+        @Override
+        protected Component initContent() {
+            return content;
+        }
+    }
+
+    private static class Wrapped extends Component {
+        Wrapped() {
+            super(ElementFactory.createDiv());
+        }
+    }
+
+    @Test
+    void observationPathNamesTheComponentInsideAComposite() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig().observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        // Flow maps the composite over the element of the component it wraps,
+        // so the event names the composite.
+        Wrapper wrapper = new Wrapper(new Wrapped());
+        ui.add(wrapper);
+        int nodeId = wrapper.getElement().getNode().getId();
+
+        binder.invocationStarted(
+                new RpcInvocationStartedEvent(ui, "event", nodeId, null));
+        binder.invocationEnded(ended("event"));
+
+        Assertions.assertEquals(Wrapped.class.getName(),
+                recorder.highCardinalityTags.get(0)
+                        .get(ObservationNames.KEY_COMPONENT),
+                "span should name the component inside the composite");
+    }
+
+    @Test
+    void observationPathTimesTheInvocationWhenTheComponentLookupFails() {
+        SimpleMeterRegistry simpleRegistry = new SimpleMeterRegistry();
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        observationRegistry.observationConfig()
+                .observationHandler(
+                        new DefaultMeterObservationHandler(simpleRegistry))
+                .observationHandler(recorder);
+
+        RpcMetricsBinder binder = new RpcMetricsBinder(simpleRegistry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
+
+        RpcInvocationStartedEvent eventStarted = Mockito.spy(started("event"));
+        Mockito.when(eventStarted.getComponent())
+                .thenThrow(new IllegalStateException("detached"));
+
+        binder.invocationStarted(eventStarted);
+        binder.invocationEnded(ended("event"));
+
+        Assertions.assertFalse(
+                recorder.highCardinalityTags.get(0)
+                        .containsKey(ObservationNames.KEY_COMPONENT),
+                "the span is recorded, only without its component");
+        Assertions.assertEquals(1,
+                simpleRegistry.get(MeterNames.RPC_DURATION).timer().count());
     }
 
     @Test
