@@ -417,7 +417,13 @@ final class RequestMetricsBinder {
             // reports it here, and ErrorMetricsBinder counts it there. One the
             // decorated handler never saw — there was no session to route it
             // to — is counted here instead.
-            errors.increment(failure, null);
+            try {
+                errors.increment(failure, null);
+            } catch (RuntimeException e) {
+                // The cleanup below must still run, or the scope stays current
+                // on the pooled thread and the observation is never stopped.
+                LOGGER.debug("Could not count a request failure.", e);
+            }
         }
         // Let DI integrations (Spring/Boot) lift the Vaadin type into the
         // framework HTTP observation, which reads it when it stops, after this

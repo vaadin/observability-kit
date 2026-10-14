@@ -17,8 +17,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import io.micrometer.common.KeyValue;
+import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.config.MeterFilter;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.Observation;
@@ -706,6 +708,44 @@ class RequestMetricsBinderObservationTest {
                 recorder.names, "the request observation must be stopped");
         Assertions.assertEquals(List.of(MeterNames.REQUEST_DURATION),
                 recorder.scopesClosed, "and its scope closed");
+        Assertions.assertNull(obs.getCurrentObservation());
+    }
+
+    @Test
+    void aFailingErrorCountDoesNotLeaveTheRequestObservationOpen() {
+        // Counting a failure no session error handler saw runs before the
+        // binder closes its scope and stops its observation; a registry that
+        // rejects the error counter must not leave either behind.
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        registry.config().meterFilter(new MeterFilter() {
+            @Override
+            public Meter.Id map(Meter.Id id) {
+                if (MeterNames.ERRORS.equals(id.getName())) {
+                    throw new IllegalStateException("meter rejected");
+                }
+                return id;
+            }
+        });
+        ObservationRegistry obs = ObservationRegistry.create();
+        RecordingHandler recorder = new RecordingHandler();
+        obs.observationConfig().observationHandler(recorder);
+
+        RequestMetricsBinder binder = new RequestMetricsBinder(registry, obs,
+                ObservabilitySettings.builder().build(), null);
+
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse resp = Mockito.mock(VaadinResponse.class);
+        VaadinSession session = Mockito.mock(VaadinSession.class);
+
+        RequestEvents.start(binder, req, resp);
+        Assertions.assertDoesNotThrow(() -> RequestEvents.end(binder, req, resp,
+                session, null, new IllegalStateException("failed")));
+
+        Assertions.assertEquals(List.of(MeterNames.REQUEST_DURATION),
+                recorder.names, "the request observation must be stopped");
+        Assertions.assertEquals(List.of(MeterNames.REQUEST_DURATION),
+                recorder.scopesClosed, "and its scope closed");
+        Assertions.assertTrue(recorder.errored.get());
         Assertions.assertNull(obs.getCurrentObservation());
     }
 
