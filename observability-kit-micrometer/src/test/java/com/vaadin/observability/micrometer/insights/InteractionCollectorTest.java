@@ -22,6 +22,7 @@ import org.mockito.Mockito;
 import com.vaadin.flow.component.AbstractSinglePropertyField;
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.ComponentUtil;
+import com.vaadin.flow.component.Composite;
 import com.vaadin.flow.component.HasText;
 import com.vaadin.flow.component.PollEvent;
 import com.vaadin.flow.component.Tag;
@@ -725,6 +726,57 @@ class InteractionCollectorTest {
         List<ComponentState> state = buffer.snapshot().get(0).viewState();
         Assertions.assertEquals(1, state.size(), "got: " + state);
         Assertions.assertEquals("Order number", state.get(0).caption());
+    }
+
+    /** A field wrapped in a composite, the way applications build their own. */
+    private static class WrappedField extends Composite<KeyedField> {
+        private final KeyedField field;
+
+        WrappedField(KeyedField field) {
+            this.field = field;
+        }
+
+        @Override
+        protected KeyedField initContent() {
+            return field;
+        }
+    }
+
+    @Test
+    void aFieldWrappedInACompositeIsTheFieldTheUserSet() {
+        // Flow maps a composite over the element of the field it wraps, so an
+        // invocation at that element names the composite, which has neither a
+        // caption nor a value. The field inside it is what the user typed in.
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), DEVELOPMENT);
+        UI ui = new UI();
+        KeyedField email = new KeyedField("Email", Map.of("k", "a@b.c"));
+        WrappedField wrapped = new WrappedField(email);
+        TextComponent send = new TextComponent("Send");
+        ui.add(new Container(wrapped, send));
+
+        email.select("k");
+        succeedQuietly(collector, targetOf(ui, wrapped, "mSync", "value"));
+
+        fail(collector, targetOf(ui, send, "event", "click"));
+
+        List<ComponentState> state = buffer.snapshot().get(0).viewState();
+        Assertions.assertEquals(1, state.size(), "got: " + state);
+        Assertions.assertEquals("Email", state.get(0).caption());
+    }
+
+    @Test
+    void aTargetThatCannotBeResolvedStillCapturesTheFailure() {
+        InteractionCollector collector = new InteractionCollector(buffer,
+                settings(true, true), PRODUCTION);
+        Target target = target();
+        Mockito.when(target.started().getComponent())
+                .thenThrow(new IllegalStateException("detached"));
+
+        fail(collector, target);
+
+        Assertions.assertEquals(1, buffer.snapshot().size(),
+                "the failure is captured, only without its component");
     }
 
     @Test
