@@ -88,9 +88,9 @@ class MetricsServiceInitListenerLicenseTest {
         // Two UI init listeners: the UiMetricsBinder and the ErrorMetricsBinder
         // (which re-instruments the session error handler).
         verify(service, times(2)).addUIInitListener(any(UIInitListener.class));
-        // Two request interceptors: request timing/errors, and the navigation
-        // binder closing out navigations that never complete.
-        verify(event, times(2)).addVaadinRequestInterceptor(
+        // The request interceptor of the navigation binder, closing out
+        // navigations that never complete.
+        verify(event, times(1)).addVaadinRequestInterceptor(
                 any(VaadinRequestInterceptor.class));
         // Cleared, or the Copilot panel would keep asking for a license
         Assertions.assertTrue(ObservabilityKit.isLicensePresent());

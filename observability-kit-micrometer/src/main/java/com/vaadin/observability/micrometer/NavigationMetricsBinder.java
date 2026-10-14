@@ -243,8 +243,8 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // Also drain the UI relay: this interceptor is registered whenever
         // navigation is on, so stale entries are cleared on request threads
         // even when RequestMetricsBinder is not registered. Cleared only at
-        // request start — requestEnd here runs before RequestMetricsBinder's,
-        // which still needs the value for route resolution.
+        // request start — RequestMetricsBinder consumes the value at request
+        // end for route resolution.
         RequestUi.clear();
     }
 
@@ -263,11 +263,9 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         // the chain). It has to be unwound here, on the thread that opened the
         // scope, before the thread is recycled.
         //
-        // This interceptor is registered after RequestMetricsBinder so that
-        // Flow, which runs interceptors in reverse registration order, calls
-        // this method first: the navigation scope has to close while the
-        // enclosing request scope is still open, or closing it would restore
-        // the already stopped request observation onto the thread.
+        // Flow fires the request ended event before it calls this method, so
+        // RequestMetricsBinder has usually unwound the navigation scope along
+        // with its own by now; finish then leaves the scope alone.
         inRequest.remove();
         Set<WeakReference<UI>> marked = pendingUis.get();
         if (marked == null) {
@@ -347,10 +345,13 @@ final class NavigationMetricsBinder implements BeforeEnterListener,
         }
         // A scope may only be closed on the thread that opened it; doing it
         // from another thread would restore that thread's observation onto
-        // this one. Leftovers from a dead request are dropped instead.
+        // this one. Leftovers from a dead request are dropped instead. Nor
+        // may it be closed twice: one the enclosing request already unwound
+        // would put the stopped request observation back as current.
         if (pending.scope() != null
                 && pending.thread() == Thread.currentThread()) {
-            pending.scope().close();
+            ObservationScopes.closeWithNested(observationRegistry,
+                    pending.scope());
         }
         if (pending.observation() != null) {
             pending.observation().lowCardinalityKeyValue(

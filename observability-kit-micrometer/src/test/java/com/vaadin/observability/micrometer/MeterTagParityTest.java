@@ -99,11 +99,8 @@ class MeterTagParityTest {
         VaadinResponse response = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(request, response);
-        if (failure != null) {
-            binder.handleException(request, response, session, failure);
-        }
-        binder.requestEnd(request, response, session);
+        RequestEvents.start(binder, request, response);
+        RequestEvents.end(binder, request, response, session, null, failure);
 
         return tags(registry, MeterNames.REQUEST_DURATION);
     }

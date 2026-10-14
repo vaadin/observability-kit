@@ -15,9 +15,8 @@ package com.vaadin.observability.micrometer;
  * <p>
  * UIDL processing is synchronous on the request thread, so a value set by a
  * poll listener or navigation listener during request handling is visible to
- * the interceptor's {@code requestEnd} on the same thread. The interceptor
- * clears the slot at {@code requestStart} and consumes it at
- * {@code requestEnd}.
+ * the binder at the end of the request on the same thread. The binder clears
+ * the slot when the request starts and consumes it when the request ends.
  */
 final class RequestInteraction {
 
