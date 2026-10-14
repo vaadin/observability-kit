@@ -8,6 +8,7 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -34,7 +35,6 @@ import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
 import com.vaadin.flow.server.communication.RpcInvocationEndedEvent;
-import com.vaadin.flow.server.communication.RpcInvocationFailedEvent;
 import com.vaadin.flow.server.communication.RpcInvocationStartedEvent;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
@@ -150,22 +150,11 @@ class MeterTagParityTest {
                 traces ? meterProducingObservations(registry) : null,
                 ObservabilitySettings.builder().traces(traces).build());
 
-        RpcInvocationStartedEvent started = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(started.getType()).thenReturn("event");
-        Mockito.when(started.getNodeId()).thenReturn(-1);
-        RpcInvocationEndedEvent ended = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(ended.getType()).thenReturn("event");
-
-        binder.invocationStarted(started);
-        if (failure != null) {
-            RpcInvocationFailedEvent failed = Mockito
-                    .mock(RpcInvocationFailedEvent.class);
-            Mockito.when(failed.getError()).thenReturn(failure);
-            binder.invocationFailed(failed);
-        }
-        binder.invocationEnded(ended);
+        UI ui = new UI();
+        binder.invocationStarted(
+                new RpcInvocationStartedEvent(ui, "event", -1, null));
+        binder.invocationEnded(new RpcInvocationEndedEvent(ui, "event", -1,
+                null, Duration.ofMillis(1), failure));
 
         return tags(registry, MeterNames.RPC_DURATION);
     }
