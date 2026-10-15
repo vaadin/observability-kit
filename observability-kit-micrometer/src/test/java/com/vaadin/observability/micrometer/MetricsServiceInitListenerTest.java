@@ -8,14 +8,17 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
@@ -23,14 +26,15 @@ import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.NavigationEndedEvent;
 import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.server.ErrorHandler;
+import com.vaadin.flow.server.RequestEndedEvent;
+import com.vaadin.flow.server.RequestStartedEvent;
 import com.vaadin.flow.server.ServiceDestroyEvent;
 import com.vaadin.flow.server.ServiceDestroyListener;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
-import com.vaadin.flow.server.SessionLockRequestedEvent;
+import com.vaadin.flow.server.SessionLockAcquiredEvent;
 import com.vaadin.flow.server.UIInitListener;
-import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.VaadinSession;
@@ -47,7 +51,6 @@ import com.vaadin.observability.micrometer.insights.RecentInteractions;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
-import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -77,18 +80,6 @@ class MetricsServiceInitListenerTest {
         return service;
     }
 
-    /**
-     * Counts the registered interceptors of the given type, matching on the
-     * concrete type instead of the plain invocation count.
-     */
-    private static long interceptorsOfType(ServiceInitEvent event,
-            Class<? extends VaadinRequestInterceptor> type) {
-        ArgumentCaptor<VaadinRequestInterceptor> captor = ArgumentCaptor
-                .forClass(VaadinRequestInterceptor.class);
-        verify(event, atLeast(0)).addVaadinRequestInterceptor(captor.capture());
-        return captor.getAllValues().stream().filter(type::isInstance).count();
-    }
-
     @Test
     void registersSessionBinderWhenSessionsEnabled() {
         ObservabilityKit.install(new SimpleMeterRegistry(),
@@ -107,7 +98,7 @@ class MetricsServiceInitListenerTest {
                 .addSessionDestroyListener(any(SessionDestroyListener.class));
         Assertions.assertEquals(1,
                 service.getEventBus()
-                        .getListeners(SessionLockRequestedEvent.class).size(),
+                        .getListeners(SessionLockAcquiredEvent.class).size(),
                 "sessions enabled should subscribe the session lock binder");
     }
 
@@ -182,8 +173,9 @@ class MetricsServiceInitListenerTest {
                         .noneMatch(l -> l instanceof SessionMetricsBinder),
                 "sessions disabled should not register the SessionMetricsBinder");
         verify(service, never()).addSessionDestroyListener(any());
-        Assertions.assertTrue(service.getEventBus()
-                .getListeners(SessionLockRequestedEvent.class).isEmpty(),
+        Assertions.assertTrue(
+                service.getEventBus()
+                        .getListeners(SessionLockAcquiredEvent.class).isEmpty(),
                 "sessions disabled should not subscribe the lock binder");
     }
 
@@ -326,45 +318,25 @@ class MetricsServiceInitListenerTest {
                 "client metrics enabled should register the UiMetricsBinder");
     }
 
-    @Test
-    void registersRequestInterceptorWhenRequestsEnabled() {
+    @ParameterizedTest
+    @CsvSource({ "true, true, 1", "false, true, 1", "true, false, 1",
+            "false, false, 0" })
+    void subscribesRequestBinderWhenRequestsOrErrorsEnabled(boolean requests,
+            boolean errors, int expected) {
         ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().build());
+                ObservabilitySettings.builder().requests(requests)
+                        .errors(errors).build());
         VaadinService service = licensedService();
         ServiceInitEvent event = mock(ServiceInitEvent.class);
         when(event.getSource()).thenReturn(service);
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        assertEquals(1, interceptorsOfType(event, RequestMetricsBinder.class));
-    }
-
-    @Test
-    void registersRequestInterceptorWhenOnlyErrorsEnabled() {
-        ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().requests(false).errors(true)
-                        .build());
-        VaadinService service = licensedService();
-        ServiceInitEvent event = mock(ServiceInitEvent.class);
-        when(event.getSource()).thenReturn(service);
-
-        new MetricsServiceInitListener().serviceInit(event);
-
-        assertEquals(1, interceptorsOfType(event, RequestMetricsBinder.class));
-    }
-
-    @Test
-    void skipsRequestInterceptorWhenRequestsAndErrorsDisabled() {
-        ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().requests(false).errors(false)
-                        .build());
-        VaadinService service = licensedService();
-        ServiceInitEvent event = mock(ServiceInitEvent.class);
-        when(event.getSource()).thenReturn(service);
-
-        new MetricsServiceInitListener().serviceInit(event);
-
-        assertEquals(0, interceptorsOfType(event, RequestMetricsBinder.class));
+        VaadinServiceEventBus bus = service.getEventBus();
+        assertEquals(expected,
+                bus.getListeners(RequestStartedEvent.class).size());
+        assertEquals(expected,
+                bus.getListeners(RequestEndedEvent.class).size());
     }
 
     @ParameterizedTest
@@ -567,11 +539,16 @@ class MetricsServiceInitListenerTest {
         UI ui = mock(UI.class, RETURNS_DEEP_STUBS);
         VaadinServiceEventBus bus = service.getEventBus();
         bus.fireEvent(rpcEvent(RpcInvocationStartedEvent.class, ui));
+        IllegalStateException error = new IllegalStateException("boom");
         RpcInvocationFailedEvent failed = rpcEvent(
                 RpcInvocationFailedEvent.class, ui);
-        when(failed.getError()).thenReturn(new IllegalStateException("boom"));
+        when(failed.getError()).thenReturn(error);
         bus.fireEvent(failed);
-        bus.fireEvent(rpcEvent(RpcInvocationEndedEvent.class, ui));
+        RpcInvocationEndedEvent ended = rpcEvent(RpcInvocationEndedEvent.class,
+                ui);
+        when(ended.getDuration()).thenReturn(Duration.ofMillis(1));
+        when(ended.getError()).thenReturn(Optional.of(error));
+        bus.fireEvent(ended);
         return service;
     }
 

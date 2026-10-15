@@ -8,12 +8,14 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Assertions;
@@ -33,6 +35,8 @@ class DataQueryMetricsBinderTest {
     private static class TestComponent extends Component {
     }
 
+    private static final Duration DURATION = Duration.ofMillis(42);
+
     private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
     private final UI ui = new UI();
     private final Component component = new TestComponent();
@@ -47,7 +51,8 @@ class DataQueryMetricsBinderTest {
         DataQueryMetricsBinder binder = binder();
 
         binder.countStarted(new DataCountStartedEvent(ui, component, true));
-        binder.countEnded(new DataCountEndedEvent(ui, component, true, 250));
+        binder.countEnded(
+                new DataCountEndedEvent(ui, component, true, 250, DURATION));
 
         Timer timer = registry.find(MeterNames.DATA_COUNT_DURATION)
                 .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
@@ -55,6 +60,9 @@ class DataQueryMetricsBinderTest {
         Assertions.assertNotNull(timer,
                 "a filtered count should be recorded as such");
         Assertions.assertEquals(1L, timer.count());
+        Assertions.assertEquals(DURATION.toNanos(),
+                timer.totalTime(TimeUnit.NANOSECONDS),
+                "the timer should record the duration Flow measured");
     }
 
     @Test
@@ -63,7 +71,8 @@ class DataQueryMetricsBinderTest {
 
         binder.countStarted(new DataCountStartedEvent(ui, component, false));
         // -1 is how the event contract reports a query that threw
-        binder.countEnded(new DataCountEndedEvent(ui, component, false, -1));
+        binder.countEnded(
+                new DataCountEndedEvent(ui, component, false, -1, DURATION));
 
         Assertions
                 .assertNotNull(
@@ -81,8 +90,8 @@ class DataQueryMetricsBinderTest {
         binder.fetchStarted(
                 new DataFetchStartedEvent(ui, component, 0, 50, false));
         // The provider returned a short page: 30 of the 50 asked for
-        binder.fetchEnded(
-                new DataFetchEndedEvent(ui, component, 0, 50, false, 30));
+        binder.fetchEnded(new DataFetchEndedEvent(ui, component, 0, 50, false,
+                30, DURATION));
 
         DistributionSummary requested = registry
                 .find(MeterNames.DATA_FETCH_REQUESTED).summary();
@@ -102,8 +111,8 @@ class DataQueryMetricsBinderTest {
 
         binder.fetchStarted(
                 new DataFetchStartedEvent(ui, component, 0, 50, false));
-        binder.fetchEnded(
-                new DataFetchEndedEvent(ui, component, 0, 50, false, -1));
+        binder.fetchEnded(new DataFetchEndedEvent(ui, component, 0, 50, false,
+                -1, DURATION));
 
         Assertions.assertNull(
                 registry.find(MeterNames.DATA_FETCH_ROWS).summary(),
@@ -126,8 +135,8 @@ class DataQueryMetricsBinderTest {
         for (int i = 0; i < 5; i++) {
             binder.countStarted(
                     new DataCountStartedEvent(ui, component, false));
-            binder.countEnded(
-                    new DataCountEndedEvent(ui, component, false, 10));
+            binder.countEnded(new DataCountEndedEvent(ui, component, false, 10,
+                    DURATION));
         }
 
         Assertions.assertEquals(5L,
@@ -136,15 +145,18 @@ class DataQueryMetricsBinderTest {
     }
 
     @Test
-    void endedWithoutStartedIsIgnoredRatherThanRecordedAsZero() {
-        // A listener registered mid-query would otherwise fabricate a sample.
+    void endedWithoutStartedIsTimedFromTheEvent() {
+        // A listener registered mid-query sees only the ended event, which
+        // still carries the duration Flow measured from the query's start.
         DataQueryMetricsBinder binder = binder();
 
-        binder.countEnded(new DataCountEndedEvent(ui, component, false, 5));
+        binder.countEnded(
+                new DataCountEndedEvent(ui, component, false, 5, DURATION));
 
-        Assertions.assertNull(
-                registry.find(MeterNames.DATA_COUNT_DURATION).timer(),
-                "an ended event with no start should not invent a timing");
+        Assertions.assertEquals(DURATION.toNanos(),
+                registry.find(MeterNames.DATA_COUNT_DURATION).timer()
+                        .totalTime(TimeUnit.NANOSECONDS),
+                "the duration comes from the event, not from a start seen here");
     }
 
     @Test
@@ -157,7 +169,8 @@ class DataQueryMetricsBinderTest {
                 ObservabilitySettings.builder().traces(true).build());
 
         binder.countStarted(new DataCountStartedEvent(ui, component, false));
-        binder.countEnded(new DataCountEndedEvent(ui, component, false, 10));
+        binder.countEnded(
+                new DataCountEndedEvent(ui, component, false, 10, DURATION));
 
         Assertions.assertNotNull(
                 registry.find(MeterNames.DATA_COUNT_DURATION).timer(),
@@ -172,8 +185,8 @@ class DataQueryMetricsBinderTest {
 
         binder.fetchStarted(
                 new DataFetchStartedEvent(ui, component, 0, 50, false));
-        binder.fetchEnded(
-                new DataFetchEndedEvent(ui, component, 0, 50, false, 50));
+        binder.fetchEnded(new DataFetchEndedEvent(ui, component, 0, 50, false,
+                50, DURATION));
 
         Assertions.assertNotNull(
                 registry.find(MeterNames.DATA_FETCH_DURATION).timer(),
@@ -198,11 +211,12 @@ class DataQueryMetricsBinderTest {
                 "precondition: no observation is current on this thread");
 
         binder.countStarted(new DataCountStartedEvent(ui, component, false));
-        binder.countEnded(new DataCountEndedEvent(ui, component, false, 10));
+        binder.countEnded(
+                new DataCountEndedEvent(ui, component, false, 10, DURATION));
         binder.fetchStarted(
                 new DataFetchStartedEvent(ui, component, 0, 50, false));
-        binder.fetchEnded(
-                new DataFetchEndedEvent(ui, component, 0, 50, false, 50));
+        binder.fetchEnded(new DataFetchEndedEvent(ui, component, 0, 50, false,
+                50, DURATION));
 
         Assertions.assertNull(observationRegistry.getCurrentObservationScope(),
                 "no scope may stay current once the queries ended");
@@ -214,8 +228,8 @@ class DataQueryMetricsBinderTest {
     void aFetchOnAnotherThreadIsStillMeasured() throws Exception {
         // A component using DataCommunicator#enablePushUpdates fetches on its
         // own executor, where none of the getCurrent() thread locals are set.
-        // The started and ended events arrive on that thread, so the timing
-        // state has to live there and the event has to carry its own context.
+        // The started and ended events arrive on that thread, so the event has
+        // to carry its own context.
         DataQueryMetricsBinder binder = binder();
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
@@ -223,7 +237,7 @@ class DataQueryMetricsBinderTest {
                 binder.fetchStarted(
                         new DataFetchStartedEvent(ui, component, 0, 50, false));
                 binder.fetchEnded(new DataFetchEndedEvent(ui, component, 0, 50,
-                        false, 50));
+                        false, 50, DURATION));
             }).get(10, TimeUnit.SECONDS);
         } finally {
             executor.shutdownNow();
@@ -238,14 +252,21 @@ class DataQueryMetricsBinderTest {
 
     @Test
     void aCountOnTheRequestThreadDoesNotSeeAFetchLeftOnAnother() {
-        // Count and fetch keep separate thread-local slots precisely because
-        // the two can run on different threads for the same component.
-        DataQueryMetricsBinder binder = binder();
+        // Count and fetch keep separate thread-local observation slots
+        // precisely because the two can run on different threads for the same
+        // component.
+        ObservationRegistry observationRegistry = ObservationRegistry.create();
+        observationRegistry.observationConfig().observationHandler(
+                new DefaultMeterObservationHandler(registry));
+        DataQueryMetricsBinder binder = new DataQueryMetricsBinder(registry,
+                observationRegistry,
+                ObservabilitySettings.builder().traces(true).build());
 
         binder.fetchStarted(
                 new DataFetchStartedEvent(ui, component, 0, 50, false));
         binder.countStarted(new DataCountStartedEvent(ui, component, false));
-        binder.countEnded(new DataCountEndedEvent(ui, component, false, 10));
+        binder.countEnded(
+                new DataCountEndedEvent(ui, component, false, 10, DURATION));
 
         Assertions.assertEquals(1L,
                 registry.find(MeterNames.DATA_COUNT_DURATION).timer().count(),
@@ -253,5 +274,11 @@ class DataQueryMetricsBinderTest {
         Assertions.assertNull(
                 registry.find(MeterNames.DATA_FETCH_DURATION).timer(),
                 "the still-open fetch is untouched by the count ending");
+
+        binder.fetchEnded(new DataFetchEndedEvent(ui, component, 0, 50, false,
+                50, DURATION));
+        Assertions.assertEquals(1L,
+                registry.find(MeterNames.DATA_FETCH_DURATION).timer().count(),
+                "the fetch then completes on its own slot");
     }
 }

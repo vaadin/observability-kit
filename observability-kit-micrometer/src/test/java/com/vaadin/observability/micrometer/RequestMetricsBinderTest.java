@@ -11,6 +11,7 @@ package com.vaadin.observability.micrometer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
@@ -21,9 +22,20 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.server.RequestEndedEvent;
+import com.vaadin.flow.server.RequestHandler;
+import com.vaadin.flow.server.RequestStartedEvent;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
+import com.vaadin.flow.server.VaadinService;
+import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.VaadinSession;
+import com.vaadin.flow.server.communication.HeartbeatHandler;
+import com.vaadin.flow.server.communication.IndexHtmlRequestHandler;
+import com.vaadin.flow.server.communication.JavaScriptBootstrapHandler;
+import com.vaadin.flow.server.communication.StreamRequestHandler;
+import com.vaadin.flow.server.communication.UidlRequestHandler;
+import com.vaadin.flow.shared.Registration;
 import com.vaadin.observability.micrometer.trace.ObservationNames;
 
 class RequestMetricsBinderTest {
@@ -37,14 +49,41 @@ class RequestMetricsBinderTest {
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, session);
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, session);
 
         Timer timer = registry.find(MeterNames.REQUEST_DURATION)
                 .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
                 .timer();
         Assertions.assertNotNull(timer);
         Assertions.assertEquals(1L, timer.count());
+        Assertions.assertEquals(RequestEvents.DURATION.toNanos(),
+                timer.totalTime(TimeUnit.NANOSECONDS),
+                "the Timer records the duration Flow measured");
+    }
+
+    @Test
+    void registrationSubscribesToTheRequestEvents() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        VaadinServiceEventBus bus = new VaadinServiceEventBus(
+                Mockito.mock(VaadinService.class));
+        Registration registration = new RequestMetricsBinder(registry,
+                ObservabilitySettings.builder().traces(false).build())
+                .register(bus);
+        VaadinRequest req = Mockito.mock(VaadinRequest.class);
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+
+        bus.fireEvent(new RequestStartedEvent(bus.getService(), req, res));
+        bus.fireEvent(new RequestEndedEvent(bus.getService(), req, res, null,
+                null, null, RequestEvents.DURATION));
+        registration.remove();
+        bus.fireEvent(new RequestStartedEvent(bus.getService(), req, res));
+        bus.fireEvent(new RequestEndedEvent(bus.getService(), req, res, null,
+                null, null, RequestEvents.DURATION));
+
+        Assertions.assertEquals(1L,
+                registry.get(MeterNames.REQUEST_DURATION).timer().count(),
+                "one request timed while subscribed, none after");
     }
 
     @Test
@@ -58,8 +97,8 @@ class RequestMetricsBinderTest {
         for (String method : List.of("POST", "FOO1", "FOO2", "get")) {
             VaadinRequest req = Mockito.mock(VaadinRequest.class);
             Mockito.when(req.getMethod()).thenReturn(method);
-            binder.requestStart(req, res);
-            binder.requestEnd(req, res, session);
+            RequestEvents.start(binder, req, res);
+            RequestEvents.end(binder, req, res, session);
         }
 
         List<String> methods = registry.find(MeterNames.REQUEST_DURATION)
@@ -74,59 +113,22 @@ class RequestMetricsBinderTest {
     }
 
     @Test
-    void errorStateDoesNotBleedIntoSubsequentRequest() {
+    void failureRecordsErrorOutcomeAndExceptionCounter() {
+        // No session error handler saw the failure (here: none is
+        // instrumented), so the binder counts it itself.
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry,
                 ObservabilitySettings.builder().traces(false).build());
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
-        VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        // Request 1: ends with an error.
-        binder.requestStart(req, res);
-        binder.handleException(req, res, session,
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, null, null,
                 new IllegalStateException("boom"));
-        binder.requestEnd(req, res, session);
-
-        Timer errorTimer = registry.find(MeterNames.REQUEST_DURATION)
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_ERROR).timer();
-        Assertions.assertNotNull(errorTimer, "request 1 should be error");
-        Assertions.assertEquals(1L, errorTimer.count());
-
-        // Request 2 on the same binder/thread: no exception.
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, session);
-
-        // The success timer must have exactly one sample (from request 2).
-        // Without F1 (clearing errored at requestStart), the errored flag left
-        // by request 1's handleException—when requestEnd is skipped—would bleed
-        // here. This test exercises the safe-guard by running both requests
-        // sequentially on the same binder instance.
-        Timer successTimer = registry.find(MeterNames.REQUEST_DURATION)
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS)
-                .timer();
-        Assertions.assertNotNull(successTimer,
-                "request 2 should record a success sample");
-        Assertions.assertEquals(1L, successTimer.count(),
-                "request 2 must be outcome=success, not bleed error from request 1");
-    }
-
-    @Test
-    void exceptionRecordsErrorOutcomeAndExceptionCounter() {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        RequestMetricsBinder binder = new RequestMetricsBinder(registry,
-                ObservabilitySettings.builder().traces(false).build());
-        VaadinRequest req = Mockito.mock(VaadinRequest.class);
-        VaadinResponse res = Mockito.mock(VaadinResponse.class);
-        VaadinSession session = Mockito.mock(VaadinSession.class);
-
-        binder.requestStart(req, res);
-        binder.handleException(req, res, session,
-                new IllegalStateException("boom"));
-        binder.requestEnd(req, res, session);
 
         Timer timer = registry.find(MeterNames.REQUEST_DURATION)
-                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_ERROR).timer();
+                .tag(MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_ERROR)
+                .tag(MeterNames.TAG_ERROR, "IllegalStateException").timer();
         Assertions.assertNotNull(timer);
         Assertions.assertEquals(1L, timer.count());
 
@@ -156,9 +158,8 @@ class RequestMetricsBinderTest {
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
         IllegalStateException failure = new IllegalStateException("boom");
-        binder.requestStart(req, res);
-        binder.handleException(req, res, session, failure);
-        binder.requestEnd(req, res, session);
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, session, null, failure);
 
         Assertions.assertEquals(List.of(failure), marked,
                 "the framework HTTP observation must be told about the "
@@ -183,8 +184,8 @@ class RequestMetricsBinderTest {
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, session);
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, session);
 
         Assertions.assertTrue(marked.isEmpty(),
                 "no exception, nothing to mark");
@@ -194,9 +195,9 @@ class RequestMetricsBinderTest {
     void errorMarkerRunsEvenWhenErrorCountingIsDisabled() {
         // The binder does not gate the marker on the errors setting: it
         // corrects the status of an observation the framework emits anyway.
-        // End to end there is still a registration gate — the interceptor is
-        // only registered under isRequests() || isErrors(), so with both off
-        // the marker never runs.
+        // End to end there is still a registration gate — the binder is only
+        // registered under isRequests() || isErrors(), so with both off the
+        // marker never runs.
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         List<Throwable> marked = new ArrayList<>();
         RequestMetricsBinder binder = new RequestMetricsBinder(registry, null,
@@ -213,10 +214,9 @@ class RequestMetricsBinderTest {
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(req, res);
-        binder.handleException(req, res, session,
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, session, null,
                 new IllegalStateException("boom"));
-        binder.requestEnd(req, res, session);
 
         Assertions.assertEquals(1, marked.size());
         Assertions.assertNull(registry.find(MeterNames.ERRORS).counter(),
@@ -258,8 +258,8 @@ class RequestMetricsBinderTest {
         VaadinRequest req = uidlRequest();
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
 
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, Mockito.mock(VaadinSession.class));
 
         Assertions.assertTrue(hooks.routes.isEmpty(),
                 "no UI was marked during handling, so no route to report");
@@ -278,9 +278,9 @@ class RequestMetricsBinderTest {
         VaadinRequest req = uidlRequest();
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
 
-        binder.requestStart(req, res);
+        RequestEvents.start(binder, req, res);
         RequestUi.mark(new UI());
-        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+        RequestEvents.end(binder, req, res, Mockito.mock(VaadinSession.class));
 
         Assertions.assertTrue(hooks.routes.isEmpty(),
                 "no resolvable template, so no uri to report");
@@ -295,8 +295,8 @@ class RequestMetricsBinderTest {
         Mockito.when(req.getPathInfo()).thenReturn("/VAADIN/build/app.js");
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
 
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, Mockito.mock(VaadinSession.class));
 
         Assertions.assertTrue(hooks.routes.isEmpty(),
                 "static resources have no view to attribute");
@@ -316,8 +316,9 @@ class RequestMetricsBinderTest {
             Mockito.when(req.getPathInfo()).thenReturn(path);
             VaadinResponse res = Mockito.mock(VaadinResponse.class);
 
-            binder.requestStart(req, res);
-            binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+            RequestEvents.start(binder, req, res);
+            RequestEvents.end(binder, req, res,
+                    Mockito.mock(VaadinSession.class));
 
             Assertions.assertNotNull(
                     registry.find(MeterNames.REQUEST_DURATION)
@@ -332,6 +333,15 @@ class RequestMetricsBinderTest {
      * as the span carries it.
      */
     private static String classify(RequestCustomizer customizer) {
+        return classify(null, Mockito.mock(VaadinResponse.class), customizer);
+    }
+
+    /**
+     * Classifies one request the given handler handled, with the given response
+     * ({@code null} for a push message).
+     */
+    private static String classify(RequestHandler handler, VaadinResponse res,
+            RequestCustomizer customizer) {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         ObservationRegistry observations = ObservationRegistry.create();
         observations.observationConfig().observationHandler(
@@ -340,10 +350,10 @@ class RequestMetricsBinderTest {
                 observations, ObservabilitySettings.builder().build());
         VaadinRequest req = Mockito.mock(VaadinRequest.class);
         customizer.accept(req);
-        VaadinResponse res = Mockito.mock(VaadinResponse.class);
 
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, Mockito.mock(VaadinSession.class),
+                handler, null);
 
         Timer timer = registry.find(MeterNames.REQUEST_DURATION).timer();
         Assertions.assertNotNull(timer, "the request must be timed");
@@ -352,6 +362,56 @@ class RequestMetricsBinderTest {
 
     private interface RequestCustomizer {
         void accept(VaadinRequest request);
+    }
+
+    @Test
+    void theRequestHandlerDecidesTheType() {
+        // A URL that says nothing, so the type can only come from the
+        // handler.
+        RequestCustomizer anyUrl = r -> Mockito.when(r.getPathInfo())
+                .thenReturn("/anything");
+        VaadinResponse res = Mockito.mock(VaadinResponse.class);
+        Assertions.assertEquals("uidl",
+                classify(Mockito.mock(UidlRequestHandler.class), res, anyUrl));
+        Assertions.assertEquals("heartbeat",
+                classify(Mockito.mock(HeartbeatHandler.class), res, anyUrl));
+        Assertions.assertEquals("stream", classify(
+                Mockito.mock(StreamRequestHandler.class), res, anyUrl));
+        Assertions.assertEquals("bootstrap",
+                classify(Mockito.mock(IndexHtmlRequestHandler.class), res,
+                        anyUrl),
+                "index.html is the page load, with or without browser hints");
+        Assertions.assertEquals("bootstrap",
+                classify(Mockito.mock(JavaScriptBootstrapHandler.class), res,
+                        anyUrl),
+                "the init request creates the UI for the page just loaded");
+    }
+
+    @Test
+    void theUrlDecidesTheTypeForOtherHandlers() {
+        Assertions.assertEquals("static",
+                classify(Mockito.mock(RequestHandler.class),
+                        Mockito.mock(VaadinResponse.class),
+                        r -> Mockito.when(r.getPathInfo())
+                                .thenReturn("/VAADIN/build/app.js")),
+                "a handler the binder does not know leaves it to the URL");
+        Assertions.assertEquals("push",
+                classify(Mockito.mock(RequestHandler.class),
+                        Mockito.mock(VaadinResponse.class), r -> {
+                            Mockito.when(r.getPathInfo())
+                                    .thenReturn("/VAADIN/push");
+                            Mockito.when(r.getParameter("v-r"))
+                                    .thenReturn("push");
+                        }),
+                "the push connection is push, not a static resource");
+    }
+
+    @Test
+    void aPushMessageIsAPushRequest() {
+        // Flow reports a message sent over a push connection without a
+        // response and without a handler, on the push connection's URL.
+        Assertions.assertEquals("push", classify(null, null,
+                r -> Mockito.when(r.getPathInfo()).thenReturn("/VAADIN/push")));
     }
 
     @Test
@@ -455,9 +515,9 @@ class RequestMetricsBinderTest {
                 .getTemplate(RoutedView.class))
                 .thenReturn(Optional.of("routed"));
 
-        binder.requestStart(req, res);
+        RequestEvents.start(binder, req, res);
         RequestUi.mark(ui);
-        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+        RequestEvents.end(binder, req, res, Mockito.mock(VaadinSession.class));
 
         Assertions.assertEquals(List.of("routed"), hooks.routes,
                 "route enrichment must run with traces off");
@@ -479,8 +539,8 @@ class RequestMetricsBinderTest {
         VaadinRequest req = uidlRequest();
         VaadinResponse res = Mockito.mock(VaadinResponse.class);
 
-        binder.requestStart(req, res);
-        binder.requestEnd(req, res, Mockito.mock(VaadinSession.class));
+        RequestEvents.start(binder, req, res);
+        RequestEvents.end(binder, req, res, Mockito.mock(VaadinSession.class));
 
         Assertions.assertEquals(List.of("uidl"), types,
                 "request type enrichment must run with traces off");

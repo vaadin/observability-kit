@@ -8,13 +8,10 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.time.Duration;
-
 import io.micrometer.core.instrument.MeterRegistry;
 
 import com.vaadin.flow.server.SessionLockAcquiredEvent;
 import com.vaadin.flow.server.SessionLockReleasedEvent;
-import com.vaadin.flow.server.SessionLockRequestedEvent;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.shared.Registration;
@@ -30,14 +27,12 @@ import com.vaadin.flow.shared.Registration;
  * {@code context} tag distinguishes request-thread acquisitions from
  * {@code UI.access}/background acquisitions.
  * <p>
- * The events are delivered on the same thread for one outermost hold, so wait
- * and hold start times are kept in thread locals.
+ * Flow measures both times itself and reports them on the acquired and released
+ * events, for the outermost acquisition of a reentrant hold only.
  */
 final class SessionLockMetricsBinder {
 
     private final MeterRegistry registry;
-    private final ThreadLocal<Long> waitStart = new ThreadLocal<>();
-    private final ThreadLocal<Long> holdStart = new ThreadLocal<>();
 
     SessionLockMetricsBinder(MeterRegistry registry) {
         this.registry = registry;
@@ -52,38 +47,20 @@ final class SessionLockMetricsBinder {
      */
     Registration register(VaadinServiceEventBus eventBus) {
         return Registration.combine(
-                eventBus.addListener(SessionLockRequestedEvent.class,
-                        this::lockRequested),
                 eventBus.addListener(SessionLockAcquiredEvent.class,
                         this::lockAcquired),
                 eventBus.addListener(SessionLockReleasedEvent.class,
                         this::lockReleased));
     }
 
-    void lockRequested(SessionLockRequestedEvent event) {
-        waitStart.set(System.nanoTime());
-    }
-
     void lockAcquired(SessionLockAcquiredEvent event) {
-        long now = System.nanoTime();
-        Long started = waitStart.get();
-        waitStart.remove();
-        String context = context();
-        if (started != null) {
-            registry.timer(MeterNames.SESSION_LOCK_WAIT, MeterNames.TAG_CONTEXT,
-                    context).record(Duration.ofNanos(now - started));
-        }
-        holdStart.set(now);
+        registry.timer(MeterNames.SESSION_LOCK_WAIT, MeterNames.TAG_CONTEXT,
+                context()).record(event.getWaitTime());
     }
 
     void lockReleased(SessionLockReleasedEvent event) {
-        long now = System.nanoTime();
-        Long started = holdStart.get();
-        holdStart.remove();
-        if (started != null) {
-            registry.timer(MeterNames.SESSION_LOCK_HOLD, MeterNames.TAG_CONTEXT,
-                    context()).record(Duration.ofNanos(now - started));
-        }
+        registry.timer(MeterNames.SESSION_LOCK_HOLD, MeterNames.TAG_CONTEXT,
+                context()).record(event.getHoldTime());
     }
 
     /**

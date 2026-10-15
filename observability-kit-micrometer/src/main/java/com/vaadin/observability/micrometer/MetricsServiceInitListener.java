@@ -139,9 +139,9 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
      * Hook for DI integrations to enrich the framework-level HTTP observation
      * (e.g. Spring's {@code ServerHttpObservationFilter} span) with
      * Vaadin-specific information so the parent HTTP span renders informatively
-     * in the trace UI. Called from {@link RequestMetricsBinder} after the
-     * Vaadin request type has been determined and before the
-     * {@code vaadin.request.<type>} child observation is started.
+     * in the trace UI. Called from {@link RequestMetricsBinder} at the end of
+     * the request, once the request handler has settled the Vaadin request
+     * type, and before the framework stops its HTTP observation.
      * <p>
      * Default implementation no-ops, keeping the framework-agnostic core free
      * of Spring imports. The Spring/Boot integration modules override this to
@@ -288,10 +288,11 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     .register(service.getEventBus());
         }
 
-        // One counter for vaadin.errors, shared by its two writers: the request
-        // interceptor, which sees the exceptions that escape request handling,
-        // and the error binder, which sees the ones Flow routes to the session
-        // error handler. One meter, one cardinality budget — a per-instance cap
+        // One counter for vaadin.errors, shared by its two writers: the error
+        // binder, which sees what Flow routes to the session error handler,
+        // and the request binder, which counts a failed request the error
+        // handler never saw. One meter, one cardinality budget — a per-instance
+        // cap
         // would let the same route or exception type be itself on one path and
         // _other on the other.
         //
@@ -320,9 +321,9 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
                     markHttpObservationError(request, failure);
                 }
             };
-            event.addVaadinRequestInterceptor(
-                    new RequestMetricsBinder(registry, observationRegistry,
-                            settings, hooks, errors, exceptionTags));
+            new RequestMetricsBinder(registry, observationRegistry, settings,
+                    hooks, errors, exceptionTags)
+                    .register(service.getEventBus());
         }
 
         if (settings.isRequests()) {

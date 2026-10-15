@@ -14,6 +14,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -290,12 +291,12 @@ class ObservationContractTest {
         VaadinResponse response = Mockito.mock(VaadinResponse.class);
         VaadinSession session = Mockito.mock(VaadinSession.class);
 
-        binder.requestStart(request, response);
+        RequestEvents.start(binder, request, response);
         if (interactionMark != null) {
             // What the poll/navigation listeners do during request handling.
             RequestInteraction.mark(interactionMark);
         }
-        binder.requestEnd(request, response, session);
+        RequestEvents.end(binder, request, response, session);
     }
 
     @com.vaadin.flow.component.Tag("contract-view")
@@ -341,23 +342,16 @@ class ObservationContractTest {
         UI ui = new UI();
         Element element = ElementFactory.createDiv();
         // Constructing the component binds it to the element, which is what
-        // lets the binder resolve vaadin.rpc.component from the node id.
+        // lets the event resolve vaadin.rpc.component from the node id.
         Component ignored = new Component(element) {
         };
         ui.getElement().appendChild(element);
+        int nodeId = element.getNode().getId();
 
-        RpcInvocationStartedEvent started = Mockito
-                .mock(RpcInvocationStartedEvent.class);
-        Mockito.when(started.getType()).thenReturn("event");
-        Mockito.when(started.getName()).thenReturn("click");
-        Mockito.when(started.getUI()).thenReturn(ui);
-        Mockito.when(started.getNodeId()).thenReturn(element.getNode().getId());
-        RpcInvocationEndedEvent ended = Mockito
-                .mock(RpcInvocationEndedEvent.class);
-        Mockito.when(ended.getType()).thenReturn("event");
-
-        binder.invocationStarted(started);
-        binder.invocationEnded(ended);
+        binder.invocationStarted(
+                new RpcInvocationStartedEvent(ui, "event", nodeId, "click"));
+        binder.invocationEnded(new RpcInvocationEndedEvent(ui, "event", nodeId,
+                "click", Duration.ofMillis(1), null));
     }
 
     private void driveDataCount() {
