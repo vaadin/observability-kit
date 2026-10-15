@@ -26,7 +26,6 @@ import com.vaadin.flow.router.BeforeEnterListener;
 import com.vaadin.flow.router.ListenerPriority;
 import com.vaadin.flow.router.NavigationEndedEvent;
 import com.vaadin.flow.router.NavigationStartedEvent;
-import com.vaadin.flow.router.RouteParameters;
 import com.vaadin.flow.router.Router;
 import com.vaadin.flow.router.internal.NavigationRouteTarget;
 import com.vaadin.flow.server.VaadinServiceEventBus;
@@ -312,8 +311,7 @@ final class NavigationMetricsBinder {
             route = ended.route() != null ? ended.route()
                     : showedView && shown != null ? shown
                             : MeterNames.ROUTE_UNKNOWN;
-            resolved = outcomeOf(outcome, ended.requested(),
-                    shownParameters(ended.ui()));
+            resolved = outcomeOf(outcome, ended.requested());
         } finally {
             // Whatever failed above, the scope must not stay open on this
             // thread, where it would parent every later span.
@@ -432,29 +430,13 @@ final class NavigationMetricsBinder {
     }
 
     /**
-     * The route parameters of the view a UI shows, or {@code null} when they
-     * cannot be resolved.
-     */
-    private static RouteParameters shownParameters(UI ui) {
-        try {
-            return ui.getInternals().getRouterStateSignal().peek()
-                    .routeParameters();
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
      * Maps Flow's outcome to the {@code outcome} tag value.
      *
      * @param requested
      *            the view the requested location resolves to, or {@code null}
-     * @param shownParameters
-     *            the route parameters of the view shown, or {@code null} if
-     *            unknown
      */
     private static String outcomeOf(NavigationEndedEvent.Outcome outcome,
-            NavigationRouteTarget requested, RouteParameters shownParameters) {
+            NavigationRouteTarget requested) {
         return switch (outcome) {
         // A target or route parameters other than the requested ones mean a
         // listener sent the navigation elsewhere: a routing decision (an
@@ -464,8 +446,8 @@ final class NavigationMetricsBinder {
         case NavigationEndedEvent.Completed completed ->
             requested == null || requested.getRouteTarget()
                     .getTarget() == completed.navigationTarget()
-                    && (shownParameters == null || shownParameters
-                            .equals(requested.getRouteParameters()))
+                    && completed.parameters()
+                            .equals(requested.getRouteParameters())
                                     ? MeterNames.OUTCOME_SUCCESS
                                     : MeterNames.OUTCOME_REROUTED;
         // Handed off without a server-side view: forwardToUrl, a client-side

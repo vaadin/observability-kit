@@ -49,7 +49,6 @@ import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
 import com.vaadin.flow.router.NotFoundException;
 import com.vaadin.flow.router.RouteParameters;
-import com.vaadin.flow.router.RouterState;
 import com.vaadin.flow.router.internal.BeforeEnterHandler;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
@@ -178,14 +177,6 @@ class NavigationMetricsBinderTest {
         return routed;
     }
 
-    /** Makes {@code target} report it shows {@code view} with an id. */
-    private static void showing(UI target, Class<? extends Component> view,
-            String id) {
-        Mockito.when(target.getInternals().getRouterStateSignal().peek())
-                .thenReturn(new RouterState(new Location("first/" + id),
-                        new RouteParameters("id", id), List.of(), view));
-    }
-
     /**
      * Fires the {@code BeforeEnterEvent} that Flow sends to the UI's listeners
      * before it builds {@code view}.
@@ -221,7 +212,12 @@ class NavigationMetricsBinderTest {
 
     private static NavigationEndedEvent.Completed shown(
             Class<? extends Component> view) {
-        return new NavigationEndedEvent.Completed(view);
+        return shown(view, RouteParameters.empty());
+    }
+
+    private static NavigationEndedEvent.Completed shown(
+            Class<? extends Component> view, RouteParameters parameters) {
+        return new NavigationEndedEvent.Completed(view, parameters);
     }
 
     private double timerCount(String route, String outcome) {
@@ -266,9 +262,8 @@ class NavigationMetricsBinderTest {
 
         // rerouteTo(FirstView.class, otherParameters): the same view, but not
         // the one that was asked for.
-        start(ui, "first/1");
-        showing(ui, FirstView.class, shownId);
-        end(ui, "first/1", shown(FirstView.class));
+        navigate(ui, "first/1",
+                shown(FirstView.class, new RouteParameters("id", shownId)));
 
         assertEquals(1, timerCount(FIRST, outcome));
         assertEquals(1, timerSamples());

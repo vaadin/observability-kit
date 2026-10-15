@@ -43,6 +43,7 @@ import com.vaadin.flow.router.Location;
 import com.vaadin.flow.router.NavigationEndedEvent;
 import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
+import com.vaadin.flow.router.RouteParameters;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -323,7 +324,8 @@ class ObservationContractTest {
                 NavigationTrigger.UI_NAVIGATE));
         binder.navigationEnded(new NavigationEndedEvent(ui, location,
                 NavigationTrigger.UI_NAVIGATE,
-                new NavigationEndedEvent.Completed(OtherContractView.class),
+                new NavigationEndedEvent.Completed(OtherContractView.class,
+                        RouteParameters.empty()),
                 200));
     }
 
