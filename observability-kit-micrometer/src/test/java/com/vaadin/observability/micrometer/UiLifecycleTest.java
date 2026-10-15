@@ -85,8 +85,7 @@ class UiLifecycleTest {
         assertEquals(1.0, registry.find(MeterNames.UI_ACTIVE).gauge().value(),
                 0.0);
 
-        // Capture and invoke the detach listeners to simulate UI detach. The
-        // navigation binder adds one of its own, so every listener runs.
+        // Capture and invoke the detach listeners to simulate UI detach.
         ArgumentCaptor<ComponentEventListener<DetachEvent>> captor = ArgumentCaptor
                 .forClass(ComponentEventListener.class);
         verify(ui, atLeastOnce()).addDetachListener(captor.capture());
@@ -114,46 +113,6 @@ class UiLifecycleTest {
         // gauge is pre-registered at construction and stays at 0
         assertEquals(0.0,
                 freshRegistry.find(MeterNames.UI_ACTIVE).gauge().value(), 0.0);
-    }
-
-    @Test
-    void registersNavigationBinderWhenNavigationEnabled() {
-        // binder is created with navigation=true (default)
-        UI ui = mock(UI.class);
-        VaadinService service = mock(VaadinService.class);
-
-        binder.uiInit(new UIInitEvent(ui, service));
-
-        verify(ui).addBeforeEnterListener(any());
-        verify(ui).addAfterNavigationListener(any());
-    }
-
-    @Test
-    void registersNavigationDetachHookWhenUiTrackingIsOff() {
-        // uis=false, so the only detach listener is the navigation binder's:
-        // a navigation started from UI.access() misses requestEnd, and detach
-        // is the last point at which it can still be closed out.
-        binder = new UiMetricsBinder(registry, null, ObservabilitySettings
-                .builder().uis(false).navigation(true).build());
-        UI ui = mock(UI.class);
-
-        binder.uiInit(new UIInitEvent(ui, mock(VaadinService.class)));
-
-        verify(ui).addDetachListener(any());
-    }
-
-    @Test
-    void skipsNavigationBinderWhenNavigationDisabled() {
-        binder = new UiMetricsBinder(registry, null,
-                ObservabilitySettings.builder().navigation(false).build());
-        UI ui = mock(UI.class);
-        VaadinService service = mock(VaadinService.class);
-
-        binder.uiInit(new UIInitEvent(ui, service));
-
-        verify(ui, org.mockito.Mockito.never()).addBeforeEnterListener(any());
-        verify(ui, org.mockito.Mockito.never())
-                .addAfterNavigationListener(any());
     }
 
     @Test

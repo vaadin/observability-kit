@@ -14,9 +14,10 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.vaadin.flow.router.NavigationStartedEvent;
+import com.vaadin.flow.server.RequestStartedEvent;
 import com.vaadin.flow.server.ServiceInitEvent;
 import com.vaadin.flow.server.UIInitListener;
-import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.pro.licensechecker.LicenseChecker;
 import com.vaadin.pro.licensechecker.LicenseException;
@@ -25,6 +26,7 @@ import static com.vaadin.observability.micrometer.ObservabilityLicense.loadAllPr
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -71,7 +73,7 @@ class MetricsServiceInitListenerLicenseTest {
 
         verify(service, never()).addSessionInitListener(any());
         verify(service, never()).addUIInitListener(any());
-        verify(event, never()).addVaadinRequestInterceptor(any());
+        verify(service, never()).getEventBus();
         // Recorded so the Copilot panel can say why it has nothing to show.
         Assertions.assertFalse(ObservabilityKit.isLicensePresent());
     }
@@ -88,10 +90,11 @@ class MetricsServiceInitListenerLicenseTest {
         // Two UI init listeners: the UiMetricsBinder and the ErrorMetricsBinder
         // (which re-instruments the session error handler).
         verify(service, times(2)).addUIInitListener(any(UIInitListener.class));
-        // The request interceptor of the navigation binder, closing out
-        // navigations that never complete.
-        verify(event, times(1)).addVaadinRequestInterceptor(
-                any(VaadinRequestInterceptor.class));
+        // The request and navigation binders, subscribed to Flow's events.
+        verify(service.getEventBus()).addListener(eq(RequestStartedEvent.class),
+                any());
+        verify(service.getEventBus())
+                .addListener(eq(NavigationStartedEvent.class), any());
         // Cleared, or the Copilot panel would keep asking for a license
         Assertions.assertTrue(ObservabilityKit.isLicensePresent());
     }

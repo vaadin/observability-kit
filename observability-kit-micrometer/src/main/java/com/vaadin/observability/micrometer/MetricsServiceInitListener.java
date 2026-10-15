@@ -274,13 +274,18 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             ObservabilityKit.setRecentClientErrors(browserErrors);
         }
 
-        NavigationMetricsBinder navigationBinder = null;
-        if (settings.isUis() || settings.isNavigation()
-                || settings.isClient()) {
-            UiMetricsBinder uiBinder = new UiMetricsBinder(registry,
-                    observationRegistry, settings, clientErrors);
-            service.addUIInitListener(uiBinder);
-            navigationBinder = uiBinder.getNavigationBinder();
+        // Tracing needs it too: it labels poll requests, so that their request
+        // span is named and enriched with the UI and its route.
+        if (settings.isUis() || settings.isClient()
+                || settings.isTraces() && observationRegistry != null) {
+            service.addUIInitListener(new UiMetricsBinder(registry,
+                    observationRegistry, settings, clientErrors));
+        }
+
+        if (settings.isNavigation()) {
+            new NavigationMetricsBinder(registry, observationRegistry, settings,
+                    new RouteTagResolver(settings.getRouteCardinalityLimit()))
+                    .register(service.getEventBus());
         }
 
         // One counter for vaadin.errors, shared by its two writers: the error
@@ -319,16 +324,6 @@ public class MetricsServiceInitListener implements VaadinServiceInitListener {
             new RequestMetricsBinder(registry, observationRegistry, settings,
                     hooks, errors, exceptionTags)
                     .register(service.getEventBus());
-        }
-
-        if (navigationBinder != null) {
-            // Navigations that are rerouted away or aborted by an exception
-            // never reach afterNavigation; the interceptor gives the binder a
-            // request-scoped point to close them out. Flow fires the request
-            // ended event before it calls the interceptors, so by then the
-            // request binder has already unwound a navigation scope left open
-            // above its own, and the backstop only stops the observation.
-            event.addVaadinRequestInterceptor(navigationBinder);
         }
 
         if (settings.isRequests()) {

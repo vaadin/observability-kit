@@ -9,8 +9,8 @@
 package com.vaadin.observability.micrometer;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import io.micrometer.core.instrument.Tag;
@@ -25,12 +25,11 @@ import org.mockito.Mockito;
 
 import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.router.AfterNavigationEvent;
-import com.vaadin.flow.router.BeforeEnterEvent;
 import com.vaadin.flow.router.Location;
-import com.vaadin.flow.router.LocationChangeEvent;
+import com.vaadin.flow.router.NavigationEndedEvent;
+import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.router.NavigationTrigger;
-import com.vaadin.flow.router.Router;
+import com.vaadin.flow.router.RouteParameters;
 import com.vaadin.flow.server.VaadinRequest;
 import com.vaadin.flow.server.VaadinResponse;
 import com.vaadin.flow.server.VaadinSession;
@@ -186,42 +185,86 @@ class MeterTagParityTest {
     private static final class ParityView extends Component {
     }
 
+    private static final class OtherParityView extends Component {
+    }
+
     /**
-     * Runs one navigation through the binder and returns the tags of the Timer
-     * it produced. {@code traces} picks the recording path.
+     * Runs one navigation to {@code path} that shows {@code shown} through the
+     * binder into {@code registry}. {@code traces} picks the recording path.
      */
-    private static Map<String, String> recordNavigation(boolean traces) {
-        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private static void navigate(SimpleMeterRegistry registry, boolean traces,
+            String path, Class<? extends Component> shown) {
         NavigationMetricsBinder binder = new NavigationMetricsBinder(registry,
                 traces ? meterProducingObservations(registry) : null,
                 ObservabilitySettings.builder().traces(traces).build(),
                 new RouteTagResolver(10));
 
-        UI ui = Mockito.mock(UI.class);
+        UI ui = RoutedUis.routedUi(Map.of("view", ParityView.class));
         UI.setCurrent(ui);
-        BeforeEnterEvent enter = Mockito.mock(BeforeEnterEvent.class);
-        Mockito.when(enter.getUI()).thenReturn(ui);
-        // doReturn: the wildcard in Class<? extends Component> makes the
-        // type-safe when(...).thenReturn(...) form uncompilable here.
-        Mockito.doReturn(ParityView.class).when(enter).getNavigationTarget();
+        Location location = new Location(path);
+        binder.navigationStarted(new NavigationStartedEvent(ui, location,
+                NavigationTrigger.UI_NAVIGATE));
+        binder.navigationEnded(new NavigationEndedEvent(ui, location,
+                NavigationTrigger.UI_NAVIGATE,
+                new NavigationEndedEvent.Completed(shown,
+                        RouteParameters.empty()),
+                200));
+    }
 
-        binder.beforeEnter(enter);
-        binder.afterNavigation(new AfterNavigationEvent(new LocationChangeEvent(
-                Mockito.mock(Router.class), ui, NavigationTrigger.UI_NAVIGATE,
-                new Location("view"), List.of())));
-
+    /**
+     * Runs one navigation to {@code view} that shows another view and returns
+     * the tags of the Timer it produced.
+     */
+    private static Map<String, String> recordNavigation(boolean traces) {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        navigate(registry, traces, "view", OtherParityView.class);
         return tags(registry, MeterNames.NAVIGATION);
     }
 
     @Test
     void navigationTagsMatchAcrossPaths() {
+        // Tagged with the requested view, which the router resolves, rather
+        // than with the view shown.
         Assertions.assertEquals(
                 Map.of(MeterNames.TAG_ROUTE, "ParityView",
-                        MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_SUCCESS,
+                        MeterNames.TAG_OUTCOME, MeterNames.OUTCOME_REROUTED,
                         MeterNames.TAG_ERROR, MeterNames.ERROR_NONE),
                 recordNavigation(true),
                 "the Observation path defines the vaadin.navigation tag set");
         Assertions.assertEquals(recordNavigation(true), recordNavigation(false),
                 "recording the Timer directly must produce the same tags");
+    }
+
+    @Test
+    void navigationMetersHaveTheSameTagKeysWhetherTheLocationResolvesOrNot() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        // DefaultMeterObservationHandler registers its long task timer when
+        // the navigation starts, before a location without a view has
+        // learned the view it shows.
+        navigate(registry, true, "view", ParityView.class);
+        navigate(registry, true, "nowhere", OtherParityView.class);
+
+        Map<String, Set<Set<String>>> keysByMeter = registry.getMeters()
+                .stream()
+                .filter(meter -> meter.getId().getName()
+                        .startsWith(MeterNames.NAVIGATION))
+                .collect(
+                        Collectors
+                                .groupingBy(meter -> meter.getId().getName(),
+                                        Collectors.mapping(
+                                                meter -> meter.getId().getTags()
+                                                        .stream()
+                                                        .map(Tag::getKey)
+                                                        .collect(Collectors
+                                                                .toSet()),
+                                                Collectors.toSet())));
+        Assertions.assertEquals(Set.of(Set.of(MeterNames.TAG_ROUTE)),
+                keysByMeter.get(MeterNames.NAVIGATION + ".active"),
+                "every long task timer is tagged with the route");
+        Assertions.assertEquals(
+                Set.of(Set.of(MeterNames.TAG_ROUTE, MeterNames.TAG_OUTCOME,
+                        MeterNames.TAG_ERROR)),
+                keysByMeter.get(MeterNames.NAVIGATION));
     }
 }

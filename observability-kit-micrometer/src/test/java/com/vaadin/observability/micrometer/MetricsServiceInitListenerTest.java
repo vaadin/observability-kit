@@ -23,6 +23,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import com.vaadin.flow.component.UI;
+import com.vaadin.flow.router.NavigationEndedEvent;
+import com.vaadin.flow.router.NavigationStartedEvent;
 import com.vaadin.flow.server.ErrorHandler;
 import com.vaadin.flow.server.RequestEndedEvent;
 import com.vaadin.flow.server.RequestStartedEvent;
@@ -33,7 +35,6 @@ import com.vaadin.flow.server.SessionDestroyListener;
 import com.vaadin.flow.server.SessionInitListener;
 import com.vaadin.flow.server.SessionLockAcquiredEvent;
 import com.vaadin.flow.server.UIInitListener;
-import com.vaadin.flow.server.VaadinRequestInterceptor;
 import com.vaadin.flow.server.VaadinService;
 import com.vaadin.flow.server.VaadinServiceEventBus;
 import com.vaadin.flow.server.VaadinSession;
@@ -50,7 +51,6 @@ import com.vaadin.observability.micrometer.insights.RecentInteractions;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
-import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -78,18 +78,6 @@ class MetricsServiceInitListenerTest {
         when(service.getEventBus())
                 .thenReturn(new VaadinServiceEventBus(service));
         return service;
-    }
-
-    /**
-     * Counts the registered interceptors of the given type, so tests match on
-     * the concrete type instead of the plain invocation count.
-     */
-    private static long interceptorsOfType(ServiceInitEvent event,
-            Class<? extends VaadinRequestInterceptor> type) {
-        ArgumentCaptor<VaadinRequestInterceptor> captor = ArgumentCaptor
-                .forClass(VaadinRequestInterceptor.class);
-        verify(event, atLeast(0)).addVaadinRequestInterceptor(captor.capture());
-        return captor.getAllValues().stream().filter(type::isInstance).count();
     }
 
     @Test
@@ -292,28 +280,15 @@ class MetricsServiceInitListenerTest {
                 "UIs enabled should register the UiMetricsBinder");
     }
 
-    @Test
-    void registersUiInitListenerWhenNavigationEnabledAndUisDisabled() {
+    @ParameterizedTest(name = "traces={0}")
+    @ValueSource(booleans = { false, true })
+    void registersUiInitListenerWithUisAndClientDisabledOnlyWhenTracing(
+            boolean traces) {
+        // Navigation attaches nothing to a UI when it is initialized, so it
+        // does not need the binder; tracing does, to label poll requests.
         ObservabilityKit.install(new SimpleMeterRegistry(),
                 ObservabilitySettings.builder().uis(false).navigation(true)
-                        .build());
-        VaadinService service = licensedService();
-        ServiceInitEvent event = mock(ServiceInitEvent.class);
-        when(event.getSource()).thenReturn(service);
-
-        new MetricsServiceInitListener().serviceInit(event);
-
-        Assertions.assertTrue(
-                registeredUiInitListeners(service).stream()
-                        .anyMatch(l -> l instanceof UiMetricsBinder),
-                "navigation enabled should register the UiMetricsBinder");
-    }
-
-    @Test
-    void skipsUiInitListenerWhenUisAndNavigationAndClientDisabled() {
-        ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().uis(false).navigation(false)
-                        .client(false).build());
+                        .client(false).traces(traces).build());
         VaadinService service = licensedService();
         ServiceInitEvent event = mock(ServiceInitEvent.class);
         when(event.getSource()).thenReturn(service);
@@ -322,10 +297,8 @@ class MetricsServiceInitListenerTest {
 
         // The error binder also hooks UI init, so assert on the type rather
         // than on the hook being unused.
-        Assertions.assertTrue(
-                registeredUiInitListeners(service).stream()
-                        .noneMatch(l -> l instanceof UiMetricsBinder),
-                "UI metrics disabled should not register the UiMetricsBinder");
+        Assertions.assertEquals(traces, registeredUiInitListeners(service)
+                .stream().anyMatch(l -> l instanceof UiMetricsBinder));
     }
 
     @Test
@@ -366,34 +339,24 @@ class MetricsServiceInitListenerTest {
                 bus.getListeners(RequestEndedEvent.class).size());
     }
 
-    @Test
-    void registersNavigationInterceptorWhenNavigationEnabled() {
+    @ParameterizedTest
+    @ValueSource(booleans = { true, false })
+    void subscribesNavigationBinderOnlyWhenNavigationEnabled(
+            boolean navigation) {
         ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().build());
+                ObservabilitySettings.builder().navigation(navigation).build());
         VaadinService service = licensedService();
         ServiceInitEvent event = mock(ServiceInitEvent.class);
         when(event.getSource()).thenReturn(service);
 
         new MetricsServiceInitListener().serviceInit(event);
 
-        // The navigation binder also intercepts requests so it can close out
-        // navigations that never reach afterNavigation.
-        assertEquals(1,
-                interceptorsOfType(event, NavigationMetricsBinder.class));
-    }
-
-    @Test
-    void skipsNavigationInterceptorWhenNavigationDisabled() {
-        ObservabilityKit.install(new SimpleMeterRegistry(),
-                ObservabilitySettings.builder().navigation(false).build());
-        VaadinService service = licensedService();
-        ServiceInitEvent event = mock(ServiceInitEvent.class);
-        when(event.getSource()).thenReturn(service);
-
-        new MetricsServiceInitListener().serviceInit(event);
-
-        assertEquals(0,
-                interceptorsOfType(event, NavigationMetricsBinder.class));
+        VaadinServiceEventBus bus = service.getEventBus();
+        int expected = navigation ? 1 : 0;
+        assertEquals(expected,
+                bus.getListeners(NavigationStartedEvent.class).size());
+        assertEquals(expected,
+                bus.getListeners(NavigationEndedEvent.class).size());
     }
 
     @Test

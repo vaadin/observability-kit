@@ -14,10 +14,12 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import com.vaadin.flow.component.UI;
-import com.vaadin.flow.router.BeforeEnterEvent;
+import com.vaadin.flow.router.Location;
+import com.vaadin.flow.router.NavigationEndedEvent;
+import com.vaadin.flow.router.NavigationStartedEvent;
+import com.vaadin.flow.router.NavigationTrigger;
 
 class RequestUiTest {
 
@@ -37,11 +39,11 @@ class RequestUiTest {
     }
 
     /**
-     * {@code beforeEnter} also fires for a navigation started from a background
-     * thread through {@code UI.access()}, where no request interceptor ever
-     * drains the relay. The relay must therefore never keep a UI reachable: a
-     * strong reference would pin the UI, and through it the whole session, to a
-     * pooled executor thread for the life of the server.
+     * A navigation can also be started from a background thread through
+     * {@code UI.access()}, where no request interceptor ever drains the relay.
+     * The relay must therefore never keep a UI reachable: a strong reference
+     * would pin the UI, and through it the whole session, to a pooled executor
+     * thread for the life of the server.
      */
     @Test
     void uiMarkedOutsideARequestIsNotRetained() throws InterruptedException {
@@ -49,21 +51,16 @@ class RequestUiTest {
                 new SimpleMeterRegistry(), new RouteTagResolver(10));
 
         UI ui = new UI();
-        BeforeEnterEvent enter = Mockito.mock(BeforeEnterEvent.class);
-        Mockito.when(enter.getUI()).thenReturn(ui);
-        Mockito.doReturn(null).when(enter).getNavigationTarget();
-
         // Outside any request: nothing will call RequestUi.take() or clear()
         // on this thread afterwards.
-        binder.beforeEnter(enter);
+        binder.navigationStarted(new NavigationStartedEvent(ui,
+                new Location("view"), NavigationTrigger.UI_NAVIGATE));
+        binder.navigationEnded(new NavigationEndedEvent(ui,
+                new Location("view"), NavigationTrigger.UI_NAVIGATE,
+                new NavigationEndedEvent.NotShown(), 200));
 
         WeakReference<UI> probe = new WeakReference<>(ui);
         ui = null;
-        // The mock's stubbing (getUI() -> ui) keeps the UI reachable through
-        // Mockito's internals; reset it so the probe measures the relay, not
-        // the test harness.
-        Mockito.reset(enter);
-        enter = null;
 
         for (int i = 0; i < 100 && probe.get() != null; i++) {
             System.gc();
