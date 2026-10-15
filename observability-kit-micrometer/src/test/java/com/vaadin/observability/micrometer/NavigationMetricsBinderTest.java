@@ -642,7 +642,7 @@ class NavigationMetricsBinderTest {
         // What Flow does when the navigation enters the view.
         real.getNavigationListeners(BeforeEnterHandler.class)
                 .forEach(listener -> listener.beforeEnter(entering));
-        end(real, "first", new NavigationEndedEvent.NotShown());
+        end(real, "first", shown(FirstView.class));
 
         assertEquals(List.of(FIRST), seenByAccessCheck);
         assertEquals(1,
@@ -791,6 +791,49 @@ class NavigationMetricsBinderTest {
         verify(ui, Mockito.times(2)).addBeforeEnterListener(Mockito.any());
         verify(beforeEnter, Mockito.times(2)).remove();
         verify(afterNavigation, Mockito.times(2)).remove();
+    }
+
+    @Test
+    void aViewShownAfterANavigationThatShowedNoneSettlesTheRoute() {
+        binder();
+        UI.setCurrent(ui);
+        Registration beforeEnter = Mockito.mock(Registration.class);
+        Registration afterNavigation = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(beforeEnter);
+        Mockito.when(ui.addAfterNavigationListener(Mockito.any()))
+                .thenReturn(afterNavigation);
+
+        // A @PreserveOnRefresh view first asks the browser for its window
+        // name, and is shown when it arrives, without navigation events.
+        start(ui, "second");
+        entering(ui, SecondView.class);
+        end(ui, "second", new NavigationEndedEvent.NotShown());
+        Mockito.verifyNoInteractions(beforeEnter, afterNavigation);
+
+        Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.of(new SecondView()));
+        shownNow(ui);
+
+        assertEquals(SECOND, VaadinTelemetryContext.currentRoute());
+        verify(beforeEnter).remove();
+        verify(afterNavigation).remove();
+    }
+
+    @Test
+    void aNavigationAfterOneThatShowedNoViewTakesItsTrackerOver() {
+        binder();
+        Registration beforeEnter = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(beforeEnter);
+
+        navigate(ui, "second", new NavigationEndedEvent.NotShown());
+        navigate(ui, "first", shown(FirstView.class));
+
+        // One tracker, not two, removed when the second navigation ends.
+        verify(ui).addBeforeEnterListener(Mockito.any());
+        verify(ui).addAfterNavigationListener(Mockito.any());
+        verify(beforeEnter).remove();
     }
 
     @Test

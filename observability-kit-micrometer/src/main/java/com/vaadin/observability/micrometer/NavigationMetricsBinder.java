@@ -17,6 +17,7 @@ import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
 
+import com.vaadin.flow.component.ComponentUtil;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.router.AfterNavigationEvent;
 import com.vaadin.flow.router.AfterNavigationListener;
@@ -85,6 +86,9 @@ import com.vaadin.observability.micrometer.trace.ObservationNames;
  */
 final class NavigationMetricsBinder {
 
+    private static final String ROUTE_TRACKER_KEY = NavigationMetricsBinder.class
+            .getName() + ".routeTracker";
+
     /**
      * Transient state of a navigation in flight on this thread.
      *
@@ -130,6 +134,13 @@ final class NavigationMetricsBinder {
      * started from inside another one fires no events and runs under the outer
      * navigation's tracker.
      * <p>
+     * A navigation that ends without showing a view keeps its tracker on the
+     * UI, under {@link #ROUTE_TRACKER_KEY}: a {@code @PreserveOnRefresh} view
+     * is shown later, once the browser sends its window name, with the UI's
+     * {@code AfterNavigationEvent} listeners but no navigation events. The
+     * tracker then settles on that view and removes itself. A navigation
+     * starting in the meantime takes the tracker over instead.
+     * <p>
      * Still static and {@link java.io.Serializable}, as the UI listeners it is
      * registered as are: the session can be serialized while a navigation is in
      * flight, and a tracker stays on the UI when the binder is unsubscribed
@@ -146,6 +157,7 @@ final class NavigationMetricsBinder {
         private final transient RouteTagResolver routes;
         private Registration beforeEnter;
         private Registration afterNavigation;
+        private boolean removeAfterNavigation;
 
         RouteTracker(UI ui, RouteTagResolver routes) {
             this.ui = ui;
@@ -160,16 +172,35 @@ final class NavigationMetricsBinder {
             }
         }
 
+        /**
+         * Whether this tracker can resolve routes, i.e. was not deserialized.
+         */
+        boolean isWorking() {
+            return routes != null;
+        }
+
         @Override
         public void afterNavigation(AfterNavigationEvent event) {
-            String shown = routes == null ? null : shownRoute(routes, ui);
-            if (shown != null) {
-                VaadinTelemetryContext.setCurrentRoute(ui, shown);
+            try {
+                String shown = routes == null ? null : shownRoute(routes, ui);
+                if (shown != null) {
+                    VaadinTelemetryContext.setCurrentRoute(ui, shown);
+                }
+            } finally {
+                if (removeAfterNavigation) {
+                    untrack(this);
+                }
             }
         }
 
-        /** Detaches the tracker from its UI. */
+        /**
+         * Detaches the tracker from its UI. The UI forgets it first, so a
+         * failure below leaves no tracker under the key.
+         */
         void remove() {
+            if (ComponentUtil.getData(ui, ROUTE_TRACKER_KEY) == this) {
+                ComponentUtil.setData(ui, ROUTE_TRACKER_KEY, null);
+            }
             try {
                 if (beforeEnter != null) {
                     beforeEnter.remove();
@@ -185,7 +216,7 @@ final class NavigationMetricsBinder {
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings config;
-    private final transient RouteTagResolver routes;
+    private final RouteTagResolver routes;
 
     /**
      * The navigations in flight on this thread, innermost last. Navigations of
@@ -301,7 +332,11 @@ final class NavigationMetricsBinder {
                             : MeterNames.ROUTE_UNKNOWN;
             resolved = outcomeOf(outcome, ended.requested());
         } finally {
-            untrack(ended.tracker());
+            if (outcome instanceof NavigationEndedEvent.NotShown) {
+                keep(ended.tracker());
+            } else {
+                untrack(ended.tracker());
+            }
             // Whatever failed above, the scope must not stay open on this
             // thread, where it would parent every later span.
             if (ended.sample() != null) {
@@ -331,6 +366,21 @@ final class NavigationMetricsBinder {
      * @return the tracker added, or {@code null} if it could not be added
      */
     private RouteTracker track(UI ui) {
+        try {
+            if (ComponentUtil.getData(ui,
+                    ROUTE_TRACKER_KEY) instanceof RouteTracker kept) {
+                if (kept.isWorking()) {
+                    // Kept by a navigation that showed no view: this one
+                    // takes it over, and removes or keeps it when it ends.
+                    ComponentUtil.setData(ui, ROUTE_TRACKER_KEY, null);
+                    kept.removeAfterNavigation = false;
+                    return kept;
+                }
+                kept.remove();
+            }
+        } catch (RuntimeException e) {
+            // A fresh tracker is added below.
+        }
         RouteTracker tracker = new RouteTracker(ui, routes);
         try {
             tracker.beforeEnter = ui.addBeforeEnterListener(tracker);
@@ -339,6 +389,23 @@ final class NavigationMetricsBinder {
         } catch (RuntimeException e) {
             untrack(tracker);
             return null;
+        }
+    }
+
+    /**
+     * Keeps the tracker of a navigation that showed no view on its UI, until
+     * the view is shown later or the next navigation takes it over. Never
+     * throws: a tracker that cannot be kept is removed.
+     */
+    private static void keep(RouteTracker tracker) {
+        if (tracker == null) {
+            return;
+        }
+        try {
+            tracker.removeAfterNavigation = true;
+            ComponentUtil.setData(tracker.ui, ROUTE_TRACKER_KEY, tracker);
+        } catch (RuntimeException e) {
+            untrack(tracker);
         }
     }
 
