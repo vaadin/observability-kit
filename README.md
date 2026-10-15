@@ -658,8 +658,8 @@ application classes and multiply with each other.
 > working.
 
 > **Behavior change for Spring deployments.** Failures handled by the session
-> error handler — a throwing click listener, a `UI.access` body, a `beforeEnter`
-> callback — are now also relayed to Spring's own HTTP observation. Every such
+> error handler — a throwing click listener, a `UI.access` body, a detach
+> listener — are now also relayed to Spring's own HTTP observation. Every such
 > failure sets the `exception` tag on `http.server.requests` and marks the HTTP
 > server span errored, even though the response status stays 200; previously
 > only the far rarer exceptions that escaped request handling did. Error-rate
@@ -668,14 +668,19 @@ application classes and multiply with each other.
 
 Flow only reports the exceptions that make handling a request *fail* at the
 end of the request. Everything a user can trigger — a click listener that throws, a
-`UI.access` body, a detach listener, a `beforeEnter` callback — is caught by
-Flow and routed to `VaadinSession.getErrorHandler()` instead. The kit therefore
-decorates that handler, which is also what lets it attribute a failure to a
-component and mark the enclosing `vaadin.request` span as `outcome=error`. In
+`UI.access` body, a detach listener — is caught by Flow and routed to
+`VaadinSession.getErrorHandler()` instead. The kit therefore decorates that
+handler, which is also what lets it attribute a failure to a component and mark
+the enclosing `vaadin.request` span as `outcome=error`. In
 Spring deployments the failure is also relayed to the framework's own HTTP
 observation, so root-span error monitoring sees it too — including when
 `vaadin.observability.requests` is off and no `vaadin.request` span exists to
 carry it.
+
+A failure during navigation — a `beforeEnter` callback or a view constructor
+that throws — is neither kind: the router catches it and shows an error view in
+its place, so it never reaches the error handler and is not counted in
+`vaadin.errors`. It shows up on `vaadin.navigation` as `outcome=error` instead.
 
 The decoration always delegates, so an application's own error handler keeps
 receiving every error it received before. It is re-applied at UI init and at
