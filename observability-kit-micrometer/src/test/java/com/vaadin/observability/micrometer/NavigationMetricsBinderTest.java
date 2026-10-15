@@ -8,9 +8,6 @@
  */
 package com.vaadin.observability.micrometer;
 
-import java.io.IOException;
-import java.io.ObjectOutputStream;
-import java.io.OutputStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -635,6 +632,9 @@ class NavigationMetricsBinderTest {
         end(real, "first", new NavigationEndedEvent.NotShown());
 
         assertEquals(List.of(FIRST), seenByAccessCheck);
+        assertEquals(1,
+                real.getNavigationListeners(BeforeEnterHandler.class).size(),
+                "the tracker is removed when the navigation ends");
     }
 
     @Test
@@ -644,33 +644,48 @@ class NavigationMetricsBinderTest {
 
         navigate(ui, "second", new NavigationEndedEvent.Postponed());
 
-        // proceed() resumes the navigation without navigation events, but
-        // with the UI's own navigation listeners.
+        // proceed() resumes it as a navigation of its own.
+        start(ui, "second");
         entering(ui, SecondView.class);
         assertEquals(SECOND, VaadinTelemetryContext.currentRoute());
+        // The AfterNavigationEvent listeners see the view shown, which need
+        // not be the last one entered.
         Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
                 .thenReturn(List.of(new FirstView()));
         shownNow(ui);
         assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
+        end(ui, "second", shown(FirstView.class));
+        assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
     }
 
     @Test
-    void eachUiGetsOneTrackerForAllItsNavigations() {
+    void eachNavigationAddsATrackerAndRemovesItWhenItEnds() {
         binder();
+        Registration beforeEnter = Mockito.mock(Registration.class);
+        Registration afterNavigation = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(beforeEnter);
+        Mockito.when(ui.addAfterNavigationListener(Mockito.any()))
+                .thenReturn(afterNavigation);
 
-        // Added when the UI first navigates, and kept: postponed, resumed and
-        // nested navigations all run with the same listeners.
-        navigate(ui, "first", new NavigationEndedEvent.Postponed());
-        start(ui, "second");
-        navigate(ui, "first", shown(FirstView.class));
-        end(ui, "second", shown(SecondView.class));
-
+        start(ui, "first");
         verify(ui).addBeforeEnterListener(Mockito.any());
         verify(ui).addAfterNavigationListener(Mockito.any());
+        Mockito.verifyNoInteractions(beforeEnter, afterNavigation);
+
+        // Also when the navigation fails or is postponed: nothing stays on
+        // the UI between navigations.
+        end(ui, "first", new NavigationEndedEvent.Failed(
+                new IllegalStateException("boom")));
+        navigate(ui, "second", new NavigationEndedEvent.Postponed());
+
+        verify(ui, Mockito.times(2)).addBeforeEnterListener(Mockito.any());
+        verify(beforeEnter, Mockito.times(2)).remove();
+        verify(afterNavigation, Mockito.times(2)).remove();
     }
 
     @Test
-    void aTrackerThatCannotBeAddedIsTriedAgainOnTheNextNavigation() {
+    void aTrackerThatCannotBeAddedIsTakenOffAgain() {
         RecordingHandler recorder = new RecordingHandler();
         ObservationRegistry obs = recording(recorder);
         tracingBinder(obs);
@@ -678,8 +693,7 @@ class NavigationMetricsBinderTest {
         Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
                 .thenReturn(tracking);
         Mockito.when(ui.addAfterNavigationListener(Mockito.any()))
-                .thenThrow(new IllegalStateException("boom"))
-                .thenReturn(Mockito.mock(Registration.class));
+                .thenThrow(new IllegalStateException("boom"));
 
         navigate(ui, "first", shown(FirstView.class));
 
@@ -688,45 +702,6 @@ class NavigationMetricsBinderTest {
         verify(tracking).remove();
         assertEquals(List.of(MeterNames.NAVIGATION), recorder.names);
         assertNull(obs.getCurrentObservation());
-
-        navigate(ui, "first", shown(FirstView.class));
-        verify(ui, Mockito.times(2)).addAfterNavigationListener(Mockito.any());
-        navigate(ui, "first", shown(FirstView.class));
-        verify(ui, Mockito.times(2)).addAfterNavigationListener(Mockito.any());
-    }
-
-    @Test
-    void aTrackerSerializesWithoutTheBinder() throws IOException {
-        binder();
-
-        navigate(ui, "second", new NavigationEndedEvent.Postponed());
-        ArgumentCaptor<BeforeEnterListener> tracker = ArgumentCaptor
-                .forClass(BeforeEnterListener.class);
-        verify(ui).addBeforeEnterListener(tracker.capture());
-
-        // It stays on the UI, so it is serialized with the session. The mocks
-        // stand in for the UI and the listener registrations, which Flow
-        // serializes itself.
-        List<Object> written = new ArrayList<>();
-        try (ObjectOutputStream out = new ObjectOutputStream(
-                OutputStream.nullOutputStream()) {
-            {
-                enableReplaceObject(true);
-            }
-
-            @Override
-            protected Object replaceObject(Object obj) {
-                written.add(obj);
-                return Mockito.mockingDetails(obj).isMock() ? "mock" : obj;
-            }
-        }) {
-            out.writeObject(tracker.getValue());
-        }
-        assertTrue(
-                written.stream()
-                        .noneMatch(obj -> obj instanceof NavigationMetricsBinder
-                                || obj instanceof RouteTagResolver),
-                "the binder and its resolver stay out of the session");
     }
 
     @Test
