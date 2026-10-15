@@ -124,18 +124,26 @@ final class NavigationMetricsBinder {
      * view being left keeps its {@code BeforeLeaveEvent} listeners, which run
      * before any of them.
      * <p>
-     * Added when a navigation starts and removed when it ends, so nothing stays
-     * on the UI between navigations and the tracker is never serialized with
-     * the session. Every navigation, a resumed one included, has its own start
-     * and end. A navigation of the same UI started from inside another one
-     * fires no events and runs under the outer navigation's tracker.
+     * Added when a navigation starts and removed when it ends, so normally
+     * nothing stays on the UI between navigations. Every navigation, a resumed
+     * one included, has its own start and end. A navigation of the same UI
+     * started from inside another one fires no events and runs under the outer
+     * navigation's tracker.
+     * <p>
+     * Still static and {@link java.io.Serializable}, as the UI listeners it is
+     * registered as are: the session can be serialized while a navigation is in
+     * flight, and a tracker stays on the UI when the binder is unsubscribed
+     * before the navigation ends. The resolver is not carried along, so the
+     * binder stays out of the session, and a deserialized tracker does nothing.
      */
     @ListenerPriority(Integer.MAX_VALUE)
     private static final class RouteTracker
             implements BeforeEnterListener, AfterNavigationListener {
 
+        private static final long serialVersionUID = 1L;
+
         private final UI ui;
-        private final RouteTagResolver routes;
+        private final transient RouteTagResolver routes;
         private Registration beforeEnter;
         private Registration afterNavigation;
 
@@ -146,13 +154,15 @@ final class NavigationMetricsBinder {
 
         @Override
         public void beforeEnter(BeforeEnterEvent event) {
-            VaadinTelemetryContext.setCurrentRoute(ui,
-                    routes.tagFor(event.getNavigationTarget()));
+            if (routes != null) {
+                VaadinTelemetryContext.setCurrentRoute(ui,
+                        routes.tagFor(event.getNavigationTarget()));
+            }
         }
 
         @Override
         public void afterNavigation(AfterNavigationEvent event) {
-            String shown = shownRoute(routes, ui);
+            String shown = routes == null ? null : shownRoute(routes, ui);
             if (shown != null) {
                 VaadinTelemetryContext.setCurrentRoute(ui, shown);
             }
@@ -175,7 +185,7 @@ final class NavigationMetricsBinder {
     private final MeterRegistry registry;
     private final ObservationRegistry observationRegistry;
     private final ObservabilitySettings config;
-    private final RouteTagResolver routes;
+    private final transient RouteTagResolver routes;
 
     /**
      * The navigations in flight on this thread, innermost last. Navigations of

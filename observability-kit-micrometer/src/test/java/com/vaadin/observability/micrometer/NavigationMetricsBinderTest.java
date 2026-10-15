@@ -8,6 +8,9 @@
  */
 package com.vaadin.observability.micrometer;
 
+import java.io.IOException;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -196,9 +199,19 @@ class NavigationMetricsBinderTest {
     /** Ends a navigation the way Flow does: listeners in reverse order. */
     private void end(UI target, String path,
             NavigationEndedEvent.Outcome outcome) {
-        eventBus.fireEventInReverseOrder(new NavigationEndedEvent(target,
-                new Location(path), NavigationTrigger.UI_NAVIGATE, outcome,
-                outcome instanceof NavigationEndedEvent.Failed ? 500 : 200));
+        end(target, path, outcome,
+                outcome instanceof NavigationEndedEvent.Failed ? 500 : 200);
+    }
+
+    /**
+     * Ends a navigation with the given status code, {@code -1} when the failure
+     * escaped instead of showing an error view.
+     */
+    private void end(UI target, String path,
+            NavigationEndedEvent.Outcome outcome, int statusCode) {
+        eventBus.fireEventInReverseOrder(
+                new NavigationEndedEvent(target, new Location(path),
+                        NavigationTrigger.UI_NAVIGATE, outcome, statusCode));
     }
 
     private void navigate(UI target, String path,
@@ -656,6 +669,102 @@ class NavigationMetricsBinderTest {
         assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
         end(ui, "second", shown(FirstView.class));
         assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
+    }
+
+    /**
+     * Shows the first view, then postpones a navigation to {@code path} and
+     * resumes it: proceed() starts a navigation of its own.
+     */
+    private Registration postponeAndResume(String path) {
+        Registration tracking = Mockito.mock(Registration.class);
+        Mockito.when(ui.addBeforeEnterListener(Mockito.any()))
+                .thenReturn(tracking);
+        UI.setCurrent(ui);
+        navigate(ui, "first", shown(FirstView.class));
+        navigate(ui, path, new NavigationEndedEvent.Postponed());
+        start(ui, path);
+        return tracking;
+    }
+
+    @Test
+    void aResumedNavigationIntoAnErrorViewRecordsAnError() {
+        binder();
+        Registration tracking = postponeAndResume("no/such/view");
+
+        entering(ui, NotFoundView.class);
+        Mockito.when(ui.getInternals().getActiveRouterTargetsChain())
+                .thenReturn(List.of(new NotFoundView()));
+        end(ui, "no/such/view",
+                new NavigationEndedEvent.Failed(new NotFoundException()), 404);
+
+        assertEquals(1, timerCount(NOT_FOUND, MeterNames.OUTCOME_ERROR));
+        assertEquals(NOT_FOUND, VaadinTelemetryContext.currentRoute());
+        verify(tracking, Mockito.times(3)).remove();
+    }
+
+    @Test
+    void anExceptionEscapingAResumedNavigationRecordsAnError() {
+        binder();
+        Registration tracking = postponeAndResume("second");
+
+        // Thrown out of proceed() instead of showing an error view.
+        entering(ui, SecondView.class);
+        end(ui, "second", new NavigationEndedEvent.Failed(
+                new IllegalStateException("boom")), -1);
+
+        assertEquals(1, timerCount(SECOND, MeterNames.OUTCOME_ERROR));
+        // The view entered was not shown: back to the view from before.
+        assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
+        verify(tracking, Mockito.times(3)).remove();
+    }
+
+    @Test
+    void aResumedNavigationPostponedAgainRecordsUnknownAgain() {
+        binder();
+        Registration tracking = postponeAndResume("second");
+
+        end(ui, "second", new NavigationEndedEvent.Postponed());
+
+        assertEquals(2, timerCount(SECOND, MeterNames.OUTCOME_UNKNOWN));
+        assertEquals(FIRST, VaadinTelemetryContext.currentRoute());
+        verify(tracking, Mockito.times(3)).remove();
+    }
+
+    @Test
+    void aTrackerInFlightSerializesWithoutTheBinder() throws IOException {
+        binder();
+
+        // The session can be written while a navigation is in flight, or
+        // after the binder was unsubscribed before the navigation ended.
+        start(ui, "second");
+        ArgumentCaptor<BeforeEnterListener> tracker = ArgumentCaptor
+                .forClass(BeforeEnterListener.class);
+        verify(ui).addBeforeEnterListener(tracker.capture());
+
+        // The mocks stand in for the UI and the listener registrations, which
+        // Flow serializes itself.
+        List<Object> written = new ArrayList<>();
+        try (ObjectOutputStream out = new ObjectOutputStream(
+                OutputStream.nullOutputStream()) {
+            {
+                enableReplaceObject(true);
+            }
+
+            @Override
+            protected Object replaceObject(Object obj) {
+                written.add(obj);
+                return Mockito.mockingDetails(obj).isMock() ? "mock" : obj;
+            }
+        }) {
+            out.writeObject(tracker.getValue());
+        }
+        assertTrue(
+                written.stream()
+                        .noneMatch(obj -> obj instanceof NavigationMetricsBinder
+                                || obj instanceof RouteTagResolver),
+                "the binder and its resolver stay out of the session");
+
+        end(ui, "second", shown(SecondView.class));
     }
 
     @Test
