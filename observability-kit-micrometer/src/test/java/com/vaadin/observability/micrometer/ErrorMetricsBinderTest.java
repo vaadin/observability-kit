@@ -216,8 +216,9 @@ class ErrorMetricsBinderTest {
         // An application that installs its handler from a UIInitListener of
         // its own would otherwise lose the whole bootstrap request: UI init
         // still runs while that request is being handled, so re-instrumenting
-        // there covers the beforeEnter callbacks and beforeClientResponse
-        // executions that follow, instead of waiting for the first RPC.
+        // there covers the beforeClientResponse executions and other
+        // error-handler failures that follow, instead of waiting for the first
+        // RPC.
         sessionInit();
         RecordingHandler replacement = new RecordingHandler();
         session.setErrorHandler(replacement);
