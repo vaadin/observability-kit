@@ -75,11 +75,11 @@ class RequestMetricsBinderTest {
 
         bus.fireEvent(new RequestStartedEvent(bus.getService(), req, res));
         bus.fireEvent(new RequestEndedEvent(bus.getService(), req, res, null,
-                null, null, RequestEvents.DURATION));
+                null, null, null, RequestEvents.DURATION));
         registration.remove();
         bus.fireEvent(new RequestStartedEvent(bus.getService(), req, res));
         bus.fireEvent(new RequestEndedEvent(bus.getService(), req, res, null,
-                null, null, RequestEvents.DURATION));
+                null, null, null, RequestEvents.DURATION));
 
         Assertions.assertEquals(1L,
                 registry.get(MeterNames.REQUEST_DURATION).timer().count(),
