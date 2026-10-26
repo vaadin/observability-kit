@@ -50,6 +50,6 @@ final class RequestEvents {
             VaadinResponse response, VaadinSession session,
             RequestHandler handler, Exception failure) {
         binder.requestEnded(new RequestEndedEvent(SERVICE, request, response,
-                session, handler, failure, DURATION));
+                session, handler, null, failure, DURATION));
     }
 }
