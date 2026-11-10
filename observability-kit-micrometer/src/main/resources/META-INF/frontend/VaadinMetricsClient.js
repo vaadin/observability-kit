@@ -1035,8 +1035,6 @@ function installCollector() {
   // interaction is timed as the user's.
   var claimingOwnRequest = false;
   var ownRequests = new WeakSet();
-  // The event targets already listened to, so a client is subscribed once.
-  var subscribedClients = new WeakSet();
 
   function isOwnReply(message) {
     return !!message.request && ownRequests.has(message.request);
@@ -1083,18 +1081,18 @@ function installCollector() {
     });
   }
 
-  // Subscribes to every Flow client not yet listened to. Run at install and
-  // on every flush interval, so a client that starts later -- an embedded
-  // web component application -- is picked up too.
+  // Subscribes to every Flow client. Run at install and on every flush
+  // interval, so a client that starts later -- an embedded web component
+  // application -- is picked up too. Adding the same listener to a client
+  // again does nothing, as for any EventTarget.
   function subscribeClients() {
     var flow = window.Vaadin && window.Vaadin.Flow;
     var clients = (flow && flow.clients) || {};
     for (var id in clients) {
       var events = clients[id] && clients[id].events;
-      if (!events || typeof events.addEventListener !== 'function' || subscribedClients.has(events)) {
+      if (!events || typeof events.addEventListener !== 'function') {
         continue;
       }
-      subscribedClients.add(events);
       events.addEventListener('vaadin-request', timeRequest);
       events.addEventListener('vaadin-server-message', timeMessage);
     }

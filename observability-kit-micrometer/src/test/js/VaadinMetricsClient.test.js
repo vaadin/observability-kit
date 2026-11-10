@@ -475,9 +475,16 @@ function err(message, stack) {
       }
       return open;
     }
+    // Set to have the call fail after Flow has already queued it.
+    let failAfterQueue = false;
     const doc = {
       querySelector: (sel) => (sel === 'vaadin-metrics-collector'
-        ? { hasAttribute: () => false, $server: { recordSamples: (batch) => { batches.push({ batch: batch, request: queue() }); return Promise.resolve(); } } }
+        ? { hasAttribute: () => false, $server: { recordSamples: (batch) => {
+          const request = queue();
+          if (failAfterQueue) { throw new Error('rejected'); }
+          batches.push({ batch: batch, request: request });
+          return Promise.resolve();
+        } } }
         : null),
       addEventListener() {},
       visibilityState: 'visible'
@@ -501,14 +508,15 @@ function err(message, stack) {
       request.dispatchEvent(new Event('end'));
     }
     // A message from the server: announced, parsed against the request it
-    // replies to, handled for `applyMs`, and ended with `outcome`.
-    function message(request, applyMs, outcome, client) {
+    // replies to, handled for `applyMs`, and ended with `outcome`. Without
+    // `start` when `unstarted` is set.
+    function message(request, applyMs, outcome, client, unstarted) {
       const msg = new EventTarget();
       msg.request = undefined;
       announce((client || clients.app).events, 'vaadin-server-message', msg);
       msg.request = request;
       msg.dispatchEvent(new Event('parsed'));
-      msg.dispatchEvent(new Event('start'));
+      if (!unstarted) { msg.dispatchEvent(new Event('start')); }
       now += applyMs;
       msg.outcome = outcome;
       msg.dispatchEvent(new Event('end'));
@@ -575,12 +583,18 @@ function err(message, stack) {
       }), [['request', '/orders/17', 70], ['render', '/orders/17', 8], ['render', '/orders/17', 6]]);
 
     // 8d. A message that was not applied -- discarded, or failed while being
-    //     applied -- is not a render.
+    //     applied -- is not a render, and an event whose beginning was never
+    //     seen times nothing: a reply to a request never sent, or a message
+    //     that ends without starting.
     await ownRoundTrip(1);
-    check('messages that were not applied are not rendered',
+    check('messages that were not applied, and events missing their start, are not timed',
       await timed(() => {
         message(undefined, 4, 'discarded');
         message(undefined, 9, 'failed');
+        message(undefined, 3, 'applied', undefined, true);
+        const unsent = queue();
+        open = null;
+        respond(unsent);
         click(50, 2);
       }), [['request', '/orders/17', 50], ['render', '/orders/17', 2]]);
 
@@ -604,8 +618,25 @@ function err(message, stack) {
     await ownRoundTrip(1);
     clients.embedded = { events: new EventTarget() };
     interval();
+    interval();
     check('a client started later is timed after the next interval',
       await timed(() => click(60, 4, clients.embedded)), [['request', '/orders/17', 60], ['render', '/orders/17', 4]]);
+    await ownRoundTrip(1);
+    check('and a client already listened to is not subscribed twice',
+      await timed(() => click(70, 5)), [['request', '/orders/17', 70], ['render', '/orders/17', 5]]);
+
+    // 8g. A call that fails after Flow queued it keeps the batch, and the
+    //     request it opened is the last one claimed: the next interaction is
+    //     timed as the user's.
+    await ownRoundTrip(1);
+    nudge();
+    failAfterQueue = true;
+    collectorApi.flush();
+    failAfterQueue = false;
+    open = null;
+    check('a failed call keeps its batch for the next flush', collectorApi.bufferSize(), 1);
+    check('and does not claim the requests after it',
+      await timed(() => click(80, 6)), [['request', '/orders/17', 80], ['render', '/orders/17', 6]]);
   }
 
   // 9. Loading the module is not attaching the element. The module is in the

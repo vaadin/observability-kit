@@ -999,7 +999,8 @@ message the client discards or fails to apply is not.
 
 Three things are worth knowing about both:
 
-- **Only UIDL requests are timed.** Heartbeats and static resources are not
+- **Only UIDL traffic is timed.** The request meter covers UIDL requests and
+  the render meter every UIDL message; heartbeats and static resources are not
   interactions and are left out. The collector's own request that carries the
   samples to the server is left out too, with its response, so the kit does not
   report itself. A user action queued in the same tick as the collector's
