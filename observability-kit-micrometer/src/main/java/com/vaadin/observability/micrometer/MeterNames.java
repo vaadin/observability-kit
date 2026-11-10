@@ -113,33 +113,32 @@ public final class MeterNames {
 
     /**
      * Timer: one UIDL request as the browser saw it, from the moment the
-     * request was queued to the last byte of the response, tagged
-     * {@link #TAG_ROUTE}. Read off the Resource Timing entry every UIDL
-     * {@code POST} leaves behind, so it needs nothing from Flow and works in
-     * production.
+     * request was sent to the moment its response arrived, tagged
+     * {@link #TAG_ROUTE}. Read off the {@code vaadin-request} events Flow's
+     * client announces on {@code window.Vaadin.Flow.clients[id].events}, so it
+     * works in production and over every transport.
      * <p>
      * This is the browser's side of {@link #REQUEST_DURATION}: the same round
      * trip, measured at the other end. The difference between the two is the
-     * time spent on the wire and in the browser's request queue, which is what
-     * separates a slow server from a slow network when a user reports that a
-     * click took a second and the server says it took forty milliseconds.
+     * time spent on the wire, which is what separates a slow server from a slow
+     * network when a user reports that a click took a second and the server
+     * says it took forty milliseconds.
      */
     public static final String CLIENT_REQUEST_DURATION = "vaadin.client.request.duration";
 
     /**
-     * Timer: how long Flow's client spent applying one UIDL response to the
-     * page, tagged {@link #TAG_ROUTE}. This is the third segment of an
+     * Timer: how long Flow's client spent applying one message from the server
+     * to the page, tagged {@link #TAG_ROUTE}. This is the third segment of an
      * interaction, after the network and the server, and the one neither of
      * them can see: a response that arrives in fifty milliseconds and takes
      * four hundred to render is a browser problem, typically a heavy component
      * tree or an expensive renderer.
      * <p>
-     * Flow publishes the figure through
-     * {@code window.Vaadin.Flow.clients[id].getProfilingData()} only when its
-     * {@code requestTiming} deployment setting is on, which is the default
-     * outside production mode. In production, set
-     * {@code vaadin.requestTiming=true} to record this meter; without it the
-     * meter is simply absent.
+     * Read off the {@code vaadin-server-message} events Flow's client announces
+     * on {@code window.Vaadin.Flow.clients[id].events}: from when the client
+     * starts handling a message, including loading the resources it brings, to
+     * when it has applied it. Messages the server pushes on its own are timed
+     * too; messages the client discards or fails to apply are not.
      */
     public static final String CLIENT_RENDER_DURATION = "vaadin.client.render.duration";
     public static final String CLIENT_WEB_VITALS_LCP = "vaadin.client.web_vitals.lcp";
