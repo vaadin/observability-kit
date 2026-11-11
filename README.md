@@ -15,7 +15,7 @@ code, no annotations, no configuration required.
 ## Requirements
 
 - Java 21 or newer
-- Vaadin 25.3 or newer (Flow 25.3+)
+- Vaadin 25.4 or newer (Flow 25.4+)
 - A Micrometer `MeterRegistry` — the Spring Boot starter provides one out of the box
 - Spring Boot 4 (only for the `observability-kit-starter`; plain-Spring and
   standalone setups are also supported)
