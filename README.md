@@ -457,8 +457,8 @@ ObservabilitySettings.builder()
 | `vaadin.resync` | Counter | Client message recovery events, for both HTTP and push requests, tagged by `type`: `resend` for a duplicate message the client re-sent because it never got the previous response, `resync` for a full client-requested UI-state rebuild, `out_of_sync` for a message with an id the server did not expect, which shows the user the session synchronization error. `resend` and `resync` mean the client lost a server message; `out_of_sync` usually means the UI continued on a server with an older state. Disable with `vaadin.observability.resync=false`. |
 | `vaadin.client.bootstrap.duration` | Timer | Browser application bootstrap time. |
 | `vaadin.client.navigation.duration` | Timer | Browser-observed navigation time, tagged by `route` and by the `trigger` that started it (`back` or `programmatic`). |
-| `vaadin.client.request.duration` | Timer | One UIDL request as the browser saw it, from queueing to the last byte of the response, tagged by `route`. The browser's side of `vaadin.request.duration`. See [Interaction timing from the browser](#interaction-timing-from-the-browser). |
-| `vaadin.client.render.duration` | Timer | Time Flow's client spent applying one UIDL response to the page, tagged by `route`. Needs Flow's `requestTiming` setting, on by default outside production mode. |
+| `vaadin.client.request.duration` | Timer | One UIDL request as the browser saw it, from sending it to receiving its response, tagged by `route`. The browser's side of `vaadin.request.duration`. See [Interaction timing from the browser](#interaction-timing-from-the-browser). |
+| `vaadin.client.render.duration` | Timer | Time Flow's client spent applying one message from the server to the page, tagged by `route`. |
 | `vaadin.client.web_vitals.lcp` | Timer | Largest Contentful Paint. |
 | `vaadin.client.web_vitals.fcp` | Timer | First Contentful Paint. |
 | `vaadin.client.errors` | Counter | Errors reported by the browser, tagged `kind` (`uncaught` or `promise`). The message, script and stack frame that identify the error are kept as an insight, not as tags. |
@@ -968,12 +968,17 @@ the server cannot see: on the wire, in the browser's request queue, or in the
 browser applying the response. Two meters make that remainder readable, with no
 configuration beyond `vaadin.observability.client` (on by default).
 
+Both are read off the events Flow's client announces for every request it
+sends and every message it receives, on
+`window.Vaadin.Flow.clients[appId].events`, so they work in production mode and
+over every transport, including `@Push(transport = WEBSOCKET)`.
+
 **`vaadin.client.request.duration`** is the same round trip as
 `vaadin.request.duration`, measured at the browser's end: from the moment the
-UIDL request was queued to the last byte of the response. It is read off the
-Resource Timing entry every UIDL `POST` leaves behind, so it needs nothing from
-Flow and works in production. Subtract the server's figure for the same route
-and what is left is the network:
+UIDL request was sent to the moment its response arrived and was identified.
+A request sent again after a timeout or a reconnect is timed from the attempt
+that was answered. Subtract the server's figure for the same route and what is
+left is the network:
 
 ```promql
   rate(vaadin_client_request_duration_seconds_sum[5m])
@@ -984,29 +989,34 @@ and what is left is the network:
 ```
 
 **`vaadin.client.render.duration`** is the third segment, after the network
-and the server: how long Flow's client spent applying the response to the page.
-A response that arrives in fifty milliseconds and takes four hundred to render
-is a browser problem, typically a heavy component tree or an expensive
-renderer, and neither of the other two timers can show it. The figure is Flow's
-own, published through `getProfilingData()` on each client only when Flow's
-`requestTiming` deployment setting is on. That is the default outside
-production mode; in production, set `vaadin.requestTiming=true` to record this
-meter. Without it the meter is absent rather than zero.
+and the server: how long Flow's client spent applying the response to the page,
+from when it starts handling the message, including loading any resources the
+message brings, to when it is done. A response that arrives in fifty
+milliseconds and takes four hundred to render is a browser problem, typically a
+heavy component tree or an expensive renderer, and neither of the other two
+timers can show it. Messages the server pushes on its own are timed too; a
+message the client discards or fails to apply is not.
 
-Four things are worth knowing about both:
+Three things are worth knowing about both:
 
-- **Only UIDL requests are timed.** Heartbeats, push and static resources are
-  not interactions and are left out. The collector's own request that carries
-  the samples to the server is left out too, so the kit does not report itself.
-- **The request meter needs the default transport.** It is read from Resource
-  Timing, which sees HTTP requests. With `@Push(transport = WEBSOCKET)` the
-  UIDL rides the websocket and leaves no entry, so only the render meter is
-  recorded.
+- **Only UIDL traffic is timed.** The request meter covers UIDL requests and
+  the render meter every UIDL message; heartbeats and static resources are not
+  interactions and are left out. The collector's own request that carries the
+  samples to the server is left out too, with its response, so the kit does not
+  report itself. A user action queued in the same tick as the collector's
+  request shares that request and is left out with it.
 - **Bootstrap is not an interaction.** The first UIDL response, which builds
   the page, is covered by `vaadin.client.bootstrap.duration` and excluded here.
-- **The route is the browser's.** Both meters carry the route the browser was
-  on when the response arrived, which for a navigation request is the view
-  navigated to, as on the server's request span.
+- **The route is the browser's, once the reply is applied.** Both meters
+  carry the route the browser is on when the message has been handled, which
+  for a navigation request is the view navigated to, as on the server's request
+  span. A request is therefore recorded only once its reply has been handled,
+  and under the same route as the render of that reply.
+
+Both need a Flow client that announces these events. On one that does not,
+neither meter is recorded and the collector says so once in the browser
+console. It also warns once when it cannot recognise its own request, as both
+meters then include the collector's own traffic.
 
 ## Database fetch size
 

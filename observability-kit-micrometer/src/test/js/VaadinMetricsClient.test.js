@@ -180,7 +180,19 @@ function err(message, stack) {
   // 1. A routine error waits for the flush interval but claims no outage.
   fire('error', { message: 'boom', filename: '/VAADIN/build/chart.js', lineno: 44, error: err('boom') });
   clock += 5000;
-  let batch = await recoverAndFlush();
+  let batch;
+  {
+    // No Flow client on this page: nothing to time, and nothing to warn about.
+    const warnings = [];
+    const consoleWarn = console.warn;
+    console.warn = (text) => warnings.push(text);
+    try {
+      batch = await recoverAndFlush();
+    } finally {
+      console.warn = consoleWarn;
+    }
+    check('a page without a Flow client flushes without a warning', warnings, []);
+  }
   check('routine error reports ageMs 0 after a 5 s wait', batch.map((s) => s.ageMs), [0]);
 
   // 2. An error raised during an outage reports the outage, across both
@@ -440,327 +452,290 @@ function err(message, stack) {
   batch = await recoverAndFlush();
   check('no message is gathered when details are off', batch.map((s) => s.detail.message), [null]);
 
-  // 8. Interaction timing: the request observer and the render check. The
-  //    environment above has no PerformanceObserver, which is the case the
-  //    rest of the collector must survive; this one has a working observer,
-  //    a Flow client publishing profiling data, and a connection store, all
-  //    driven by hand. The $server stub answers a flush only when the test
-  //    says so, as Flow does: from inside the response that carries the
-  //    answer.
+  // 8. Interaction timing, from the request and message events Flow's client
+  //    announces on window.Vaadin.Flow.clients[id].events. The client here is
+  //    a stand-in that dispatches them by hand, as Flow does: a request is
+  //    announced when the first invocation for it is queued, so the $server
+  //    stub announces one when nothing is open yet.
   {
-    let observer = null;
+    const warnings = [];
+    const consoleWarn = console.warn;
+    console.warn = (text) => warnings.push(text);
     let batches = [];
-    let answers = [];
-    let promiseless = false;
-    const flow = { total: 0, last: 0 };
+    let interval = null;
     const cs = {
       state: 'connected',
       cbs: [],
       addStateChangeListener(cb) { this.cbs.push(cb); },
       go(to) { const prev = this.state; this.state = to; this.cbs.forEach((cb) => cb(prev, to)); }
     };
+    const clients = { app: { events: new EventTarget() } };
     const win = {
       handlers: {},
       addEventListener(name, cb) { (this.handlers[name] = this.handlers[name] || []).push(cb); },
       location: { pathname: '/orders/17', href: 'https://app.example.com/orders/17' },
       sessionStorage: { store: {}, getItem(k) { return this.store[k] === undefined ? null : this.store[k]; }, setItem(k, v) { this.store[k] = v; }, removeItem(k) { delete this.store[k]; } },
-      Vaadin: {
-        connectionState: cs,
-        Flow: { clients: { app: { getProfilingData: () => [flow.last, flow.total, -1, -1, 0] } } }
-      }
+      Vaadin: { connectionState: cs, Flow: { clients: clients } }
     };
+    // The request the client is collecting invocations into, if any.
+    let open = null;
+    function announce(target, type, detail) {
+      target.dispatchEvent(new CustomEvent(type, { detail: detail }));
+      return detail;
+    }
+    function queue(client) {
+      if (open === null) {
+        const request = new EventTarget();
+        open = announce((client || clients.app).events, 'vaadin-request', request);
+      }
+      return open;
+    }
+    // Set to have the call fail after Flow has already queued it.
+    let failAfterQueue = false;
+    // Set to have the call queued without its request being announced.
+    let announceLate = false;
     const doc = {
       querySelector: (sel) => (sel === 'vaadin-metrics-collector'
-        ? { hasAttribute: () => false, $server: { recordSamples: (batch) => { batches.push(batch); return promiseless ? undefined : new Promise((r) => answers.push(r)); } } }
+        ? { hasAttribute: () => false, $server: { recordSamples: (batch) => {
+          const request = announceLate ? null : queue();
+          if (failAfterQueue) { throw new Error('rejected'); }
+          batches.push({ batch: batch, request: request });
+          return Promise.resolve();
+        } } }
         : null),
       addEventListener() {},
       visibilityState: 'visible'
     };
     let now = 50000;
     const perf = { getEntriesByType: () => [], now: () => now };
-    function Observer(cb) { this.cb = cb; }
-    Observer.prototype.observe = function (opts) { if (opts.type === 'resource') { observer = this; } };
     new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', src)(
-      win, doc, perf, Observer, {}, () => 0, () => 0
+      win, doc, perf, function () { throw new Error('unsupported'); }, {}, (cb) => { interval = cb; return 0; }, () => 0
     );
     const collectorApi = win.__vaadinMicrometer;
-
-    // The pieces of a round trip, separately, because the order between them
-    // is what several checks are about. `wire` delivers the request's
-    // Resource Timing entry; `apply` has Flow apply the response and end the
-    // loading round trip; `answer` settles the $server promise of the oldest
-    // unanswered flush, as the response carrying the answer would.
     const settle = () => new Promise((r) => setTimeout(r, 5));
-    function wire(duration, entryName, startTime) {
-      const start = startTime === undefined ? now : startTime;
-      now += duration;
-      observer.cb({ getEntries: () => [{ name: entryName || '/?v-r=uidl&v-uiId=0', duration: duration, startTime: start }] });
+
+    // Sends the open request and lets `wireMs` pass before its reply.
+    function send(request, wireMs) {
+      if (open === request) { open = null; }
+      request.dispatchEvent(new Event('sent'));
+      now += wireMs;
     }
-    function apply(processingMs) {
-      flow.last = processingMs;
-      flow.total += processingMs;
-      cs.go('loading');
-      cs.go('connected');
+    function respond(request) {
+      request.dispatchEvent(new Event('response'));
+      request.dispatchEvent(new Event('end'));
     }
-    function answer() { answers.shift()(); }
-    async function roundTrip(processingMs) {
-      apply(processingMs);
-      wire(180);
-      await settle();
+    // A message from the server: announced, parsed against the request it
+    // replies to, handled for `applyMs`, and ended with `outcome`. Without
+    // `start` when `unstarted` is set.
+    function message(request, applyMs, outcome, client, unstarted) {
+      const msg = new EventTarget();
+      msg.request = undefined;
+      announce((client || clients.app).events, 'vaadin-server-message', msg);
+      msg.request = request;
+      msg.dispatchEvent(new Event('parsed'));
+      if (!unstarted) { msg.dispatchEvent(new Event('start')); }
+      now += applyMs;
+      msg.outcome = outcome;
+      msg.dispatchEvent(new Event('end'));
     }
-    // The flush's own request comes back: response applied, entry delivered,
-    // promise answered.
-    async function ownRoundTrip(processingMs) {
-      apply(processingMs);
-      wire(40);
-      answer();
+    function click(wireMs, applyMs, client) {
+      const request = queue(client);
+      send(request, wireMs);
+      respond(request);
+      message(request, applyMs, 'applied', client);
+    }
+    // The flush's own request comes back, with what applying it cost.
+    async function ownRoundTrip(applyMs) {
+      const own = batches[batches.length - 1].request;
+      send(own, 40);
+      respond(own);
+      message(own, applyMs, 'applied');
       await settle();
     }
     async function drain() {
       cs.go('connection-lost');
       cs.go('connected');
       await settle();
-      const all = batches.flat();
-      batches = [];
-      return all;
+      return batches.flatMap((b) => b.batch);
     }
     function nudge() {
       win.handlers.error.forEach((cb) => cb({ message: 'x', filename: '/app.js', lineno: 1, error: err('x') }));
     }
-    // Which trigger reports the render first is a detail of the environment,
-    // so the samples are compared as a set: request before render.
     const timing = (all) => all.filter((s) => s.name === 'vaadin.client.request.duration' || s.name === 'vaadin.client.render.duration')
-      .map((s) => [s.name.split('.')[2], s.tags.route, s.valueMs])
-      .sort((a, b) => (a[0] === b[0] ? a[2] - b[2] : a[0] === 'request' ? -1 : 1));
+      .map((s) => [s.name.split('.')[2], s.tags.route, s.valueMs]);
+    // What an action reported, as the flush after it carries it.
+    async function timed(action) {
+      await action();
+      batches = [];
+      return timing(await drain());
+    }
 
     check('a fresh collector has timed nothing yet', collectorApi.bufferSize(), 0);
 
-    // 8a. One click: one request sample and one render sample, not two of
-    //     either, though both triggers fired for the same response.
-    await roundTrip(12);
-    let all = await drain();
-    check('a round trip is timed once on the wire and once in the browser',
-      timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 12]]);
+    // 8a. One click: the round trip from `sent` to `response`, and applying
+    //     the reply from `start` to `end`.
+    check('a round trip is timed on the wire and in the browser',
+      await timed(() => click(180, 12)), [['request', '/orders/17', 180], ['render', '/orders/17', 12]]);
 
     // 8b. The flush that just delivered those samples is itself a UIDL
-    //     request. It is neither timed nor does its render count, and the
-    //     next real interaction is timed as usual.
-    await ownRoundTrip(1);
+    //     request. Neither it nor its reply is timed, and the next real
+    //     interaction is timed as usual.
+    await ownRoundTrip(3);
     check("the collector's own flush request produces no samples", collectorApi.bufferSize(), 0);
-    await roundTrip(30);
-    all = await drain();
     check('the interaction after a flush is timed normally',
-      timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
+      await timed(() => click(90, 30)), [['request', '/orders/17', 90], ['render', '/orders/17', 30]]);
 
-    // 8c. Heartbeat and push requests are not interactions.
+    // 8c. A request sent again after a timeout is timed from the attempt that
+    //     was answered, and a message the server pushes on its own is timed in
+    //     the browser.
     await ownRoundTrip(1);
-    observer.cb({ getEntries: () => [
-      { name: '/?v-r=heartbeat&v-uiId=0', duration: 20, startTime: now },
-      { name: '/?v-r=push&v-uiId=0&X-Atmosphere-Transport=websocket', duration: 20, startTime: now },
-      { name: '/VAADIN/build/app.js', duration: 20, startTime: now }
-    ] });
+    check('a resent request is timed from its last attempt; a pushed message is rendered',
+      await timed(() => {
+        const request = queue();
+        send(request, 5000);
+        send(request, 70);
+        respond(request);
+        message(request, 8, 'applied');
+        message(undefined, 6, 'applied');
+      }), [['request', '/orders/17', 70], ['render', '/orders/17', 8], ['render', '/orders/17', 6]]);
+
+    // 8d. A message that was not applied -- discarded, or failed while being
+    //     applied -- is not a render, and an event whose beginning was never
+    //     seen times nothing: a reply to a request never sent, or a message
+    //     that ends without starting.
+    await ownRoundTrip(1);
+    check('messages that were not applied, and events missing their start, are not timed',
+      await timed(() => {
+        message(undefined, 4, 'discarded');
+        message(undefined, 9, 'failed');
+        message(undefined, 3, 'applied', undefined, true);
+        const unsent = queue();
+        open = null;
+        respond(unsent);
+        click(50, 2);
+      }), [['request', '/orders/17', 50], ['render', '/orders/17', 2]]);
+
+    // 8e. A flush that joins a request the user already opened announces
+    //     nothing of its own. That request carries the user's interaction and
+    //     is timed as such.
+    await ownRoundTrip(1);
+    check('a flush joining an open user request leaves it timed as the user\'s',
+      await timed(async () => {
+        const request = queue();
+        nudge();
+        collectorApi.flush();
+        await settle();
+        send(request, 120);
+        respond(request);
+        message(request, 15, 'applied');
+      }), [['request', '/orders/17', 120], ['render', '/orders/17', 15]]);
+
+    // 8f. A Flow client started after the collector -- an embedded
+    //     application -- is subscribed on the next flush interval.
+    await ownRoundTrip(1);
+    clients.embedded = { events: new EventTarget() };
+    interval();
+    interval();
+    check('a client started later is timed after the next interval',
+      await timed(() => click(60, 4, clients.embedded)), [['request', '/orders/17', 60], ['render', '/orders/17', 4]]);
+    await ownRoundTrip(1);
+    check('and a client already listened to is not subscribed twice',
+      await timed(() => click(70, 5)), [['request', '/orders/17', 70], ['render', '/orders/17', 5]]);
+
+    // 8g. A call that fails after Flow queued it keeps the batch, and the
+    //     request it opened is the last one claimed: the next interaction is
+    //     timed as the user's.
+    await ownRoundTrip(1);
+    nudge();
+    failAfterQueue = true;
+    collectorApi.flush();
+    failAfterQueue = false;
+    open = null;
+    check('a failed call keeps its batch for the next flush', collectorApi.bufferSize(), 1);
+    check('and does not claim the requests after it',
+      await timed(() => click(80, 6)), [['request', '/orders/17', 80], ['render', '/orders/17', 6]]);
+
+    // 8h. A click that navigates is tagged with the view it led to, as the
+    //     server tags its request, and its round trip and its render with the
+    //     same one, although the URL changes only while the reply is applied.
+    await ownRoundTrip(1);
+    check('a navigating click is tagged with the route it led to, request and render alike',
+      await timed(() => {
+        const request = queue();
+        send(request, 40);
+        respond(request);
+        const msg = new EventTarget();
+        announce(clients.app.events, 'vaadin-server-message', msg);
+        msg.request = request;
+        msg.dispatchEvent(new Event('parsed'));
+        msg.dispatchEvent(new Event('start'));
+        win.location.pathname = '/customers';
+        now += 7;
+        msg.outcome = 'applied';
+        msg.dispatchEvent(new Event('end'));
+      }), [['request', '/customers', 40], ['render', '/customers', 7]]);
+    win.location.pathname = '/orders/17';
+
+    // 8i. Nothing above is anything to warn about. A flush whose call neither
+    //     joins an open request nor has one announced while it queues cannot
+    //     tell its own request apart, and says so once.
+    await ownRoundTrip(1);
+    check('a collector that recognises its own requests warns about nothing', warnings, []);
+    // A request that ends without ever being sent is not open any more.
+    const dropped = queue();
+    open = null;
+    dropped.dispatchEvent(new Event('end'));
+    announceLate = true;
+    nudge();
+    collectorApi.flush();
     await settle();
-    check('heartbeat, push and static resources are not timed', collectorApi.bufferSize(), 0);
+    nudge();
+    collectorApi.flush();
+    await settle();
+    announceLate = false;
+    check('a flush whose request is not announced while queued warns once',
+      warnings.map((text) => text.includes('did not announce the request carrying the client metrics')), [true]);
 
-    // 8d. A response Flow has not applied by the time its entry is delivered
-    //     is still reported once, by the trigger that sees it applied.
-    {
-      wire(90);
-      await settle();
-      apply(7);
-      await settle();
-      all = await drain();
-      check('a response applied after its entry is still reported once',
-        timing(all), [['request', '/orders/17', 90], ['render', '/orders/17', 7]]);
-    }
+    console.warn = consoleWarn;
+  }
 
-    // 8f. The flush's entry is delivered before Flow applies its response.
-    //     The two are separate tasks with no order between them, and this
-    //     order is the one that used to report the flush's render, refill the
-    //     buffer, and flush again forever.
-    {
-      wire(180);
-      await settle();
-      apply(3);
-      answer();
-      await settle();
-      check("a flush response applied after its entry is still the collector's own", collectorApi.bufferSize(), 0);
-      await roundTrip(30);
-      all = await drain();
-      check('and the interaction after it is timed once',
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
-    }
-
-    // 8g. No resource entries at all: the UIDL rides a websocket, or the
-    //     observer never installed. The render check must not wait for one.
-    {
-      apply(2);
-      answer();
-      await settle();
-      check('without entries the flush response is still recognised as the collector\'s own', collectorApi.bufferSize(), 0);
-      apply(45);
-      await settle();
-      all = await drain();
-      check('and the interaction after it is still timed in the browser',
-        timing(all), [['render', '/orders/17', 45]]);
-    }
-
-    // 8h. A flush response that cost nothing does not move the total. The
-    //     answer still says it is over, so the next interaction is not taken
-    //     for it.
-    {
-      await ownRoundTrip(0);
-      check('a free flush response leaves nothing behind', collectorApi.bufferSize(), 0);
-      await roundTrip(25);
-      all = await drain();
-      check('and does not swallow the interaction after it',
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 25]]);
-    }
-
-    // 8i. A flush whose request or answer was lost must not hold either check
-    //     for the life of the tab.
-    {
-      await ownRoundTrip(1);
-      nudge();
-      collectorApi.flush();
-      await settle();
-      // Lost for good: no entry, no response, no answer.
-      batches = [];
-      answers = [];
-      now += 31000;
-      await roundTrip(9);
-      all = await drain();
-      check('a lost flush releases both marks after the deadline',
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 9]]);
-    }
-
-    // 8j. A flush called while the user's request is in flight goes out
-    //     behind it. The user's response is then the first applied and must
-    //     be reported; the flush's own is the second and must not be, or the
-    //     meter would trade a real sample for a near-zero one.
-    {
-      await ownRoundTrip(1);
-      const userStart = now;
-      now += 100;
-      cs.go('loading');
-      nudge();
-      collectorApi.flush();
-      flow.last = 60;
-      flow.total += 60;
-      cs.go('connected');
-      wire(180, undefined, userStart);
-      await settle();
-      await ownRoundTrip(1);
-      all = await drain();
-      check("a flush during a request keeps the user's render and drops its own",
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 60]]);
-    }
-
-    // 8k. The same, when the flush's own response then costs nothing: the
-    //     held sample is still the user's and must not be dropped with it.
-    {
-      await ownRoundTrip(1);
-      const userStart = now;
-      now += 100;
-      cs.go('loading');
-      nudge();
-      collectorApi.flush();
-      flow.last = 33;
-      flow.total += 33;
-      cs.go('connected');
-      wire(180, undefined, userStart);
-      await settle();
-      await ownRoundTrip(0);
-      all = await drain();
-      check("a free flush response after the user's does not take the user's sample with it",
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 33]]);
-    }
-
-    // 8l. Nothing at flush time says whether a request is in flight; the
-    //     answer is what attributes. So a flush with no request in flight,
-    //     whatever else the client is busy with, still reports the next real
-    //     interaction and not its own.
-    {
-      await ownRoundTrip(1);
-      nudge();
-      collectorApi.flush();
-      await ownRoundTrip(3);
-      await roundTrip(35);
-      all = await drain();
-      check('a flush with no request in flight drops only its own response',
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 35]]);
-    }
-
-    // 8m. The answer lands before Flow applies the response. Flow does not do
-    //     this, but nothing promises it never will, and the answer must not
-    //     then leave the flush's own response to be reported.
-    {
-      await ownRoundTrip(1);
-      nudge();
-      collectorApi.flush();
-      answer();
-      await settle();
-      apply(3);
-      wire(40);
-      await settle();
-      check('an answer before the response still claims the response', collectorApi.bufferSize(), 0);
-      await roundTrip(30);
-      all = await drain();
-      check('and the interaction after it is timed once',
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
-    }
-
-    // 8n. $server returns no promise at all. No answer is coming, so the
-    //     default rule stands: the first response applied after the flush is
-    //     the flush's own.
-    {
-      await ownRoundTrip(1);
-      promiseless = true;
-      nudge();
-      collectorApi.flush();
-      promiseless = false;
-      await settle();
-      apply(3);
-      wire(40);
-      await settle();
-      check('without a promise the first response after the flush is still its own', collectorApi.bufferSize(), 0);
-      await roundTrip(30);
-      all = await drain();
-      check('and the interaction after it is timed once',
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 30]]);
-    }
-
-    // 8o. Flow's actual order: the response is applied, the $server promise
-    //     is answered from inside it, and only then does the loading round
-    //     trip end. A flush response that cost nothing is over at that point
-    //     too; a mark left armed would take the next interaction's render for
-    //     the flush's own and drop it.
-    {
-      await ownRoundTrip(1);
-      nudge();
-      collectorApi.flush();
-      cs.go('loading');
-      flow.last = 0;
-      wire(40);
-      answer();
-      await settle();
-      cs.go('connected');
-      await settle();
-      check('a free flush response answered before its round trip ends leaves nothing behind', collectorApi.bufferSize(), 0);
-      await roundTrip(25);
-      all = await drain();
-      check('and does not swallow the interaction after it',
-        timing(all), [['request', '/orders/17', 180], ['render', '/orders/17', 25]]);
-    }
-
-    // 8e. Without profiling data -- production mode with requestTiming off --
-    //     the wire is still timed and the browser is simply not.
-    await ownRoundTrip(1);
-    delete win.Vaadin.Flow.clients.app.getProfilingData;
-    await roundTrip(40);
-    all = await drain();
-    check('without profiling data only the request is timed',
-      timing(all), [['request', '/orders/17', 180]]);
+  // 8j. A Flow client without client.events records neither meter, and the
+  //     collector says why, once. The client-side bootstrap's own entry in
+  //     the clients is not a client, and is no reason to warn.
+  {
+    const warningsWith = (clients) => {
+      const warnings = [];
+      const consoleWarn = console.warn;
+      console.warn = (text) => warnings.push(text);
+      try {
+        let interval = null;
+        new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', src)(
+          {
+            addEventListener() {},
+            location: { pathname: '/x', href: 'https://app.example.com/x' },
+            sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+            Vaadin: { Flow: { clients: clients } }
+          },
+          { querySelector: () => null, addEventListener() {}, visibilityState: 'visible' },
+          { getEntriesByType: () => [], now: () => 0 },
+          function () { throw new Error('unsupported'); },
+          {},
+          (cb) => { interval = cb; return 0; },
+          () => 0
+        );
+        interval();
+        interval();
+      } finally {
+        console.warn = consoleWarn;
+      }
+      return warnings.map((text) => text.includes('does not announce its requests and messages on client.events'));
+    };
+    const bootstrap = { isActive: () => true };
+    check('a client without events warns once that the meters are not recorded',
+      warningsWith({ TypeScript: bootstrap, app: {} }), [true]);
+    check('a client with events beside the bootstrap entry warns about nothing',
+      warningsWith({ TypeScript: bootstrap, app: { events: new EventTarget() } }), []);
+    check('and neither does the bootstrap entry alone', warningsWith({ TypeScript: bootstrap }), []);
   }
 
   // 9. Loading the module is not attaching the element. The module is in the

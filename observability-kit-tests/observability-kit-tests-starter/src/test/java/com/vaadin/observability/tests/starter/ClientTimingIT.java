@@ -22,16 +22,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The browser's side of an interaction, which only a real browser can measure:
- * the round trip of a UIDL request as the Resource Timing API reports it, and
- * the time Flow's client spent applying the response as Flow's own profiling
- * data reports it.
+ * the round trip of a UIDL request and the time Flow's client spent applying
+ * the response, both as the request and message events of Flow's client report
+ * them.
  *
  * <p>
- * The test app runs in production mode with {@code vaadin.requestTiming=true},
- * the switch a production deployment flips to get the render figure, so both
- * meters are expected. The collector's own request that carries the samples is
- * a UIDL request too and must not be reported, which is why the test also
- * checks that an idle tab stops producing samples once what it had is sent.
+ * The test app runs in production mode with Flow's defaults, so both meters are
+ * expected without any setting. The collector's own request that carries the
+ * samples is a UIDL request too and must not be reported, which is why the test
+ * also checks that an idle tab stops producing samples once what it had is
+ * sent.
  */
 public class ClientTimingIT extends AbstractIT {
 
@@ -53,12 +53,6 @@ public class ClientTimingIT extends AbstractIT {
         assertThat(clicks.getText()).isEqualTo("0");
 
         JavascriptExecutor js = (JavascriptExecutor) getDriver();
-        assertThat(js.executeScript("return Object.values(window.Vaadin.Flow"
-                + ".clients).some(function (c) { return typeof "
-                + "c.getProfilingData === 'function'; });"))
-                .as("the test app sets vaadin.requestTiming=true, so Flow "
-                        + "should publish its profiling data")
-                .isEqualTo(Boolean.TRUE);
         recordFlushes(js);
 
         // Page load is timed too: the navigation it ends with is a UIDL
@@ -66,15 +60,11 @@ public class ClientTimingIT extends AbstractIT {
         // settled. Waiting for the periodic flush instead left it to chance
         // which samples it carried, and a slow browser that clicked after it
         // had its snapshot taken before the click was reported at all.
-        // The navigation must have been timed first: Flow idle, its entry in
-        // the buffer, and the flush a task later than the collector's
-        // observer, which the entry is delivered to asynchronously.
+        // The navigation must have been timed first: Flow idle, which it is
+        // only once the response has been applied and both samples taken.
         waitUntil(driver -> Boolean.TRUE.equals(js.executeScript(
                 "return Object.values(window.Vaadin.Flow.clients).every("
-                        + "function (c) { return !c.isActive(); })"
-                        + " && performance.getEntriesByType('resource').some("
-                        + "function (e) { return /[?&]v-r=uidl(?:&|$)/"
-                        + ".test(e.name); });")));
+                        + "function (c) { return !c.isActive(); });")));
         js.executeAsyncScript("var done = arguments[arguments.length - 1];"
                 + "setTimeout(function () {"
                 + "  window.__vaadinMicrometer.flush(); done(); }, 100);");
@@ -84,14 +74,14 @@ public class ClientTimingIT extends AbstractIT {
                         + "function (f) { return f.answered; });")));
         String before = fetch("/actuator/prometheus");
         double requestsBefore = prometheusValue(before, REQUEST_COUNT, null);
+        double rendersBefore = prometheusValue(before, RENDER_COUNT, null);
 
         $(NativeButtonElement.class).id("bump").click();
         assertThat(clicks.getText()).isEqualTo("1");
 
-        // The click's round trip is always timed. Its render is only when it
-        // cost Flow a millisecond or more -- Flow counts whole milliseconds --
-        // but it is reported with the round trip, so once the request sample
-        // is in, the render counts are final too.
+        // The click's round trip and its render are both timed, and reported
+        // in the same flush, so once the request sample is in, the render
+        // counts are final too.
         String prometheus = awaitPrometheus(
                 body -> prometheusValue(body, REQUEST_COUNT,
                         null) >= requestsBefore + 1.0,
@@ -102,8 +92,8 @@ public class ClientTimingIT extends AbstractIT {
         assertThat(requests).as("the click's round trip should be timed once")
                 .isEqualTo(requestsBefore + 1.0);
         assertThat(renders)
-                .as("applying the responses should be timed in the browser")
-                .isGreaterThanOrEqualTo(1.0);
+                .as("applying the click's response should be timed once")
+                .isEqualTo(rendersBefore + 1.0);
         assertThat(prometheusValue(prometheus,
                 "vaadin_client_request_duration_seconds_sum", null))
                 .as("a round trip takes time").isGreaterThan(0.0);

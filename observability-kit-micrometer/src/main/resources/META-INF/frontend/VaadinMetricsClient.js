@@ -45,13 +45,6 @@ function installCollector() {
   var CLIENT_ERRORS = 'vaadin.client.errors';
   var REQUEST_DURATION = 'vaadin.client.request.duration';
   var RENDER_DURATION = 'vaadin.client.render.duration';
-  // Flow marks every UIDL request with this query parameter; heartbeat and
-  // push requests carry other values and are not interactions.
-  var UIDL_REQUEST = /[?&]v-r=uidl(?:&|$)/;
-  // How long a flush is given to leave the browser and be answered before the
-  // request it was waiting to ride on is assumed lost, and the next UIDL
-  // request and the next applied response are treated as the user's again.
-  var OWN_REQUEST_MAX_WAIT_MS = 30000;
 
   var buffer = [];
 
@@ -186,6 +179,23 @@ function installCollector() {
 
   function currentRoute() {
     return window.location.pathname || '/';
+  }
+
+  // Says once per page what the collector cannot do, in the browser console,
+  // where the developer looking at missing samples will look. Once, because
+  // the condition does not change for the life of the page and a warning
+  // every flush interval would bury the console.
+  var warned = {};
+  function warnOnce(key, text) {
+    if (warned[key]) {
+      return;
+    }
+    warned[key] = true;
+    try {
+      console.warn('[observability-kit] ' + text);
+    } catch (e) {
+      /* no console */
+    }
   }
 
   // The buffer and everything still in flight, held where a reload can find it
@@ -358,43 +368,46 @@ function installCollector() {
     persist();
     try {
       // The samples ride on a UIDL request of their own, which the interaction
-      // timing below would otherwise time as an interaction -- and then
-      // report, and then flush, forever. Mark it so the request observer skips
-      // the request and the render check holds what is applied until the
-      // answer below says which response was ours.
-      ownRequestAt = monotonicNow();
-      ownRenderAt = ownRequestAt;
-      ownAnswerPending = false;
-      ownRequestEnded = false;
-      ownAnswered = false;
-      var sent = el.$server.recordSamples(batch);
+      // timing below must not time. Flow announces that request while the
+      // call queues it, so whatever is announced meanwhile is claimed.
+      var sent;
+      var joining = openRequest !== null;
+      claimedOwnRequest = false;
+      claimingOwnRequest = true;
+      try {
+        sent = el.$server.recordSamples(batch);
+      } finally {
+        claimingOwnRequest = false;
+      }
+      if (!joining && !claimedOwnRequest && subscribedClients > 0) {
+        // No request was open for the call to join, so the one it went out
+        // on was announced after the call returned, or not at all. Either
+        // way it was not recognised as the flush's own, and is now timed as
+        // an interaction, every flush.
+        warnOnce(
+          'unclaimed',
+          'Flow did not announce the request carrying the client metrics while it was queued, so the ' +
+            'collector cannot tell it apart and vaadin.client.request.duration and ' +
+            'vaadin.client.render.duration include its own traffic.'
+        );
+      }
       var answered = function () {
         // The server either recorded the batch or answered that it could not.
         // Both mean it saw the batch, so resending would double-count what it
         // did record. A message Flow never delivered does not answer here at
         // all: Flow re-sends those itself, and the persisted copy covers the
         // tab that does not live to see it.
-        ownResponseAnswered();
         settle(batch, false);
       };
       if (sent && typeof sent.then === 'function') {
-        ownAnswerPending = true;
         sent.then(answered, answered);
       } else {
-        // No promise to wait on; treat the queued call as delivered. With no
-        // answer coming, the response is attributed by the default rule: the
-        // first one applied after the mark is ours.
+        // No promise to wait on; treat the queued call as delivered.
         settle(batch, false);
       }
     } catch (e) {
       // The call never entered Flow's message queue, so nothing was sent and
-      // requeueing cannot double-count -- and no request of ours is coming.
-      ownRequestAt = null;
-      ownRenderAt = null;
-      ownAnswerPending = false;
-      ownRequestEnded = false;
-      ownAnswered = false;
-      releaseHeldRender();
+      // requeueing cannot double-count.
       settle(batch, true);
     }
   }
@@ -994,10 +1007,6 @@ function installCollector() {
           // A request starting, not a connection event.
           return;
         }
-        if (isLoading(previous)) {
-          // A request just ended and its response has been applied.
-          requestEnded();
-        }
         var to = normalizeState(current);
         if (to === lastState) {
           return;
@@ -1035,228 +1044,146 @@ function installCollector() {
 
   // Interaction timing: the browser's side of the server's request timer.
   //
-  // Every UIDL POST leaves a Resource Timing entry, so the round trip as the
-  // browser saw it -- queueing, wire, server, and the response body -- needs no
-  // hook into Flow and works in production. What the browser then spent
-  // applying the response is Flow's own figure: when its requestTiming
-  // setting is on (the default outside production mode), each client under
-  // window.Vaadin.Flow.clients publishes getProfilingData(), whose first value
-  // is the processing time of the last response and whose second is the
-  // running total. The total only moves when a response was applied, so a
-  // check that runs more than once per response reports it once.
+  // Each Flow client announces its requests and the messages it receives on
+  // window.Vaadin.Flow.clients[id].events. A request dispatches `sent` for
+  // every attempt and `response` once the reply has arrived and been
+  // identified, which is the round trip as the browser saw it. A message
+  // dispatches `start` when the client starts handling it and `end`, with
+  // its outcome, once it is done, which is what the browser spent applying
+  // it. Both work in production mode and over every transport, websocket
+  // included, and a message knows which request it replies to.
   //
-  // The check has two triggers because neither alone sees every response: the
-  // observer can fire before Flow has applied the response it saw, and is
-  // absent when the UIDL rides a websocket; the connection store's loading
-  // round trip is muted for some events.
+  // Heartbeats are not announced, and neither is the initial UIDL embedded in
+  // the page, which vaadin.client.bootstrap.duration covers.
 
   // The collector's own flush rides on a UIDL request, and would otherwise be
-  // timed as an interaction: the request by the observer, the response by the
-  // render check. Two marks, both set by flush(). The request mark is consumed
-  // by the first UIDL entry to start after it. The render mark says a flush is
-  // outstanding, and by default the first response applied while it is
-  // pending is the flush's own and is dropped. When the flush's call returned
-  // a promise, its answer refines that: a response applied before the answer
-  // is held rather than dropped, and the answer decides whose it was, which
-  // is what lets a user request that was in flight when the flush was called
-  // keep its sample. Neither mark depends on the other having fired -- with
-  // @Push(transport = WEBSOCKET) the UIDL rides the websocket and leaves no
-  // resource entry, and the observer may not install at all -- and both
-  // expire, so a flush whose request or answer was lost does not hold either
-  // check for the life of the tab.
-  var ownRequestAt = null;
-  var ownRenderAt = null;
-  // Whether the outstanding flush's call returned a promise, so an answer is
-  // coming to attribute its response. Without one the default rule stands.
-  var ownAnswerPending = false;
-  // Whether a request ended while the render mark was pending. A flush
-  // response that cost the browser nothing does not move the processing
-  // total, so this is the only evidence that it came and went.
-  var ownRequestEnded = false;
-  // Whether the outstanding flush was answered while its render mark was kept.
-  // Flow answers from inside the response and ends the loading round trip only
-  // afterwards, so a free flush response comes with nothing applied at the
-  // answer, and the round trip ending next is what says it is over.
-  var ownAnswered = false;
-  // A response applied while a flush was outstanding and its answer still to
-  // come, with the client it came from and the processing total it brought
-  // that client to. Whether it was the user's or the flush's own is not
-  // knowable until the answer, so it waits here. Only ever one: a second
-  // applied response means the first was not the flush's, since the answer
-  // would have claimed it.
-  var heldRender = null;
-  // Per Flow client, the processing total at the last check.
-  var processingTotals = {};
+  // timed as an interaction -- and then reported, and then flushed, forever.
+  // Flow announces a request synchronously when the first invocation for it
+  // is queued (documented on Flow's VaadinRequest and ClientEvents), so a
+  // request announced while flush() hands the batch to $server is the
+  // flush's own. A user call queued in the same tick, before the flush,
+  // shares that request and is not timed either; a flush that joins a
+  // request the user already opened does not claim it, and that interaction
+  // is timed as the user's. flush() warns when its call neither joined an
+  // open request nor had one announced, which is what a Flow that stopped
+  // announcing synchronously would look like.
+  var claimingOwnRequest = false;
+  var claimedOwnRequest = false;
+  var ownRequests = new WeakSet();
+  // The request announced and not yet sent, which a call queued now joins.
+  var openRequest = null;
+  var subscribedClients = 0;
+  // The round trip of each request whose reply has not been applied yet.
+  var roundTrips = new WeakMap();
 
-  function pending(mark) {
-    return mark !== null && monotonicNow() - mark <= OWN_REQUEST_MAX_WAIT_MS;
+  function isOwnReply(message) {
+    return !!message.request && ownRequests.has(message.request);
   }
 
-  function flowClients() {
-    var flow = window.Vaadin && window.Vaadin.Flow;
-    return (flow && flow.clients) || null;
-  }
-
-  function profilingOf(client) {
-    if (!client || typeof client.getProfilingData !== 'function') {
-      return null;
-    }
-    var data;
-    try {
-      data = client.getProfilingData();
-    } catch (e) {
-      return null;
-    }
-    if (!data || typeof data[0] !== 'number' || typeof data[1] !== 'number') {
-      return null;
-    }
-    return data;
-  }
-
-  // The held response was the user's after all: report it.
-  function releaseHeldRender() {
-    if (heldRender !== null) {
-      pushSample(RENDER_DURATION, { route: heldRender.route }, heldRender.ms);
-      heldRender = null;
-    }
-  }
-
-  // Reports the processing time of every response applied since the last
-  // check, and returns whether one was. With discard set it only takes note,
-  // which is how the baseline is taken. While a flush is outstanding the
-  // first applied response is the flush's own and is dropped -- unless an
-  // answer is coming, in which case the sample is held for
-  // ownResponseAnswered() to attribute. A held sample that a further response
-  // overtakes was the user's, as was one whose flush expired unanswered.
-  function sampleRender(discard) {
-    var clients = flowClients();
-    if (!clients) {
-      return false;
-    }
-    var applied = false;
-    for (var id in clients) {
-      var data = profilingOf(clients[id]);
-      if (data === null) {
-        continue;
-      }
-      var total = data[1];
-      var seen = processingTotals[id];
-      processingTotals[id] = total;
-      // The first check only takes the baseline: the initial UIDL is the
-      // bootstrap, already covered by vaadin.client.bootstrap.duration.
-      if (seen === undefined || total === seen) {
-        continue;
-      }
-      applied = true;
-      if (discard) {
-        continue;
-      }
-      releaseHeldRender();
-      if (pending(ownRenderAt)) {
-        if (ownAnswerPending) {
-          heldRender = { id: id, route: currentRoute(), ms: data[0], total: total };
-        } else {
-          ownRenderAt = null;
-        }
-        continue;
-      }
-      pushSample(RENDER_DURATION, { route: currentRoute() }, data[0]);
-    }
-    return applied;
-  }
-  // Baseline now, so the bootstrap does not count as the first interaction.
-  sampleRender(true);
-
-  // A request ended, so a response was applied. Noted before the check, which
-  // may clear the mark, because a response that cost the browser nothing is
-  // otherwise invisible to it.
-  function requestEnded() {
-    if (pending(ownRenderAt)) {
-      ownRequestEnded = true;
-    }
-    sampleRender(false);
-    if (ownAnswered && pending(ownRenderAt)) {
-      // Answered, and now the round trip is over with nothing applied: the
-      // flush's response cost nothing, and the next one is not its.
-      ownRenderAt = null;
-    }
-  }
-
-  // The flush has been answered. Flow does that from inside the response that
-  // carried the answer, so this normally runs, as a microtask after that task,
-  // with the response applied and the store listener having seen it. If it
-  // cost the browser anything it is the most recent applied response and the
-  // one held; if it cost nothing, whatever is held predates it and was the
-  // user's. With nothing applied the mark is kept: either the response cost
-  // nothing and the round trip ending, which Flow reports after the answer,
-  // releases the mark, or the answer landed before the response was applied
-  // and the default rule claims the response when it arrives.
-  // What none of this can separate is a user RPC queued in the same tick as
-  // the flush, which shares its request: that response is dropped with it,
-  // one missing sample and nothing reported in its place.
-  function ownResponseAnswered() {
-    ownAnswerPending = false;
-    if (heldRender === null) {
-      // Nothing was held. The response was applied since the last check, or
-      // cost nothing and a request ending is all that marked it -- either
-      // way it is ours and over. Otherwise it has not arrived yet.
-      if (sampleRender(true) || ownRequestEnded) {
-        ownRenderAt = null;
-      } else {
-        ownAnswered = true;
-      }
+  function timeRequest(event) {
+    var request = event && event.detail;
+    if (!request || typeof request.addEventListener !== 'function') {
       return;
     }
-    ownRenderAt = null;
-    var clients = flowClients();
-    var data = clients ? profilingOf(clients[heldRender.id]) : null;
-    if (data === null || data[1] !== heldRender.total) {
-      // A response was applied after the held one, so the held one was the
-      // user's; the newer one is ours.
-      releaseHeldRender();
-      sampleRender(true);
+    openRequest = request;
+    var closed = function () {
+      if (openRequest === request) {
+        openRequest = null;
+      }
+    };
+    request.addEventListener('sent', closed);
+    request.addEventListener('end', closed);
+    if (claimingOwnRequest) {
+      ownRequests.add(request);
+      claimedOwnRequest = true;
       return;
     }
-    if (data[0] > 0) {
-      heldRender = null;
-      return;
-    }
-    releaseHeldRender();
-  }
-
-  // The first UIDL request to start after the mark is the one carrying the
-  // samples, alone or with whatever the user queued in the same tick. An entry
-  // that started before the mark is a request that was already in flight.
-  function isOwnRequest(entry) {
-    if (!pending(ownRequestAt) || entry.startTime + 1 < ownRequestAt) {
-      return false;
-    }
-    ownRequestAt = null;
-    return true;
-  }
-
-  try {
-    var requestObserver = new PerformanceObserver(function (list) {
-      list.getEntries().forEach(function (entry) {
-        if (!UIDL_REQUEST.test(entry.name || '')) {
-          return;
-        }
-        if (!isOwnRequest(entry)) {
-          pushSample(REQUEST_DURATION, { route: currentRoute() }, entry.duration);
-        }
-        // The entry can be delivered before or after Flow applies the
-        // response: the two are separate tasks with no order between them.
-        // Look now and once more after the current task; a response applied
-        // later still is seen by the request ending.
-        sampleRender(false);
-        setTimeout(function () {
-          sampleRender(false);
-        }, 0);
-      });
+    // The latest attempt, so a request sent again after a timeout or a
+    // reconnect is timed from the attempt that was answered.
+    var sentAt = null;
+    request.addEventListener('sent', function () {
+      sentAt = monotonicNow();
     });
-    requestObserver.observe({ type: 'resource' });
+    // Recorded once the reply has been applied, under the route the render
+    // is recorded under (see timeMessage).
+    request.addEventListener('response', function () {
+      if (sentAt !== null) {
+        roundTrips.set(request, monotonicNow() - sentAt);
+      }
+    });
+  }
+
+  function timeMessage(event) {
+    var message = event && event.detail;
+    if (!message || typeof message.addEventListener !== 'function') {
+      return;
+    }
+    var startedAt = null;
+    message.addEventListener('start', function () {
+      startedAt = monotonicNow();
+    });
+    message.addEventListener('end', function () {
+      // Read once the message is done, as the server reads the route of a
+      // UIDL request once it is handled: a click that navigates is the next
+      // view's, and its round trip and its render are the same view's even
+      // when the URL changes only while the reply is applied.
+      var route = currentRoute();
+      var request = message.request;
+      if (request && roundTrips.has(request)) {
+        pushSample(REQUEST_DURATION, { route: route }, roundTrips.get(request));
+        roundTrips.delete(request);
+      }
+      // A message that was discarded was not applied, and one that failed was
+      // applied only in part and reports itself as a browser error.
+      if (startedAt === null || message.outcome !== 'applied' || isOwnReply(message)) {
+        return;
+      }
+      pushSample(RENDER_DURATION, { route: route }, monotonicNow() - startedAt);
+    });
+  }
+
+  // Subscribes to every Flow client. Run at install and on every flush
+  // interval, so a client that starts later -- an embedded web component
+  // application -- is picked up too. Adding the same listener to a client
+  // again does nothing, as for any EventTarget.
+  var subscribed = new WeakSet();
+  function subscribeClients() {
+    var flow = window.Vaadin && window.Vaadin.Flow;
+    var clients = (flow && flow.clients) || {};
+    var withoutEvents = false;
+    for (var id in clients) {
+      if (id === 'TypeScript') {
+        // Not a client: the client-side bootstrap's own entry, which Flow
+        // skips too.
+        continue;
+      }
+      var events = clients[id] && clients[id].events;
+      if (!events || typeof events.addEventListener !== 'function') {
+        withoutEvents = true;
+        continue;
+      }
+      events.addEventListener('vaadin-request', timeRequest);
+      events.addEventListener('vaadin-server-message', timeMessage);
+      if (!subscribed.has(events)) {
+        subscribed.add(events);
+        subscribedClients++;
+      }
+    }
+    if (withoutEvents && subscribedClients === 0) {
+      // A Flow older than the one this kit is built for, whose client
+      // announces nothing: both meters would just stay empty.
+      warnOnce(
+        'no-events',
+        'This Flow client does not announce its requests and messages on client.events, so ' +
+          'vaadin.client.request.duration and vaadin.client.render.duration are not recorded. ' +
+          'They need the Flow version this observability-kit release is built for.'
+      );
+    }
+  }
+  try {
+    subscribeClients();
   } catch (e) {
-    /* unsupported, skip */
+    /* clients unavailable, skip */
   }
 
   // Navigation timing: observe history changes.
@@ -1297,8 +1224,15 @@ function installCollector() {
     /* ignore */
   }
 
-  // Periodic flush.
-  setInterval(flush, FLUSH_INTERVAL_MS);
+  // Periodic flush, and a look for Flow clients started since the last one.
+  setInterval(function () {
+    try {
+      subscribeClients();
+    } catch (e) {
+      /* clients unavailable, skip */
+    }
+    flush();
+  }, FLUSH_INTERVAL_MS);
 
   // Leaving the page: flush what we can. flush() hands the batch to storage
   // before it sends and clears it only once the server has answered, so a tab
