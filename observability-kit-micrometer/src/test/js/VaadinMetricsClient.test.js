@@ -446,6 +446,9 @@ function err(message, stack) {
   //    announced when the first invocation for it is queued, so the $server
   //    stub announces one when nothing is open yet.
   {
+    const warnings = [];
+    const consoleWarn = console.warn;
+    console.warn = (text) => warnings.push(text);
     let batches = [];
     let interval = null;
     const cs = {
@@ -477,10 +480,12 @@ function err(message, stack) {
     }
     // Set to have the call fail after Flow has already queued it.
     let failAfterQueue = false;
+    // Set to have the call queued without its request being announced.
+    let announceLate = false;
     const doc = {
       querySelector: (sel) => (sel === 'vaadin-metrics-collector'
         ? { hasAttribute: () => false, $server: { recordSamples: (batch) => {
-          const request = queue();
+          const request = announceLate ? null : queue();
           if (failAfterQueue) { throw new Error('rejected'); }
           batches.push({ batch: batch, request: request });
           return Promise.resolve();
@@ -637,6 +642,48 @@ function err(message, stack) {
     check('a failed call keeps its batch for the next flush', collectorApi.bufferSize(), 1);
     check('and does not claim the requests after it',
       await timed(() => click(80, 6)), [['request', '/orders/17', 80], ['render', '/orders/17', 6]]);
+
+    // 8h. A click that navigates is tagged with the view it was made on, the
+    //     request and the reply alike, even though the browser shows the next
+    //     view by the time either is done. A message the server pushes on its
+    //     own carries the view it arrived on.
+    await ownRoundTrip(1);
+    check('a navigating click is tagged with the route it was made on',
+      await timed(() => {
+        const request = queue();
+        win.location.pathname = '/customers';
+        send(request, 40);
+        respond(request);
+        message(request, 7, 'applied');
+        message(undefined, 3, 'applied');
+      }), [['request', '/orders/17', 40], ['render', '/orders/17', 7], ['render', '/customers', 3]]);
+    win.location.pathname = '/orders/17';
+
+    // 8i. Nothing above is anything to warn about. A flush whose call neither
+    //     joins an open request nor has one announced while it queues cannot
+    //     tell its own request apart, and says so once.
+    await ownRoundTrip(1);
+    check('a collector that recognises its own requests warns about nothing', warnings, []);
+    announceLate = true;
+    nudge();
+    collectorApi.flush();
+    await settle();
+    nudge();
+    collectorApi.flush();
+    await settle();
+    announceLate = false;
+    check('a flush whose request is not announced while queued warns once',
+      warnings.map((text) => text.includes('did not announce the request carrying the client metrics')), [true]);
+
+    // 8j. A Flow client without client.events records neither meter, and the
+    //     collector says why, once.
+    warnings.length = 0;
+    clients.legacy = {};
+    interval();
+    interval();
+    check('a client without events warns once that the meters are not recorded',
+      warnings.map((text) => text.includes('does not announce its requests and messages on client.events')), [true]);
+    console.warn = consoleWarn;
   }
 
   // 9. Loading the module is not attaching the element. The module is in the

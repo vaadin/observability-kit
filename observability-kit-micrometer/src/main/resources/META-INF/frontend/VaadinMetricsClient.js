@@ -181,6 +181,23 @@ function installCollector() {
     return window.location.pathname || '/';
   }
 
+  // Says once per page what the collector cannot do, in the browser console,
+  // where the developer looking at missing samples will look. Once, because
+  // the condition does not change for the life of the page and a warning
+  // every flush interval would bury the console.
+  var warned = {};
+  function warnOnce(key, text) {
+    if (warned[key]) {
+      return;
+    }
+    warned[key] = true;
+    try {
+      console.warn('[observability-kit] ' + text);
+    } catch (e) {
+      /* no console */
+    }
+  }
+
   // The buffer and everything still in flight, held where a reload can find it
   // again. Best-effort: storage is unavailable in some privacy modes and full
   // in others, and neither is worth failing a measurement over.
@@ -354,11 +371,25 @@ function installCollector() {
       // timing below must not time. Flow announces that request while the
       // call queues it, so whatever is announced meanwhile is claimed.
       var sent;
+      var joining = openRequest !== null;
+      claimedOwnRequest = false;
       claimingOwnRequest = true;
       try {
         sent = el.$server.recordSamples(batch);
       } finally {
         claimingOwnRequest = false;
+      }
+      if (!joining && !claimedOwnRequest && subscribedClients > 0) {
+        // No request was open for the call to join, so the one it went out
+        // on was announced after the call returned, or not at all. Either
+        // way it was not recognised as the flush's own, and is now timed as
+        // an interaction, every flush.
+        warnOnce(
+          'unclaimed',
+          'Flow did not announce the request carrying the client metrics while it was queued, so the ' +
+            'collector cannot tell it apart and vaadin.client.request.duration and ' +
+            'vaadin.client.render.duration include its own traffic.'
+        );
       }
       var answered = function () {
         // The server either recorded the batch or answered that it could not.
@@ -1028,13 +1059,22 @@ function installCollector() {
   // The collector's own flush rides on a UIDL request, and would otherwise be
   // timed as an interaction -- and then reported, and then flushed, forever.
   // Flow announces a request synchronously when the first invocation for it
-  // is queued, so a request announced while flush() hands the batch to
-  // $server is the flush's own. A user call queued in the same tick, before
-  // the flush, shares that request and is not timed either; a flush that
-  // joins a request the user already opened does not claim it, and that
-  // interaction is timed as the user's.
+  // is queued (documented on Flow's VaadinRequest and ClientEvents), so a
+  // request announced while flush() hands the batch to $server is the
+  // flush's own. A user call queued in the same tick, before the flush,
+  // shares that request and is not timed either; a flush that joins a
+  // request the user already opened does not claim it, and that interaction
+  // is timed as the user's. flush() warns when its call neither joined an
+  // open request nor had one announced, which is what a Flow that stopped
+  // announcing synchronously would look like.
   var claimingOwnRequest = false;
+  var claimedOwnRequest = false;
   var ownRequests = new WeakSet();
+  // The request announced and not yet sent, which a call queued now joins.
+  var openRequest = null;
+  var subscribedClients = 0;
+  // The route each request was queued on, for the reply to it to carry too.
+  var requestRoutes = new WeakMap();
 
   function isOwnReply(message) {
     return !!message.request && ownRequests.has(message.request);
@@ -1045,10 +1085,24 @@ function installCollector() {
     if (!request || typeof request.addEventListener !== 'function') {
       return;
     }
+    openRequest = request;
+    var closed = function () {
+      if (openRequest === request) {
+        openRequest = null;
+      }
+    };
+    request.addEventListener('sent', closed);
+    request.addEventListener('end', closed);
     if (claimingOwnRequest) {
       ownRequests.add(request);
+      claimedOwnRequest = true;
       return;
     }
+    // Read now rather than when the response arrives: a click that navigates
+    // belongs to the view it was made on, and by the time it is answered or
+    // applied the browser may already show the next one.
+    var route = currentRoute();
+    requestRoutes.set(request, route);
     // The latest attempt, so a request sent again after a timeout or a
     // reconnect is timed from the attempt that was answered.
     var sentAt = null;
@@ -1057,7 +1111,7 @@ function installCollector() {
     });
     request.addEventListener('response', function () {
       if (sentAt !== null) {
-        pushSample(REQUEST_DURATION, { route: currentRoute() }, monotonicNow() - sentAt);
+        pushSample(REQUEST_DURATION, { route: route }, monotonicNow() - sentAt);
       }
     });
   }
@@ -1067,6 +1121,14 @@ function installCollector() {
     if (!message || typeof message.addEventListener !== 'function') {
       return;
     }
+    // A reply carries the route its request was queued on; a message the
+    // server pushes on its own, the route it arrived on.
+    var route = currentRoute();
+    message.addEventListener('parsed', function () {
+      if (message.request && requestRoutes.has(message.request)) {
+        route = requestRoutes.get(message.request);
+      }
+    });
     var startedAt = null;
     message.addEventListener('start', function () {
       startedAt = monotonicNow();
@@ -1077,7 +1139,7 @@ function installCollector() {
       if (startedAt === null || message.outcome !== 'applied' || isOwnReply(message)) {
         return;
       }
-      pushSample(RENDER_DURATION, { route: currentRoute() }, monotonicNow() - startedAt);
+      pushSample(RENDER_DURATION, { route: route }, monotonicNow() - startedAt);
     });
   }
 
@@ -1085,16 +1147,30 @@ function installCollector() {
   // interval, so a client that starts later -- an embedded web component
   // application -- is picked up too. Adding the same listener to a client
   // again does nothing, as for any EventTarget.
+  var subscribed = new WeakSet();
   function subscribeClients() {
     var flow = window.Vaadin && window.Vaadin.Flow;
     var clients = (flow && flow.clients) || {};
     for (var id in clients) {
-      var events = clients[id] && clients[id].events;
+      var client = clients[id];
+      var events = client && client.events;
       if (!events || typeof events.addEventListener !== 'function') {
+        // A Flow older than the one this kit is built for, whose client
+        // announces nothing: both meters would just stay empty.
+        warnOnce(
+          'no-events',
+          'This Flow client does not announce its requests and messages on client.events, so ' +
+            'vaadin.client.request.duration and vaadin.client.render.duration are not recorded. ' +
+            'They need the Flow version this observability-kit release is built for.'
+        );
         continue;
       }
       events.addEventListener('vaadin-request', timeRequest);
       events.addEventListener('vaadin-server-message', timeMessage);
+      if (!subscribed.has(events)) {
+        subscribed.add(events);
+        subscribedClients++;
+      }
     }
   }
   try {

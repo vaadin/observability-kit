@@ -1007,9 +1007,16 @@ Three things are worth knowing about both:
   request shares that request and is left out with it.
 - **Bootstrap is not an interaction.** The first UIDL response, which builds
   the page, is covered by `vaadin.client.bootstrap.duration` and excluded here.
-- **The route is the browser's.** Both meters carry the route the browser was
-  on when the response arrived, which for a navigation request is the view
-  navigated to, as on the server's request span.
+- **The route is the one the interaction started on.** Both meters carry the
+  route the browser was on when the request was queued, so a click that
+  navigates is counted against the view it was made on, request and reply
+  alike. A message the server pushes on its own carries the route it arrived
+  on.
+
+Both need a Flow client that announces these events. On one that does not,
+neither meter is recorded and the collector says so once in the browser
+console. It also warns once when it cannot recognise its own request, as both
+meters then include the collector's own traffic.
 
 ## Database fetch size
 
