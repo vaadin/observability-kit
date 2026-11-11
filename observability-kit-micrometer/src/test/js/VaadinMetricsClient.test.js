@@ -180,7 +180,19 @@ function err(message, stack) {
   // 1. A routine error waits for the flush interval but claims no outage.
   fire('error', { message: 'boom', filename: '/VAADIN/build/chart.js', lineno: 44, error: err('boom') });
   clock += 5000;
-  let batch = await recoverAndFlush();
+  let batch;
+  {
+    // No Flow client on this page: nothing to time, and nothing to warn about.
+    const warnings = [];
+    const consoleWarn = console.warn;
+    console.warn = (text) => warnings.push(text);
+    try {
+      batch = await recoverAndFlush();
+    } finally {
+      console.warn = consoleWarn;
+    }
+    check('a page without a Flow client flushes without a warning', warnings, []);
+  }
   check('routine error reports ageMs 0 after a 5 s wait', batch.map((s) => s.ageMs), [0]);
 
   // 2. An error raised during an outage reports the outage, across both
@@ -643,20 +655,25 @@ function err(message, stack) {
     check('and does not claim the requests after it',
       await timed(() => click(80, 6)), [['request', '/orders/17', 80], ['render', '/orders/17', 6]]);
 
-    // 8h. A click that navigates is tagged with the view it was made on, the
-    //     request and the reply alike, even though the browser shows the next
-    //     view by the time either is done. A message the server pushes on its
-    //     own carries the view it arrived on.
+    // 8h. A click that navigates is tagged with the view it led to, as the
+    //     server tags its request, and its round trip and its render with the
+    //     same one, although the URL changes only while the reply is applied.
     await ownRoundTrip(1);
-    check('a navigating click is tagged with the route it was made on',
+    check('a navigating click is tagged with the route it led to, request and render alike',
       await timed(() => {
         const request = queue();
-        win.location.pathname = '/customers';
         send(request, 40);
         respond(request);
-        message(request, 7, 'applied');
-        message(undefined, 3, 'applied');
-      }), [['request', '/orders/17', 40], ['render', '/orders/17', 7], ['render', '/customers', 3]]);
+        const msg = new EventTarget();
+        announce(clients.app.events, 'vaadin-server-message', msg);
+        msg.request = request;
+        msg.dispatchEvent(new Event('parsed'));
+        msg.dispatchEvent(new Event('start'));
+        win.location.pathname = '/customers';
+        now += 7;
+        msg.outcome = 'applied';
+        msg.dispatchEvent(new Event('end'));
+      }), [['request', '/customers', 40], ['render', '/customers', 7]]);
     win.location.pathname = '/orders/17';
 
     // 8i. Nothing above is anything to warn about. A flush whose call neither
@@ -664,6 +681,10 @@ function err(message, stack) {
     //     tell its own request apart, and says so once.
     await ownRoundTrip(1);
     check('a collector that recognises its own requests warns about nothing', warnings, []);
+    // A request that ends without ever being sent is not open any more.
+    const dropped = queue();
+    open = null;
+    dropped.dispatchEvent(new Event('end'));
     announceLate = true;
     nudge();
     collectorApi.flush();
@@ -675,15 +696,46 @@ function err(message, stack) {
     check('a flush whose request is not announced while queued warns once',
       warnings.map((text) => text.includes('did not announce the request carrying the client metrics')), [true]);
 
-    // 8j. A Flow client without client.events records neither meter, and the
-    //     collector says why, once.
-    warnings.length = 0;
-    clients.legacy = {};
-    interval();
-    interval();
-    check('a client without events warns once that the meters are not recorded',
-      warnings.map((text) => text.includes('does not announce its requests and messages on client.events')), [true]);
     console.warn = consoleWarn;
+  }
+
+  // 8j. A Flow client without client.events records neither meter, and the
+  //     collector says why, once. The client-side bootstrap's own entry in
+  //     the clients is not a client, and is no reason to warn.
+  {
+    const warningsWith = (clients) => {
+      const warnings = [];
+      const consoleWarn = console.warn;
+      console.warn = (text) => warnings.push(text);
+      try {
+        let interval = null;
+        new Function('window', 'document', 'performance', 'PerformanceObserver', 'history', 'setInterval', 'requestAnimationFrame', src)(
+          {
+            addEventListener() {},
+            location: { pathname: '/x', href: 'https://app.example.com/x' },
+            sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+            Vaadin: { Flow: { clients: clients } }
+          },
+          { querySelector: () => null, addEventListener() {}, visibilityState: 'visible' },
+          { getEntriesByType: () => [], now: () => 0 },
+          function () { throw new Error('unsupported'); },
+          {},
+          (cb) => { interval = cb; return 0; },
+          () => 0
+        );
+        interval();
+        interval();
+      } finally {
+        console.warn = consoleWarn;
+      }
+      return warnings.map((text) => text.includes('does not announce its requests and messages on client.events'));
+    };
+    const bootstrap = { isActive: () => true };
+    check('a client without events warns once that the meters are not recorded',
+      warningsWith({ TypeScript: bootstrap, app: {} }), [true]);
+    check('a client with events beside the bootstrap entry warns about nothing',
+      warningsWith({ TypeScript: bootstrap, app: { events: new EventTarget() } }), []);
+    check('and neither does the bootstrap entry alone', warningsWith({ TypeScript: bootstrap }), []);
   }
 
   // 9. Loading the module is not attaching the element. The module is in the

@@ -1073,8 +1073,8 @@ function installCollector() {
   // The request announced and not yet sent, which a call queued now joins.
   var openRequest = null;
   var subscribedClients = 0;
-  // The route each request was queued on, for the reply to it to carry too.
-  var requestRoutes = new WeakMap();
+  // The round trip of each request whose reply has not been applied yet.
+  var roundTrips = new WeakMap();
 
   function isOwnReply(message) {
     return !!message.request && ownRequests.has(message.request);
@@ -1098,20 +1098,17 @@ function installCollector() {
       claimedOwnRequest = true;
       return;
     }
-    // Read now rather than when the response arrives: a click that navigates
-    // belongs to the view it was made on, and by the time it is answered or
-    // applied the browser may already show the next one.
-    var route = currentRoute();
-    requestRoutes.set(request, route);
     // The latest attempt, so a request sent again after a timeout or a
     // reconnect is timed from the attempt that was answered.
     var sentAt = null;
     request.addEventListener('sent', function () {
       sentAt = monotonicNow();
     });
+    // Recorded once the reply has been applied, under the route the render
+    // is recorded under (see timeMessage).
     request.addEventListener('response', function () {
       if (sentAt !== null) {
-        pushSample(REQUEST_DURATION, { route: route }, monotonicNow() - sentAt);
+        roundTrips.set(request, monotonicNow() - sentAt);
       }
     });
   }
@@ -1121,19 +1118,21 @@ function installCollector() {
     if (!message || typeof message.addEventListener !== 'function') {
       return;
     }
-    // A reply carries the route its request was queued on; a message the
-    // server pushes on its own, the route it arrived on.
-    var route = currentRoute();
-    message.addEventListener('parsed', function () {
-      if (message.request && requestRoutes.has(message.request)) {
-        route = requestRoutes.get(message.request);
-      }
-    });
     var startedAt = null;
     message.addEventListener('start', function () {
       startedAt = monotonicNow();
     });
     message.addEventListener('end', function () {
+      // Read once the message is done, as the server reads the route of a
+      // UIDL request once it is handled: a click that navigates is the next
+      // view's, and its round trip and its render are the same view's even
+      // when the URL changes only while the reply is applied.
+      var route = currentRoute();
+      var request = message.request;
+      if (request && roundTrips.has(request)) {
+        pushSample(REQUEST_DURATION, { route: route }, roundTrips.get(request));
+        roundTrips.delete(request);
+      }
       // A message that was discarded was not applied, and one that failed was
       // applied only in part and reports itself as a browser error.
       if (startedAt === null || message.outcome !== 'applied' || isOwnReply(message)) {
@@ -1151,18 +1150,16 @@ function installCollector() {
   function subscribeClients() {
     var flow = window.Vaadin && window.Vaadin.Flow;
     var clients = (flow && flow.clients) || {};
+    var withoutEvents = false;
     for (var id in clients) {
-      var client = clients[id];
-      var events = client && client.events;
+      if (id === 'TypeScript') {
+        // Not a client: the client-side bootstrap's own entry, which Flow
+        // skips too.
+        continue;
+      }
+      var events = clients[id] && clients[id].events;
       if (!events || typeof events.addEventListener !== 'function') {
-        // A Flow older than the one this kit is built for, whose client
-        // announces nothing: both meters would just stay empty.
-        warnOnce(
-          'no-events',
-          'This Flow client does not announce its requests and messages on client.events, so ' +
-            'vaadin.client.request.duration and vaadin.client.render.duration are not recorded. ' +
-            'They need the Flow version this observability-kit release is built for.'
-        );
+        withoutEvents = true;
         continue;
       }
       events.addEventListener('vaadin-request', timeRequest);
@@ -1171,6 +1168,16 @@ function installCollector() {
         subscribed.add(events);
         subscribedClients++;
       }
+    }
+    if (withoutEvents && subscribedClients === 0) {
+      // A Flow older than the one this kit is built for, whose client
+      // announces nothing: both meters would just stay empty.
+      warnOnce(
+        'no-events',
+        'This Flow client does not announce its requests and messages on client.events, so ' +
+          'vaadin.client.request.duration and vaadin.client.render.duration are not recorded. ' +
+          'They need the Flow version this observability-kit release is built for.'
+      );
     }
   }
   try {
