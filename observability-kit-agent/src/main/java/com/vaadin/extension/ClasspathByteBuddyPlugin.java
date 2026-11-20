@@ -9,7 +9,11 @@
  */
 package com.vaadin.extension;
 
+import java.io.File;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.net.URLClassLoader;
 
 import io.opentelemetry.javaagent.tooling.muzzle.generation.MuzzleCodeGenerationPlugin;
@@ -20,7 +24,7 @@ import net.bytebuddy.dynamic.DynamicType.Builder;
 
 /**
  * Wrapper for OpenTelemetry {@link MuzzleCodeGenerationPlugin} to provide the
- * current {@link URLClassLoader} and instrument the instrumentation module.
+ * current classpath and instrument the instrumentation module.
  */
 public class ClasspathByteBuddyPlugin implements Plugin {
 
@@ -29,9 +33,15 @@ public class ClasspathByteBuddyPlugin implements Plugin {
     /**
      * Creates the plugin instance.
      */
-    public ClasspathByteBuddyPlugin() {
+    public ClasspathByteBuddyPlugin()
+            throws MalformedURLException, URISyntaxException {
         URLClassLoader cl = (URLClassLoader) getClass().getClassLoader();
-        delegate = new MuzzleCodeGenerationPlugin(cl);
+        URL[] urls = cl.getURLs();
+        File[] classpath = new File[urls.length];
+        for (int i = 0; i < urls.length; i++) {
+            classpath[i] = new File(urls[i].toURI());
+        }
+        delegate = new MuzzleCodeGenerationPlugin(classpath);
     }
 
     @Override

@@ -22,7 +22,7 @@ import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
-import com.vaadin.extension.conf.ConfigurationDefaults;
+import com.vaadin.extension.conf.Configuration;
 
 import static io.opentelemetry.javaagent.extension.matcher.AgentElementMatchers.hasClassesNamed;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
@@ -80,8 +80,7 @@ public class ClientInstrumentation implements TypeInstrumentation {
                 Field functionField = helperClazz.getField("configHolder");
                 AtomicReference<Function<String,String>> functionHolder =
                         (AtomicReference<Function<String,String>>) functionField.get(null);
-                functionHolder.set((key) ->
-                        ConfigurationDefaults.configProperties.getString(key));
+                functionHolder.set(Configuration::getProperty);
 
                 Field consumerField = helperClazz.getField("exportHolder");
                 AtomicReference<BiConsumer<String,
